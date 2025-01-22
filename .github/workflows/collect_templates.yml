@@ -3,7 +3,7 @@ on:
     workflow_dispatch:
     schedule:
       - cron: '0 * * * *'
-  jobs:
+jobs:
     my-job:
       name: collect_coder_templates
       runs-on: ubuntu-latest

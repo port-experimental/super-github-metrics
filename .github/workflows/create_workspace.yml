@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - run: bun run main.ts create-workspace --template ${{ inputs.template_id }} --name ${{ inputs.name }} --ttl ${{ inputs.ttl }}
+      - run: bun run src\main.ts create-workspace --template ${{ inputs.template_id }} --name ${{ inputs.name }} --ttl ${{ inputs.ttl }}
         env: # Or as an environment variable
           PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
           PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}

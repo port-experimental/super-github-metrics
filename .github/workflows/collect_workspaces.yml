@@ -1,0 +1,19 @@
+name: collect_coder_workspaces
+on:
+    workflow_dispatch:
+    schedule:
+      - cron: '0 * * * *'
+  jobs:
+    my-job:
+      name: collect_coder_workspaces
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: oven-sh/setup-bun@v2
+        - run: bun run main.ts fetch-workspaces
+          env: # Or as an environment variable
+            PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+            PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+            CODER_SESSION_TOKEN: ${{ secrets.CODER_SESSION_TOKEN }}
+            CODER_API_BASE_URL: ${{ secrets.CODER_API_BASE_URL }}
+            CODER_ORGANIZATION_ID: ${{ secrets.CODER_ORGANIZATION_ID }}

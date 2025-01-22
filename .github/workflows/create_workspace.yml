@@ -1,0 +1,32 @@
+name: create_coder_workspace
+on:
+  workflow_dispatch:
+    # Inputs the workflow accepts.
+    inputs:
+      template_id:
+        description: 'the id of the workspace template'
+        required: true
+        type: string
+      name:
+        description: 'the name of the workspace'
+        required: true
+        type: string
+      ttl:
+        description: 'the time to live for the workspace, in milliseconds'
+        required: true
+        type: string
+jobs:
+  my-job:
+    name: create_coder_workspace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun run main.ts create-workspace --template ${{ inputs.template_id }} --name ${{ inputs.name }} --ttl ${{ inputs.ttl }}
+        env: # Or as an environment variable
+          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+          CODER_SESSION_TOKEN: ${{ secrets.CODER_SESSION_TOKEN }}
+          CODER_API_BASE_URL: ${{ secrets.CODER_API_BASE_URL }}
+          CODER_ORGANIZATION_ID: ${{ secrets.CODER_ORGANIZATION_ID }}
+

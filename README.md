@@ -1,3 +1,89 @@
+# Developer Onboarding Metrics
+
+## Overview
+
+Want to see each developer's time to first and tenth commit and PR? Want to also persist their join date to your GitHub Org?
+
+This integration will help you import this data from GitHub into Port, from where you can integrate into your scorecards, dashboards and more.
+
+## Caveats
+
+In order to fetch data on when each user joined your GitHub org, we need to query your Audit Log. This is only available to GitHub Enterprise users today.
+
+## Setup
+
+1. Clone repo
+1. Setup the code and workflow configuration in a central repository. I'd recommend creating one `.port` repository for all of your GitHub actions for custom integrations and self-service actions
+1. For your repository that will run the github actions, configure repository secrets for the following environmental variables:
+
+        - X_GITHUB_ORG
+        - X_GITHUB_ENTERPRISE
+        - X_GITHUB_AUTH_TOKEN
+        - PORT_CLIENT_ID
+        - PORT_CLIENT_SECRET
+1. Modify your `github_user` blueprint in port to include the properties `first_commit`, `tenth_commit`, `first_pr`, `tenth_pr` (see an example blueprint below)
+1. Have fun!
+
+#### Blueprint Template
+```json
+{
+  "identifier": "githubUser",
+  "title": "Github User",
+  "icon": "Github",
+  "schema": {
+    "properties": {
+      "email": {
+        "title": "Email",
+        "type": "string"
+      },
+      "join_date": {
+        "type": "string",
+        "title": "Join Date",
+        "description": "The date that the user joined our Github Enterprise",
+        "format": "date-time"
+      },
+      "first_commit": {
+        "type": "string",
+        "title": "First Commit",
+        "description": "The date of the user's first commit",
+        "format": "date-time"
+      },
+      "first_pr": {
+        "type": "string",
+        "title": "First PR",
+        "description": "The date of the user's first PR",
+        "format": "date-time"
+      },
+      "tenth_commit": {
+        "type": "string",
+        "title": "Tenth Commit",
+        "description": "The date of the user's tenth commit",
+        "format": "date-time"
+      },
+      "tenth_pr": {
+        "type": "string",
+        "title": "Tenth PR",
+        "description": "The date of the user's tenth PR",
+        "format": "date-time"
+      }
+    },
+    "required": []
+  },
+  "mirrorProperties": {},
+  "calculationProperties": {},
+  "aggregationProperties": {},
+  "relations": {
+    "user": {
+      "title": "User",
+      "target": "_user",
+      "required": false,
+      "many": false
+    }
+  }
+}
+```
+
+
 # Coder Integration
 
 ## Overview

@@ -52,14 +52,19 @@ async function main() {
       console.log(`Found ${usersWithoutOnboardingMetrics.length} users without complete onboarding metrics`);
       
       // For each user, get the onboarding metrics
-      for (const user of usersWithoutOnboardingMetrics) {
-        const joinDate = joinRecords.find(record => record.user === user.identifier)?.createdAt;
-        if (!joinDate) {
-          console.log(`No join date found for ${user.identifier}. Skipping...`);
-          continue;
+      for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
+        console.log(`Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`);
+        try {
+          const joinDate = joinRecords.find(record => record.user === user.identifier)?.createdAt;
+          if (!joinDate) {
+            console.log(`No join date found for ${user.identifier}. Skipping...`);
+            continue;
+          }
+          console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
+          await calculateAndStoreDeveloperStats(GITHUB_ORGS, AUTH_TOKEN, user, joinDate);
+        } catch (error) {
+          console.error(`Error processing developer ${user.identifier}:`, error);
         }
-        console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
-        await calculateAndStoreDeveloperStats(GITHUB_ORGS, AUTH_TOKEN, user, joinDate);
       }
     });
     
@@ -67,22 +72,30 @@ async function main() {
     .command('pr-metrics')
     .description('Send PR metrics to Port')
     .action(async () => {
-      console.log('Calculating PR metrics...');
-      await checkRateLimits(AUTH_TOKEN);
-      const repos = await getRepositories(GITHUB_ORGS, AUTH_TOKEN);
-      console.log(`Got ${repos.length} repos`);
-      await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
-      
+      try {
+        console.log('Calculating PR metrics...');
+        await checkRateLimits(AUTH_TOKEN);
+        const repos = await getRepositories(GITHUB_ORGS, AUTH_TOKEN);
+        console.log(`Got ${repos.length} repos`);
+        await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
+      } catch (error) {
+        console.error('Error:', error);
+      }
     });
     
     program
     .command('workflow-metrics')
     .description('Send GitHub Workflow metrics to Port')
     .action(async () => {
-      console.log('Calculating Workflows metrics...');
-      await checkRateLimits(AUTH_TOKEN);
-      const repos = await getRepositories(GITHUB_ORGS, AUTH_TOKEN);
-      await getWorkflowMetrics(repos, AUTH_TOKEN);
+      try {
+        console.log('Calculating Workflows metrics...');
+        await checkRateLimits(AUTH_TOKEN);
+        const repos = await getRepositories(GITHUB_ORGS, AUTH_TOKEN);
+        console.log(`Fetched ${repos.length} repos`);
+        await getWorkflowMetrics(repos, AUTH_TOKEN);
+      } catch (error) {
+        console.error('Error:', error);
+      }
     });
     
     await program.parseAsync();

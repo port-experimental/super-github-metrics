@@ -20,6 +20,7 @@ async function main() {
   const GITHUB_ORGS = process.env.X_GITHUB_ORGS?.split(',') || [];
   
   if (!PORT_CLIENT_ID || !PORT_CLIENT_SECRET || !AUTH_TOKEN || !ENTERPRISE_NAME || GITHUB_ORGS.length === 0) {
+    console.log(process.env);
     console.log('Please provide env vars PORT_CLIENT_ID, PORT_CLIENT_SECRET, X_GITHUB_AUTH_TOKEN, X_GITHUB_ENTERPRISE, and X_GITHUB_ORGS');
     process.exit(0);
   }

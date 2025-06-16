@@ -7,6 +7,7 @@ import { getMemberAddDates, hasCompleteOnboardingMetrics, getRepositories, calcu
 import { checkRateLimits } from './utils';
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { getWorkflowMetrics } from './workflow_metrics';
+import { Octokit } from '@octokit/rest';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
   require('dotenv').config();
@@ -90,9 +91,30 @@ async function main() {
       try {
         console.log('Calculating Workflows metrics...');
         await checkRateLimits(AUTH_TOKEN);
-        const repos = await getRepositories(GITHUB_ORGS, AUTH_TOKEN);
-        console.log(`Fetched ${repos.length} repos`);
-        await getWorkflowMetrics(repos, AUTH_TOKEN);
+        const octokit = new Octokit({ auth: AUTH_TOKEN });
+        const repos: any[] = [];
+        for (const orgName of GITHUB_ORGS) {
+          let page = 1;
+          let hasMore = true;
+          
+          while (hasMore) {
+            const { data: orgRepos } = await octokit.repos.listForOrg({
+              org: orgName,
+              sort: 'pushed', // default = direction: desc
+              per_page: 100,
+              page: page
+            });
+            
+            repos.push(...orgRepos);
+            
+            // If we got less than 100 repos, we've reached the end
+            console.log(`Fetched ${repos.length} repos in this page, processing`);
+            await getWorkflowMetrics(repos, AUTH_TOKEN);
+            hasMore = orgRepos.length === 100;
+            page++;
+          }
+        }
+        
       } catch (error) {
         console.error('Error:', error);
       }

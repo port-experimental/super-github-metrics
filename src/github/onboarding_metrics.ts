@@ -48,6 +48,7 @@ export async function getRepositories(
     for (const orgName of orgNames) {
         const { data: orgRepos } = await octokit.repos.listForOrg({
             org: orgName,
+            sort: 'pushed', // default = direction: desc
             per_page: 100,
         });
         repos.push(...orgRepos);

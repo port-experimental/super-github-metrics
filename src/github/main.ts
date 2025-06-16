@@ -76,9 +76,27 @@ async function main() {
       try {
         console.log('Calculating PR metrics...');
         await checkRateLimits(AUTH_TOKEN);
-        const repos = await getRepositories(GITHUB_ORGS, AUTH_TOKEN);
-        console.log(`Got ${repos.length} repos`);
-        await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
+        const octokit = new Octokit({ auth: AUTH_TOKEN });
+        for (const orgName of GITHUB_ORGS) {
+          let page = 1;
+          let hasMore = true;
+
+          while (hasMore) {
+            const { data: orgRepos } = await octokit.repos.listForOrg({
+              org: orgName,
+              sort: 'pushed', // default = direction: desc
+              per_page: 100,
+              page: page
+            });
+            
+            // If we got less than 100 repos, we've reached the end
+            console.log(`Fetched ${orgRepos.length} repos in this page, processing`);
+            await calculateAndStorePRMetrics(orgRepos, AUTH_TOKEN);
+            hasMore = orgRepos.length === 100;
+            page++;
+          }
+
+
       } catch (error) {
         console.error('Error:', error);
       }
@@ -92,11 +110,10 @@ async function main() {
         console.log('Calculating Workflows metrics...');
         await checkRateLimits(AUTH_TOKEN);
         const octokit = new Octokit({ auth: AUTH_TOKEN });
-        const repos: any[] = [];
         for (const orgName of GITHUB_ORGS) {
           let page = 1;
           let hasMore = true;
-          
+
           while (hasMore) {
             const { data: orgRepos } = await octokit.repos.listForOrg({
               org: orgName,

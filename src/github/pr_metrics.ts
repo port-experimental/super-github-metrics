@@ -25,7 +25,8 @@ interface PRMetrics {
 
 export async function calculateAndStorePRMetrics(repos: any[], authToken: string): Promise<void> {
     const octokit = new Octokit({ auth: authToken });
-    for (const repo of repos) {
+    for (const [index, repo] of repos.entries()) {
+        console.log(`Processing repo ${repo.name} (${index + 1}/${repos.length})`);
         const { data: prs } = await octokit.rest.pulls.list({
             owner: repo.owner.login,
             repo: repo.name,
@@ -68,13 +69,11 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
             .mapKeys((_value, key) => _.snakeCase(key));
             
             try {
-              console.log(`attempting to update ${record.repoName}-${record.pullRequestId}`);
               await upsertProps(
                 'githubPullRequest',
                 `${record.repoName}-${record.pullRequestId}`,
                 props,
               );
-              console.log(`Updated PR metrics for repo ${record.repoName}-${record.pullRequestId}`);
             } catch (error) {
               console.error(`Failed to update repo ${record.repoName}-${record.pullRequestId}:`, error);
             }

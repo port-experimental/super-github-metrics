@@ -95,8 +95,7 @@ async function main() {
             hasMore = orgRepos.length === 100;
             page++;
           }
-
-
+        }
       } catch (error) {
         console.error('Error:', error);
       }

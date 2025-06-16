@@ -15,12 +15,12 @@ if (process.env.GITHUB_ACTIONS !== 'true') {
 async function main() {
   const PORT_CLIENT_ID = process.env.PORT_CLIENT_ID;
   const PORT_CLIENT_SECRET = process.env.PORT_CLIENT_SECRET;
-  const AUTH_TOKEN = process.env.X_GITHUB_TOKEN;
+  const AUTH_TOKEN = process.env.X_GITHUB_AUTH_TOKEN;
   const ENTERPRISE_NAME = process.env.X_GITHUB_ENTERPRISE;
   const GITHUB_ORGS = process.env.X_GITHUB_ORGS?.split(',') || [];
   
   if (!PORT_CLIENT_ID || !PORT_CLIENT_SECRET || !AUTH_TOKEN || !ENTERPRISE_NAME || GITHUB_ORGS.length === 0) {
-    console.log('Please provide env vars PORT_CLIENT_ID, PORT_CLIENT_SECRET, X_GITHUB_TOKEN, X_GITHUB_ENTERPRISE, and X_GITHUB_ORGS');
+    console.log('Please provide env vars PORT_CLIENT_ID, PORT_CLIENT_SECRET, X_GITHUB_AUTH_TOKEN, X_GITHUB_ENTERPRISE, and X_GITHUB_ORGS');
     process.exit(0);
   }
   

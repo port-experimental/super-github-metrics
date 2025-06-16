@@ -14,6 +14,6 @@ jobs:
           env: # Or as an environment variable
             X_GITHUB_ORGS: ${{ secrets.X_GITHUB_ORGS }}
             X_GITHUB_ENTERPRISE: ${{ secrets.X_GITHUB_ENTERPRISE }}
-            X_GITHUB_TOKEN: ${{ secrets.X_GITHUB_TOKEN }}
+            X_GITHUB_TOKEN: ${{ secrets.X_GITHUB_AUTH_TOKEN }}
             PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
             PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}  

@@ -105,11 +105,9 @@ async function main() {
               page: page
             });
             
-            repos.push(...orgRepos);
-            
             // If we got less than 100 repos, we've reached the end
-            console.log(`Fetched ${repos.length} repos in this page, processing`);
-            await getWorkflowMetrics(repos, AUTH_TOKEN);
+            console.log(`Fetched ${orgRepos.length} repos in this page, processing`);
+            await getWorkflowMetrics(orgRepos, AUTH_TOKEN);
             hasMore = orgRepos.length === 100;
             page++;
           }

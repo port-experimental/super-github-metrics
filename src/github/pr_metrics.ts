@@ -27,57 +27,74 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
     const octokit = new Octokit({ auth: authToken });
     for (const [index, repo] of repos.entries()) {
         console.log(`Processing repo ${repo.name} (${index + 1}/${repos.length})`);
-        const { data: prs } = await octokit.rest.pulls.list({
-            owner: repo.owner.login,
-            repo: repo.name,
-            per_page: 100,
-            state: 'closed',
-        });
+        let page = 1;
+        let hasMore = true;
+        const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-        for (const pr of prs) {
-            const { data: prData } = await octokit.rest.pulls.get({
+        while (hasMore) {
+            const { data: prs } = await octokit.rest.pulls.list({
                 owner: repo.owner.login,
                 repo: repo.name,
-                pull_number: pr.number,
+                per_page: 100,
+                state: 'closed',
+                sort: 'created',
+                direction: 'desc',
+                page: page
             });
 
-            const { data: reviews } = await octokit.rest.pulls.listReviews({
-                owner: repo.owner.login,
-                repo: repo.name,
-                pull_number: pr.number,
-            });
-
-            const record: PRMetrics = {
-                repoId: repo.id,
-                repoName: repo.name,
-                pullRequestId: pr.id.toString(),
-                prSize: prData.additions + prData.deletions,
-                prAdditions: prData.additions,
-                prDeletions: prData.deletions,
-                prFilesChanged: prData.changed_files,
-                // times expressed in hours
-                prLifetime: pr.closed_at && pr.created_at ? (new Date(pr.closed_at).getTime() - new Date(pr.created_at).getTime()) / (1000 * 60 * 60) : 0,
-                prPickupTime: reviews.length > 0 && reviews[0].submitted_at && pr.created_at ? (new Date(reviews[0].submitted_at).getTime() - new Date(pr.created_at).getTime()) / (1000 * 60 * 60) : 0,
-                prSuccessRate: pr.merged_at ? 1 : 0,
-                reviewParticipation: reviews.length > 0 ? reviews.length : 0,
-                comments: prData.comments,
-                reviewComments: prData.review_comments,
-            };
-
-            const props: Record<string, any> = _.chain(record)
-            .pick(['prSize', 'prLifetime', 'prPickupTime', 'prSuccessRate', 'reviewParticipation'])
-            .mapKeys((_value, key) => _.snakeCase(key));
-            
-            try {
-              await upsertProps(
-                'githubPullRequest',
-                `${record.repoName}-${record.pullRequestId}`,
-                props,
-              );
-            } catch (error) {
-              console.error(`Failed to update repo ${record.repoName}-${record.pullRequestId}:`, error);
+            // Filter PRs created in last 90 days
+            const recentPRs = prs.filter(pr => new Date(pr.created_at) > ninetyDaysAgo);
+            console.log(`Found ${recentPRs.length} PRs in the last 90 days`);
+            for (const pr of recentPRs) {
+                const { data: prData } = await octokit.rest.pulls.get({
+                    owner: repo.owner.login,
+                    repo: repo.name,
+                    pull_number: pr.number,
+                });
+    
+                const { data: reviews } = await octokit.rest.pulls.listReviews({
+                    owner: repo.owner.login,
+                    repo: repo.name,
+                    pull_number: pr.number,
+                });
+    
+                const record: PRMetrics = {
+                    repoId: repo.id,
+                    repoName: repo.name,
+                    pullRequestId: pr.id.toString(),
+                    prSize: prData.additions + prData.deletions,
+                    prAdditions: prData.additions,
+                    prDeletions: prData.deletions,
+                    prFilesChanged: prData.changed_files,
+                    // times expressed in hours
+                    prLifetime: pr.closed_at && pr.created_at ? (new Date(pr.closed_at).getTime() - new Date(pr.created_at).getTime()) / (1000 * 60 * 60) : 0,
+                    prPickupTime: reviews.length > 0 && reviews[0].submitted_at && pr.created_at ? (new Date(reviews[0].submitted_at).getTime() - new Date(pr.created_at).getTime()) / (1000 * 60 * 60) : 0,
+                    prSuccessRate: pr.merged_at ? 1 : 0,
+                    reviewParticipation: reviews.length > 0 ? reviews.length : 0,
+                    comments: prData.comments,
+                    reviewComments: prData.review_comments,
+                };
+    
+                const props: Record<string, any> = _.chain(record)
+                .pick(['prSize', 'prLifetime', 'prPickupTime', 'prSuccessRate', 'reviewParticipation'])
+                .mapKeys((_value, key) => _.snakeCase(key));
+                
+                try {
+                  await upsertProps(
+                    'githubPullRequest',
+                    `${record.repoName}-${record.pullRequestId}`,
+                    props,
+                  );
+                } catch (error) {
+                  console.error(`Failed to update repo ${record.repoName}-${record.pullRequestId}:`, error);
+                }
             }
+
+            // If we got less than 100 PRs or the oldest PR is older than 90 days, we're done
+            hasMore = recentPRs.length === 100;
+            page++;
         }
+        
     }
 }
 

@@ -46,10 +46,11 @@ export async function getMemberAddDates(
         });
         
         console.log(`Fetched ${response.data.length} audit log events`);
+        console.log(`Last action: ${response.data[response.data.length - 1].action} for user: ${response.data[response.data.length - 1].user} at ${response.data[response.data.length - 1].created_at}`);
         allData.push(...response.data);
         
         // If we got less than 100 items, we've reached the end
-        hasMore = response.data.length === 100;
+        hasMore = response.data.length === 100 && page < 30;
         page++;
     }
     

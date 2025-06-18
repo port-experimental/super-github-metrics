@@ -28,16 +28,32 @@ export async function getMemberAddDates(
 ): Promise<any[]> {
     const octokit = new Octokit({ auth: authToken });
     console.log(enterprise);
-    const response = await octokit.request('GET /enterprises/{enterprise}/audit-log', {
-        enterprise,
-        phrase: "action:org.add_member",
-        include: "web",
-        headers: {
-            'X-GitHub-Api-Version': '2022-11-28'
-        }
-    });
+    let allData: any[] = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+        const response = await octokit.request('GET /enterprises/{enterprise}/audit-log', {
+            enterprise,
+            phrase: "action:org.add_member",
+            include: "web",
+            per_page: 100,
+            order: 'desc',
+            page: page,
+            headers: {
+                'X-GitHub-Api-Version': '2022-11-28'
+            }
+        });
+        
+        console.log(`Fetched ${response.data.length} audit log events`);
+        allData.push(...response.data);
+        
+        // If we got less than 100 items, we've reached the end
+        hasMore = response.data.length === 100;
+        page++;
+    }
     
-    return response.data.map((x: any) => ({ user: x.user, userId: x.user_id, createdAt: x.created_at }));;
+    return allData.map((x: any) => ({ user: x.user, userId: x.user_id, createdAt: x.created_at }));;
 }
 
 export async function getRepositories(

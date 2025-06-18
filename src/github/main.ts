@@ -40,13 +40,10 @@ async function main() {
       console.log('Calculating onboarding metrics...');
       await checkRateLimits(AUTH_TOKEN);
       const githubUsers = await getEntities('githubUser');
-      console.log(githubUsers);
+      console.log(`Found ${githubUsers.entities.length} github users in Port`);
       
       const joinRecords = await getMemberAddDates(ENTERPRISE_NAME, AUTH_TOKEN);
-      console.log(joinRecords);
-      
-      const repos = await getRepositories(GITHUB_ORGS, AUTH_TOKEN);
-      console.log(`Got ${repos.length} repos`);
+      console.log(`Found ${joinRecords.length} join records`);
       
       // Only go over users without complete onboarding metrics in Port
       const usersWithoutOnboardingMetrics = githubUsers.entities.filter((user: any) => !hasCompleteOnboardingMetrics(user));

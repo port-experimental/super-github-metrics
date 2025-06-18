@@ -27,18 +27,9 @@ export async function getMemberAddDates(
     authToken: string
 ): Promise<any[]> {
     const octokit = new Octokit({ auth: authToken });
-
-    const { data: events } = await octokit.request('GET /orgs/{org}/events', {
-        org: 'fmgl-internal',
-        per_page: 100,
-        page: 1,
-        headers: {
-          'X-GitHub-Api-Version': '2022-11-28'
-        }
-      });
-    console.log('public events for org');
-    console.log(events);
-    const response = await octokit.request(`GET /enterprises/${enterprise}/audit-log`, {
+    console.log(enterprise);
+    const response = await octokit.request('GET /enterprises/{enterprise}/audit-log', {
+        enterprise,
         phrase: "action:org.add_member",
         include: "web",
         headers: {

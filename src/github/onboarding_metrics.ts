@@ -146,7 +146,8 @@ export async function getDeveloperStats(
             tenthPRDate = allPulls.length > 9 ? allPulls[9].created_at : null;
         }
         
-        const firstReviewDate = allReviews.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0].created_at;
+        const firstReviewDate = allReviews.length > 0 ? allReviews.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0].created_at : null;
+
         
         // Search for initial review response time
         stats.push({

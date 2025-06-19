@@ -41,7 +41,7 @@ export async function getMemberAddDates(
     });
     
     console.log(`Fetched ${data.length} audit log events`);
-    
+    console.log(JSON.stringify(data));
     
     return data.map((x: any) => ({ user: x.user, userId: x.user_id, createdAt: x.created_at }));;
 }
@@ -99,7 +99,6 @@ export async function getDeveloperStats(
         let allReviews: any[] = [];
         
         for (const orgName of orgNames) {
-            
             // Search for first commit
             const { data: commits } = await octokit.request('GET /search/commits ', {
                 q: `author:${login} org:${orgName} sort:committer-date-asc`,

@@ -12,6 +12,8 @@ build/
 *.tsbuildinfo
 
 # Environment variables
+.env
+!.env.example
 .envrc
 !.envrc.example
 

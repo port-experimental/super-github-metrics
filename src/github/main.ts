@@ -3,7 +3,7 @@
 import { Command } from 'commander';
 
 import { getEntities } from './port_client';
-import { getMemberAddDates, hasCompleteOnboardingMetrics, getRepositories, calculateAndStoreDeveloperStats } from './onboarding_metrics';
+import { getMemberAddDates, hasCompleteOnboardingMetrics, calculateAndStoreDeveloperStats } from './onboarding_metrics';
 import { checkRateLimits } from './utils';
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { getWorkflowMetrics } from './workflow_metrics';
@@ -21,7 +21,6 @@ async function main() {
   const GITHUB_ORGS = process.env.X_GITHUB_ORGS?.split(',') || [];
   
   if (!PORT_CLIENT_ID || !PORT_CLIENT_SECRET || !AUTH_TOKEN || !ENTERPRISE_NAME || GITHUB_ORGS.length === 0) {
-    console.log(process.env);
     console.log('Please provide env vars PORT_CLIENT_ID, PORT_CLIENT_SECRET, X_GITHUB_TOKEN, X_GITHUB_ENTERPRISE, and X_GITHUB_ORGS');
     process.exit(0);
   }
@@ -41,9 +40,16 @@ async function main() {
       await checkRateLimits(AUTH_TOKEN);
       const githubUsers = await getEntities('githubUser');
       console.log(`Found ${githubUsers.entities.length} github users in Port`);
-      
-      const joinRecords = await getMemberAddDates(ENTERPRISE_NAME, AUTH_TOKEN);
-      console.log(`Found ${joinRecords.length} join records`);
+      let joinRecords: any[] = [];
+      // Try fetch join dates from the audit log
+      try {
+        joinRecords = await getMemberAddDates(ENTERPRISE_NAME, AUTH_TOKEN);
+        console.log(`Found ${joinRecords.length} join records`);
+      } catch (error) {
+        if (error instanceof Error && 'status' in error && error.status === 403) {
+          console.log('Looks like insufficient permissions to query audit log. Skipping join records...');
+        }
+      }
       
       // Only go over users without complete onboarding metrics in Port
       const usersWithoutOnboardingMetrics = githubUsers.entities.filter((user: any) => !hasCompleteOnboardingMetrics(user));
@@ -53,7 +59,7 @@ async function main() {
       for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
         console.log(`Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`);
         try {
-          const joinDate = joinRecords.find(record => record.user === user.identifier)?.createdAt;
+          const joinDate = user.proprties.join_date || joinRecords.find(record => record.user === user.identifier)?.createdAt;
           if (!joinDate) {
             console.log(`No join date found for ${user.identifier}. Skipping...`);
             continue;
@@ -125,7 +131,7 @@ async function main() {
             page++;
           }
         }
-        
+
       } catch (error) {
         console.error('Error:', error);
       }

@@ -55,15 +55,13 @@ async function main() {
       // Only go over users without complete onboarding metrics in Port
       const usersWithoutOnboardingMetrics = githubUsers.entities.filter((user: any) => !hasCompleteOnboardingMetrics(user));
       console.log(`Found ${usersWithoutOnboardingMetrics.length} users without complete onboarding metrics`);
-      console.log(usersWithoutOnboardingMetrics);
       
       // For each user, get the onboarding metrics
       for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
         console.log(`Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`);
         try {
-          console.log(user);
-          const joinDate = user.proprties.join_date || (joinRecords.find(record => record.user === user.identifier) || { createdAt: null })?.createdAt;
-          if (!joinDate) {
+          const joinDate = user.properties.join_date ? user.proprties.join_date : joinRecords.find(record => record.user === user.identifier)?.createdAt;
+          if (joinDate === null || joinDate === undefined) {
             console.log(`No join date found for ${user.identifier}. Skipping...`);
             continue;
           }

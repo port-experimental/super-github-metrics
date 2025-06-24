@@ -177,7 +177,7 @@ export async function getDeveloperStats(
 export async function storeDeveloperStats(user: any, record: DeveloperStats) {
     const props: Record<string, any> = _.chain(record)
         .pick(['login', 'joinDate', 'firstCommitDate', 'tenthCommitDate', 'firstPRDate', 'tenthPRDate', 'initialReviewResponseTime', 'timeToFirstCommit', 'timeToFirstPR', 'timeTo10thCommit', 'timeTo10thPR'])
-        .mapKeys((_value, key) => _.snakeCase(key.replace('Date', '')));
+        .mapKeys((_value, key) => key != 'joinDate' ? _.snakeCase(key.replace('Date', '')) : 'join_date');
     
     try {
         console.log(`attempting to update ${user.identifier}`);

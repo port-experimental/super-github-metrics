@@ -2,12 +2,13 @@
 
 import { Command } from 'commander';
 
-import { getEntities } from './port_client';
+import { getEntities, upsertProps } from './port_client';
 import { getMemberAddDates, hasCompleteOnboardingMetrics, calculateAndStoreDeveloperStats } from './onboarding_metrics';
 import { checkRateLimits } from './utils';
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { getWorkflowMetrics } from './workflow_metrics';
 import { Octokit } from '@octokit/rest';
+// import fs from 'fs';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
   require('dotenv').config();
@@ -54,6 +55,7 @@ async function main() {
       // Only go over users without complete onboarding metrics in Port
       const usersWithoutOnboardingMetrics = githubUsers.entities.filter((user: any) => !hasCompleteOnboardingMetrics(user));
       console.log(`Found ${usersWithoutOnboardingMetrics.length} users without complete onboarding metrics`);
+      console.log(usersWithoutOnboardingMetrics);
       
       // For each user, get the onboarding metrics
       for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
@@ -137,7 +139,24 @@ async function main() {
         console.error('Error:', error);
       }
     });
-    
+
+    // program
+    // .command('write-join-dates')
+    // .description('Write join dates to Port')
+    // .action(async () => {
+    //   console.log('Writing join dates to Port...');
+    //   const githubUsers = await getEntities('githubUser');
+    //   console.log(`Found ${githubUsers.entities.length} github users in Port`);
+    //   const rawData = JSON.parse(fs.readFileSync('../filtered_out.json', 'utf8'));
+
+    //   for (const user of githubUsers.entities) {
+    //     const userRecord = rawData.find((record: any) => record.user === user.identifier);
+    //     if (userRecord) {
+    //       console.log(`Found join date for ${user.identifier}: ${userRecord.created_at}`);
+    //       await upsertProps('githubUser', user.identifier, { join_date: new Date(userRecord.created_at).toISOString() });
+    //     }
+    //   }
+    // });
     await program.parseAsync();
     
   } catch (error) {

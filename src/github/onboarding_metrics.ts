@@ -101,42 +101,75 @@ export async function getDeveloperStats(
         let allReviews: any[] = [];
         
         for (const orgName of orgNames) {
-            // Search for first commit
-            const { data: commits } = await octokit.request('GET /search/commits ', {
-                q: `author:${login} org:${orgName} sort:committer-date-asc`,
-                advanced_search: true,
-                per_page: 10,
-                page: 1,
-                headers: {
-                    'If-None-Match': '', // Bypass cache to avoid stale results
-                    'Accept': 'application/vnd.github.v3+json' // Specify API version
+            // Helper function to make API requests with exponential backoff
+            const makeRequestWithRetry = async (requestFn: () => Promise<any>, maxRetries = 5) => {
+                let lastError: any;
+                for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                    try {
+                        return await requestFn();
+                    } catch (error: any) {
+                        lastError = error;
+
+                        // Check if it's a rate limit or 403 error
+                        if (error.status === 403 || error.status === 429) {
+                            const retryAfter = error.response?.headers?.['retry-after'] || Math.pow(2, attempt);
+                            const waitTime = parseInt(retryAfter) * 1000; // Convert to milliseconds
+
+                            console.log(`Rate limited (${error.status}). Waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries + 1}`);
+                            await new Promise(resolve => setTimeout(resolve, waitTime));
+                            continue;
+                        }
+
+                        // For other errors, throw immediately
+                        throw error;
+                    }
                 }
-            });
-            
+                throw lastError;
+            };
+
+            // Search for first commit with retry logic
+            const { data: commits } = await makeRequestWithRetry(() =>
+                octokit.request('GET /search/commits ', {
+                    q: `author:${login} org:${orgName} sort:committer-date-asc`,
+                    advanced_search: true,
+                    per_page: 10,
+                    page: 1,
+                    headers: {
+                        'If-None-Match': '', // Bypass cache to avoid stale results
+                        'Accept': 'application/vnd.github.v3+json' // Specify API version
+                    }
+                })
+            );
+
             allCommits.push(...commits.items);
             
-            // Search for first pull request
-            // Use more specific search query and add state to filter only merged PRs
-            const { data: pulls } = await octokit.request('GET /search/issues ', {
-                q: `author:${login} type:pr org:${orgName} is:merged`,
-                advanced_search: true,
-                sort: 'created',
-                order: 'asc',
-                per_page: 10,
-                headers: {
-                    'If-None-Match': '', // Bypass cache to avoid stale results
-                    'Accept': 'application/vnd.github.v3+json' // Specify API version
-                }
-            });
-            
+            // Search for first pull request with retry logic
+            const { data: pulls } = await makeRequestWithRetry(() =>
+                octokit.request('GET /search/issues ', {
+                    q: `author:${login} type:pr org:${orgName} is:merged`,
+                    advanced_search: true,
+                    sort: 'created',
+                    order: 'asc',
+                    per_page: 10,
+                    headers: {
+                        'If-None-Match': '', // Bypass cache to avoid stale results
+                        'Accept': 'application/vnd.github.v3+json' // Specify API version
+                    }
+                })
+            );
+
             allPulls.push(...pulls.items);
-            const { data: reviews } = await octokit.request('GET /search/issues ', {
-                q: `reviewed-by:${login} type:pr org:${orgName} review:approved`,
-                advanced_search: true,
-            });
+
+            // Search for reviews with retry logic
+            const { data: reviews } = await makeRequestWithRetry(() =>
+                octokit.request('GET /search/issues ', {
+                    q: `reviewed-by:${login} type:pr org:${orgName} review:approved`,
+                    advanced_search: true,
+                })
+            );
             allReviews.push(...reviews.items);
         }
-        
+
         allCommits.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
         if (allCommits.length > 0) {
             firstCommitDate = allCommits.length > 0 ? allCommits[0].commit.author.date : null;

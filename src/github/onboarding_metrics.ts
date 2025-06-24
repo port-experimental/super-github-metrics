@@ -102,7 +102,7 @@ export async function getDeveloperStats(
         
         for (const orgName of orgNames) {
             // Helper function to make API requests with exponential backoff
-            const makeRequestWithRetry = async (requestFn: () => Promise<any>, maxRetries = 5) => {
+            const makeRequestWithRetry = async (requestFn: () => Promise<any>, maxRetries = 7) => {
                 let lastError: any;
                 for (let attempt = 0; attempt <= maxRetries; attempt++) {
                     try {

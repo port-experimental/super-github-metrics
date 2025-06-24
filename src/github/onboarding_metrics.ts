@@ -184,22 +184,26 @@ export async function getDeveloperStats(
         const firstReviewDate = allReviews.length > 0 ? allReviews.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0].created_at : null;
 
         
-        // Search for initial review response time
-        stats.push({
+        const record: any = {
             login: login,
             joinDate,
             firstCommitDate,
             tenthCommitDate,
             firstPRDate,
             tenthPRDate,
-            // Times in hours
-            timeToFirstCommit: firstCommitDate ? (new Date(firstCommitDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null,
-            timeToFirstPR: firstPRDate ? (new Date(firstPRDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null,
-            timeTo10thCommit: tenthCommitDate ? (new Date(tenthCommitDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null,
-            timeTo10thPR: tenthPRDate ? (new Date(tenthPRDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null,
-            initialReviewResponseTime: firstReviewDate ? (new Date(firstReviewDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null,
-        });
-        
+            timeFromFirstTo10thCommit: tenthCommitDate && firstCommitDate ? (new Date(tenthCommitDate).getTime() - new Date(firstCommitDate).getTime()) / (1000 * 60 * 60) : null,
+            timeFromFirstTo10thPR: tenthPRDate && firstPRDate ? (new Date(tenthPRDate).getTime() - new Date(firstPRDate).getTime()) / (1000 * 60 * 60) : null,
+        };
+
+        if (joinDate) {
+            record.timeToFirstCommit = firstCommitDate ? (new Date(firstCommitDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null;
+            record.timeToFirstPR = firstPRDate ? (new Date(firstPRDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null;
+            record.timeTo10thCommit = tenthCommitDate ? (new Date(tenthCommitDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null;
+            record.timeTo10thPR = tenthPRDate ? (new Date(tenthPRDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null;
+            record.initialReviewResponseTime = firstReviewDate ? (new Date(firstReviewDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60) : null;
+        }
+
+        stats.push(record);
         console.log(stats);
         return stats;
     } catch (error) {
@@ -209,7 +213,7 @@ export async function getDeveloperStats(
 
 export async function storeDeveloperStats(user: any, record: DeveloperStats) {
     const props: Record<string, any> = _.chain(record)
-        .pick(['login', 'joinDate', 'firstCommitDate', 'tenthCommitDate', 'firstPRDate', 'tenthPRDate', 'initialReviewResponseTime', 'timeToFirstCommit', 'timeToFirstPR', 'timeTo10thCommit', 'timeTo10thPR'])
+        .pick(['login', 'joinDate', 'firstCommitDate', 'tenthCommitDate', 'firstPRDate', 'tenthPRDate', 'initialReviewResponseTime', 'timeToFirstCommit', 'timeToFirstPR', 'timeTo10thCommit', 'timeTo10thPR', 'timeFromFirstTo10thCommit', 'timeFromFirstTo10thPR'])
         .mapKeys((_value, key) => key != 'joinDate' ? _.snakeCase(key.replace('Date', '')) : 'join_date');
     
     try {

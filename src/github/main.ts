@@ -58,7 +58,6 @@ async function main() {
       
       // For each user, get the onboarding metrics
       let processedCount = 0;
-      let skippedCount = 0;
       let errorCount = 0;
       const usersWithErrors: string[] = [];
 
@@ -66,11 +65,6 @@ async function main() {
         console.log(`Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`);
         try {
           const joinDate = user.properties.join_date ? user.properties.join_date : joinRecords.find(record => record.user === user.identifier)?.createdAt;
-          if (joinDate === null || joinDate === undefined) {
-            console.log(`No join date found for ${user.identifier}. Skipping...`);
-            skippedCount++;
-            continue;
-          }
           console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
           await calculateAndStoreDeveloperStats(GITHUB_ORGS, AUTH_TOKEN, user, joinDate);
           processedCount++;
@@ -88,7 +82,6 @@ async function main() {
       // Print summary
       console.log('\n=== Processing Summary ===');
       console.log(`Total users processed: ${processedCount}`);
-      console.log(`Users skipped: ${skippedCount}`);
       console.log(`Users with errors: ${errorCount}`);
       
       if (usersWithErrors.length > 0) {

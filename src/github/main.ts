@@ -68,7 +68,11 @@ async function main() {
           console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
           await calculateAndStoreDeveloperStats(GITHUB_ORGS, AUTH_TOKEN, user, joinDate);
         } catch (error) {
-          console.error(`Error processing developer ${user.identifier}:`, error);
+          if (error instanceof TypeError) {
+            console.error(`TypeError processing developer ${user.identifier}:`, user);
+          } else {
+            console.error(`Error processing developer ${user.identifier}:`, error);
+          }
         }
       }
     });

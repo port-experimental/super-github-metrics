@@ -76,7 +76,8 @@ export async function calculateAndStoreDeveloperStats(
         console.log(`No record found for ${user.identifier}, unprocessable, skipping...`);
         return;
     }
-    return storeDeveloperStats(user, record);
+    console.log(record);
+    return await storeDeveloperStats(user, record);
 }
 
 export async function getDeveloperStats(

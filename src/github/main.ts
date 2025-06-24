@@ -59,7 +59,7 @@ async function main() {
       for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
         console.log(`Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`);
         try {
-          const joinDate = user.proprties.join_date || joinRecords.find(record => record.user === user.identifier)?.createdAt;
+          const joinDate = user.proprties.join_date || (joinRecords.find(record => record.user === user.identifier) || { createdAt: null })?.createdAt;
           if (!joinDate) {
             console.log(`No join date found for ${user.identifier}. Skipping...`);
             continue;

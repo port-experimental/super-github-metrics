@@ -29,7 +29,7 @@ export async function getMemberAddDates(
     const octokit = new Octokit({ auth: authToken });
     console.log(enterprise);
 
-    const data = await octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
+    let data = await octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
         enterprise,
         phrase: "action:org.add_member",
         include: "web",
@@ -40,6 +40,7 @@ export async function getMemberAddDates(
         }
     });
     
+    data = data.filter((x: any) => x.org_id === 177709801);
     console.log(`Fetched ${data.length} audit log events`);
     console.log(JSON.stringify(data));
     

@@ -6,6 +6,14 @@ interface OAuthResponse {
     accessToken: string;
 }
 
+interface Entity {
+    identifier?: string;
+    title?: string;
+    properties?: Record<string, any> | null;
+    relations?: Record<string, any> | null;
+    team?: string[] | null;
+}
+
 async function generateOAuthToken(): Promise<string> {
     const clientId = process.env.PORT_CLIENT_ID;
     const clientSecret = process.env.PORT_CLIENT_SECRET;
@@ -44,7 +52,7 @@ class ApiClient {
         }
         return this.instance;
     }
-    
+
     constructor(baseUrl: string, bearerToken: string) {
         this.baseUrl = baseUrl;
         this.bearerToken = bearerToken;
@@ -82,6 +90,15 @@ class ApiClient {
             },
         })
         return response;
+    }
+
+    async patch<T>(endpoint: string, data: any): Promise<T> {
+        const response = await axios.patch<T>(`${this.baseUrl}${endpoint}`, data, {
+            headers: {
+                'Authorization': `Bearer ${this.bearerToken}`,
+            },
+        });
+        return response.data;
     }
 }
 
@@ -134,4 +151,14 @@ export async function upsertEntity(entity: string, identifier: string, title: st
         payload.team = team;
     }
     return client.post(`/blueprints/${entity}/entities?upsert=true&merge=true`, payload);
+}
+
+export async function createEntity(blueprint: string, entity: Entity) {
+    const client = await ApiClient.getClient();
+    return client.post(`/blueprints/${blueprint}/entities`, entity);
+}
+
+export async function updateEntity(blueprint: string, entity: Entity) {
+    const client = await ApiClient.getClient();
+    return client.patch<Entity>(`/blueprints/${blueprint}/entities/${entity.identifier}`, entity);
 }

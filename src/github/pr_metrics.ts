@@ -21,6 +21,35 @@ interface PRMetrics {
     prFilesChanged: number;
     comments: number;
     reviewComments: number;
+    // PR First Comment: (First review timestamp)
+    prFirstComment: string | null;
+    // PR First Approval: (First approval timestamp)
+    prFirstApproval: string | null;
+    // Number of changes after PR is opened
+    numberOfLineChangesAfterPRIsOpened: number;
+    numberOfCommitsAfterPRIsOpened: number;
+    
+}
+
+const getNumberOfChangesAfterPRIsOpened = async (octokit: Octokit, owner: string, repo: string, prNumber: number, prCreationDate: Date): Promise<{
+    numberOfLineChangesAfterPRIsOpened: number;
+    numberOfCommitsAfterPRIsOpened: number;
+}> => {
+    const response = await octokit.pulls.listCommits({
+        owner,
+        repo,
+        pull_number: prNumber,
+        
+    })
+
+    const commits = response.data;
+    const changesAfterPRIsOpened = commits.filter(commit => commit.commit.author?.date && commit.stats?.total)
+        .filter(commit => new Date(commit.commit.author?.date!) > prCreationDate);
+
+    return {
+        numberOfLineChangesAfterPRIsOpened: changesAfterPRIsOpened.reduce((acc, commit) => acc + commit.stats?.total!, 0),
+        numberOfCommitsAfterPRIsOpened: changesAfterPRIsOpened.length
+    };
 }
 
 export async function calculateAndStorePRMetrics(repos: any[], authToken: string): Promise<void> {
@@ -57,6 +86,7 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
                     repo: repo.name,
                     pull_number: pr.number,
                 });
+
     
                 const record: PRMetrics = {
                     repoId: repo.id,
@@ -66,6 +96,15 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
                     prAdditions: prData.additions,
                     prDeletions: prData.deletions,
                     prFilesChanged: prData.changed_files,
+                    prFirstComment: reviews[0]?.submitted_at || null,
+                    prFirstApproval: reviews.find(review => review.state === 'APPROVED')?.submitted_at || null,
+                    ...(await getNumberOfChangesAfterPRIsOpened(
+                        octokit,
+                        repo.owner.login,
+                        repo.name,
+                        pr.number,
+                        new Date(pr.created_at)
+                    )),
                     // times expressed in hours
                     prLifetime: pr.closed_at && pr.created_at ? (new Date(pr.closed_at).getTime() - new Date(pr.created_at).getTime()) / (1000 * 60 * 60) : 0,
                     prPickupTime: reviews.length > 0 && reviews[0].submitted_at && pr.created_at ? (new Date(reviews[0].submitted_at).getTime() - new Date(pr.created_at).getTime()) / (1000 * 60 * 60) : 0,
@@ -76,7 +115,7 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
                 };
     
                 const props: Record<string, any> = _.chain(record)
-                .pick(['prSize', 'prLifetime', 'prPickupTime', 'prSuccessRate', 'reviewParticipation'])
+                .pick(['prSize', 'prLifetime', 'prPickupTime', 'prSuccessRate', 'reviewParticipation', 'numberOfLineChangesAfterPRIsOpened', 'numberOfCommitsAfterPRIsOpened'])
                 .mapKeys((_value, key) => _.snakeCase(key));
                 
                 try {

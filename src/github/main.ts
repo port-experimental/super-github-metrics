@@ -2,16 +2,60 @@
 
 import { Command } from 'commander';
 
-import { getEntities, upsertProps } from './port_client';
+import { getEntities } from './port_client';
 import { getMemberAddDates, hasCompleteOnboardingMetrics, calculateAndStoreDeveloperStats } from './onboarding_metrics';
 import { checkRateLimits } from './utils';
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { getWorkflowMetrics } from './workflow_metrics';
+import { calculateAndStoreServiceMetrics } from './service_metrics';
 import { Octokit } from '@octokit/rest';
-// import fs from 'fs';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
   require('dotenv').config();
+}
+
+/**
+ * Fetches all repositories for a given organization
+ */
+async function fetchOrganizationRepositories(
+  octokit: Octokit, 
+  orgName: string
+): Promise<any[]> {
+  const allRepos: any[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data: orgRepos } = await octokit.repos.listForOrg({
+      org: orgName,
+      sort: 'pushed', // default = direction: desc
+      per_page: 100,
+      page: page
+    });
+    
+    allRepos.push(...orgRepos);
+    console.log(`Fetched ${orgRepos.length} repos from ${orgName} (page ${page})`);
+    
+    // If we got less than 100 repos, we've reached the end
+    hasMore = orgRepos.length === 100;
+    page++;
+  }
+
+  return allRepos;
+}
+
+/**
+ * Processes repositories for a specific organization
+ */
+async function processOrganizationRepositories(
+  octokit: Octokit,
+  orgName: string,
+  processor: (repos: any[]) => Promise<void>
+): Promise<void> {
+  console.log(`Processing repositories for organization: ${orgName}`);
+  const repos = await fetchOrganizationRepositories(octokit, orgName);
+  console.log(`Processing ${repos.length} repositories from ${orgName}`);
+  await processor(repos);
 }
 
 async function main() {
@@ -98,24 +142,11 @@ async function main() {
         console.log('Calculating PR metrics...');
         await checkRateLimits(AUTH_TOKEN);
         const octokit = new Octokit({ auth: AUTH_TOKEN });
+        
         for (const orgName of GITHUB_ORGS) {
-          let page = 1;
-          let hasMore = true;
-
-          while (hasMore) {
-            const { data: orgRepos } = await octokit.repos.listForOrg({
-              org: orgName,
-              sort: 'pushed', // default = direction: desc
-              per_page: 100,
-              page: page
-            });
-            
-            // If we got less than 100 repos, we've reached the end
-            console.log(`Fetched ${orgRepos.length} repos in this page, processing`);
-            await calculateAndStorePRMetrics(orgRepos, AUTH_TOKEN);
-            hasMore = orgRepos.length === 100;
-            page++;
-          }
+          await processOrganizationRepositories(octokit, orgName, async (repos) => {
+            await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
+          });
         }
       } catch (error) {
         console.error('Error:', error);
@@ -130,26 +161,31 @@ async function main() {
         console.log('Calculating Workflows metrics...');
         await checkRateLimits(AUTH_TOKEN);
         const octokit = new Octokit({ auth: AUTH_TOKEN });
+        
         for (const orgName of GITHUB_ORGS) {
-          let page = 1;
-          let hasMore = true;
-
-          while (hasMore) {
-            const { data: orgRepos } = await octokit.repos.listForOrg({
-              org: orgName,
-              sort: 'pushed', // default = direction: desc
-              per_page: 100,
-              page: page
-            });
-            
-            // If we got less than 100 repos, we've reached the end
-            console.log(`Fetched ${orgRepos.length} repos in this page, processing`);
-            await getWorkflowMetrics(orgRepos, AUTH_TOKEN);
-            hasMore = orgRepos.length === 100;
-            page++;
-          }
+          await processOrganizationRepositories(octokit, orgName, async (repos) => {
+            await getWorkflowMetrics(repos, AUTH_TOKEN);
+          });
         }
+      } catch (error) {
+        console.error('Error:', error);
+      }
+    });
 
+    program
+    .command('service-metrics')
+    .description('Send GitHub Service metrics to Port')
+    .action(async () => {
+      try {
+        console.log('Calculating Service metrics...');
+        await checkRateLimits(AUTH_TOKEN);
+        const octokit = new Octokit({ auth: AUTH_TOKEN });
+        
+        for (const orgName of GITHUB_ORGS) {
+          await processOrganizationRepositories(octokit, orgName, async (repos) => {
+            await calculateAndStoreServiceMetrics(repos, AUTH_TOKEN);
+          });
+        }
       } catch (error) {
         console.error('Error:', error);
       }

@@ -80,7 +80,7 @@ export async function getTemplates(): Promise<Template[]> {
     return client.get('/templates');
 }
 
-export async function createWorkspace(templateId, name, ttl) {
+export async function createWorkspace(templateId: string, name: string, ttl: number) {
     const client = await ApiClient.getClient();
     // Using the port API token's user
     return client.post(`/organizations/${client.organizationId}/members/me/workspaces`, {

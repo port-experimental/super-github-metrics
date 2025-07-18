@@ -1,6 +1,6 @@
 # Developer Onboarding Metrics
 
-## Overview 
+## Overview
 
 Want to see each developer's time to first and tenth commit and PR? Want to also persist their join date to your GitHub Org?
 
@@ -16,7 +16,7 @@ In order to fetch data on when each user joined your GitHub org, we need to quer
 1. Setup the code and workflow configuration in a central repository. I'd recommend creating one `.port` repository for all of your GitHub actions for custom integrations and self-service actions
 1. For your repository that will run the github actions, configure repository secrets for the following environmental variables:
 
-        - X_GITHUB_ORG
+        - X_GITHUB_ORGS
         - X_GITHUB_ENTERPRISE
         - X_GITHUB_AUTH_TOKEN
         - PORT_CLIENT_ID
@@ -422,6 +422,68 @@ Track CI/CD workflow performance and reliability metrics across your repositorie
 1. Ensure you have the same environment variables configured as other GitHub integrations
 2. Create a `githubWorkflow` blueprint in Port
 3. Run the workflow metrics collection
+
+## Sample Blueprint
+
+```json
+{
+  "identifier": "githubWorkflow",
+  "title": "GitHub Workflow",
+  "icon": "Github",
+  "schema": {
+    "properties": {
+      "workflowName": {
+        "type": "string",
+        "title": "Workflow Name",
+        "description": "Name of the GitHub workflow"
+      },
+      "repository": {
+        "type": "string",
+        "title": "Repository",
+        "description": "GitHub repository where the workflow is defined"
+      },
+      "successRate": {
+        "type": "number",
+        "title": "Success Rate (30 days)",
+        "description": "Percentage of successful workflow runs in the last 30 days"
+      },
+      "averageDuration": {
+        "type": "number",
+        "title": "Average Duration (minutes)",
+        "description": "Average execution time of the workflow in minutes"
+      },
+      "totalRuns": {
+        "type": "number",
+        "title": "Total Runs (30 days)",
+        "description": "Total number of workflow runs in the last 30 days"
+      },
+      "lastRunStatus": {
+        "type": "string",
+        "title": "Last Run Status",
+        "description": "Status of the most recent workflow run",
+        "enum": ["success", "failure", "cancelled", "skipped", "in_progress"]
+      },
+      "lastRunDate": {
+        "type": "string",
+        "format": "date-time",
+        "title": "Last Run Date",
+        "description": "Date and time of the most recent workflow run"
+      }
+    },
+    "required": ["workflowName", "repository"]
+  },
+  "mirrorProperties": {},
+  "calculationProperties": {},
+  "relations": {
+    "repository": {
+      "title": "Repository",
+      "target": "githubRepository",
+      "required": true,
+      "many": false
+    }
+  }
+}
+```
 
 # Coder Integration
 

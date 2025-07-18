@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { upsertEntity } from './port_client';
+import { upsertEntity } from './clients/port';
 import { getTemplates, getWorkspaces, createWorkspace } from './coder_client';
 
 async function main() {

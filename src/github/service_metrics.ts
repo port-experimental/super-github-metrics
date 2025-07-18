@@ -1,7 +1,6 @@
-import { Octokit } from '@octokit/rest';
 import _ from 'lodash';
-import { updateEntity } from './port_client';
-import { makeRequestWithRetry } from './utils';
+import { updateEntity } from '../clients/port';
+import { createGitHubClient } from '../clients/github';
 
 interface ServiceMetrics {
     repoId: string;
@@ -74,17 +73,14 @@ interface Repository {
 
 type TimePeriod = 1 | 7 | 30 | 60 | 90;
 
-// Using the shared makeRequestWithRetry implementation from utils.ts
-
 /**
  * Fetches all PRs for a repository within the specified time period
  */
 async function fetchRepositoryPRs(
-    octokit: Octokit, 
+    githubClient: any, 
     owner: string, 
     repoName: string,
-    daysBack: number,
-    authToken: string
+    daysBack: number
 ): Promise<any[]> {
     const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
     const allPRs: any[] = [];
@@ -92,20 +88,16 @@ async function fetchRepositoryPRs(
     let hasMore = true;
 
     while (hasMore) {
-        const { data: prs } = await makeRequestWithRetry(() => 
-            octokit.rest.pulls.list({
-                owner,
-                repo: repoName,
-                per_page: 100,
-                state: 'closed',
-                sort: 'created',
-                direction: 'desc',
-                page: page
-            }), authToken
-        );
+        const prs = await githubClient.getPullRequests(owner, repoName, {
+            state: 'closed',
+            sort: 'created',
+            direction: 'desc',
+            per_page: 100,
+            page: page
+        });
 
         // Filter PRs created within the specified time period
-        const recentPRs = prs.filter(pr => new Date(pr.created_at) > cutoffDate);
+        const recentPRs = prs.filter((pr: any) => new Date(pr.created_at) > cutoffDate);
         allPRs.push(...recentPRs);
 
         // If we got less than 100 PRs or the oldest PR is older than our cutoff, we're done
@@ -120,11 +112,10 @@ async function fetchRepositoryPRs(
  * Analyzes a single PR to extract review metrics
  */
 async function analyzePR(
-    octokit: Octokit,
+    githubClient: any,
     owner: string,
     repoName: string,
-    pr: any,
-    authToken: string
+    pr: any
 ): Promise<{
     isReviewed: boolean;
     isMerged: boolean;
@@ -136,13 +127,7 @@ async function analyzePR(
     const isSuccessful = isMerged; // A PR is successful if it was merged
     
     // Get reviews for this PR
-    const { data: reviews } = await makeRequestWithRetry(() =>
-        octokit.rest.pulls.listReviews({
-            owner,
-            repo: repoName,
-            pull_number: pr.number,
-        }), authToken
-    );
+    const reviews = await githubClient.getPullRequestReviews(owner, repoName, pr.number);
 
     const isReviewed = reviews.length > 0;
     const isMergedWithoutReview = isMerged && !isReviewed;
@@ -165,11 +150,10 @@ async function analyzePR(
  * Calculates review metrics for all PRs in a repository for a specific time period
  */
 async function calculateRepositoryReviewMetrics(
-    octokit: Octokit,
+    githubClient: any,
     owner: string,
     repoName: string,
-    prs: any[],
-    authToken: string
+    prs: any[]
 ): Promise<PRReviewData> {
     const metrics: PRReviewData = {
         totalPRs: 0,
@@ -184,7 +168,7 @@ async function calculateRepositoryReviewMetrics(
     for (const pr of prs) {
         metrics.totalPRs++;
         
-        const prAnalysis = await analyzePR(octokit, owner, repoName, pr, authToken);
+        const prAnalysis = await analyzePR(githubClient, owner, repoName, pr);
         
         if (prAnalysis.isMerged) {
             metrics.totalMergedPRs++;
@@ -330,11 +314,10 @@ function logServiceMetricsSummary(record: ServiceMetrics): void {
  * Processes service metrics for a single repository across all time periods
  */
 async function processRepositoryServiceMetrics(
-    octokit: Octokit,
+    githubClient: any,
     repo: Repository,
     repoIndex: number,
-    totalRepos: number,
-    authToken: string
+    totalRepos: number
 ): Promise<void> {
     console.log(`Processing service metrics for repo ${repo.name} (${repoIndex + 1}/${totalRepos})`);
     
@@ -344,10 +327,10 @@ async function processRepositoryServiceMetrics(
         
         for (const period of timePeriods) {
             console.log(`  Fetching PRs for ${period} day period...`);
-            const prs = await fetchRepositoryPRs(octokit, repo.owner.login, repo.name, period, authToken);
+            const prs = await fetchRepositoryPRs(githubClient, repo.owner.login, repo.name, period);
             console.log(`  Found ${prs.length} PRs in the last ${period} days for ${repo.name}`);
             
-            const reviewData = await calculateRepositoryReviewMetrics(octokit, repo.owner.login, repo.name, prs, authToken);
+            const reviewData = await calculateRepositoryReviewMetrics(githubClient, repo.owner.login, repo.name, prs);
             const finalMetrics = calculateFinalMetrics(reviewData);
             const periodMetrics = createTimePeriodMetrics(reviewData, finalMetrics, period);
             
@@ -368,11 +351,11 @@ async function processRepositoryServiceMetrics(
  * Main function to calculate and store service metrics for multiple repositories
  */
 export async function calculateAndStoreServiceMetrics(repos: Repository[], authToken: string): Promise<void> {
-    const octokit = new Octokit({ auth: authToken });
+    const githubClient = createGitHubClient(authToken);
     
     for (const [index, repo] of repos.entries()) {
         try {
-            await processRepositoryServiceMetrics(octokit, repo, index, repos.length, authToken);
+            await processRepositoryServiceMetrics(githubClient, repo, index, repos.length);
         } catch (error) {
             console.error(`Error processing repo ${repo.name}:`, error);
             // Continue with next repo instead of failing completely

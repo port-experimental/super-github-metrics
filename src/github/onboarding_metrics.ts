@@ -1,7 +1,6 @@
-import { Octokit } from '@octokit/rest';
-import { makeRequestWithRetry } from './utils';
 import _ from 'lodash';
-import { upsertEntity } from './port_client';
+import { upsertEntity } from '../clients/port';
+import { createGitHubClient } from '../clients/github';
 
 interface DeveloperStats {
     login: string;
@@ -17,38 +16,13 @@ interface DeveloperStats {
     initialReviewResponseTime: number | null;
 }
 
-/**
-* We can look up the join date to the org where the customer is using Github Enterprise
-* 
-* @param enterprise 
-* @param authToken 
-*/
 export async function getMemberAddDates(
     enterprise: string,
     authToken: string
 ): Promise<any[]> {
-    const octokit = new Octokit({ auth: authToken });
-    console.log(enterprise);
-
-    let data = await octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
-        enterprise,
-        phrase: "action:org.add_member",
-        include: "web",
-        per_page: 100,
-        order: 'desc',
-        headers: {
-            'X-GitHub-Api-Version': '2022-11-28'
-        }
-    });
-    
-    data = data.filter((x: any) => x.org_id === 177709801);
-    console.log(`Fetched ${data.length} audit log events`);
-    console.log(JSON.stringify(data));
-    
-    return data.map((x: any) => ({ user: x.user, userId: x.user_id, createdAt: x.created_at }));;
+    const githubClient = createGitHubClient(authToken);
+    return await githubClient.getMemberAddDates(enterprise);
 }
-
-// Using the shared makeRequestWithRetry implementation from utils.ts
 
 export async function calculateAndStoreDeveloperStats(
     orgNames: string[],
@@ -72,7 +46,7 @@ export async function getDeveloperStats(
     login: string,
     joinDate: string 
 ): Promise<DeveloperStats[]> {
-    const octokit = new Octokit({ auth: authToken });
+    const githubClient = createGitHubClient(authToken);
     const stats: DeveloperStats[] = [];
     
     try {
@@ -86,61 +60,31 @@ export async function getDeveloperStats(
         let allReviews: any[] = [];
         
         for (const orgName of orgNames) {
-            // Search for first commit with retry logic
-            const { data: commits } = await makeRequestWithRetry(() =>
-                octokit.request('GET /search/commits ', {
-                    q: `author:${login} org:${orgName} sort:committer-date-asc`,
-                    advanced_search: true,
-                    per_page: 10,
-                    page: 1,
-                    headers: {
-                        'If-None-Match': '', // Bypass cache to avoid stale results
-                        'Accept': 'application/vnd.github.v3+json' // Specify API version
-                    }
-                }), authToken
-            );
-
-            allCommits.push(...commits.items);
+            // Search for first commit
+            const commits = await githubClient.searchCommits(login, orgName);
+            allCommits.push(...commits);
             
-            // Search for first pull request with retry logic
-            const { data: pulls } = await makeRequestWithRetry(() =>
-                octokit.request('GET /search/issues ', {
-                    q: `author:${login} type:pr org:${orgName} is:merged`,
-                    advanced_search: true,
-                    sort: 'created',
-                    order: 'asc',
-                    per_page: 10,
-                    headers: {
-                        'If-None-Match': '', // Bypass cache to avoid stale results
-                        'Accept': 'application/vnd.github.v3+json' // Specify API version
-                    }
-                }), authToken
-            );
+            // Search for first pull request
+            const pulls = await githubClient.searchPullRequests(login, orgName);
+            allPulls.push(...pulls);
 
-            allPulls.push(...pulls.items);
-
-            // Search for reviews with retry logic
-            const { data: reviews } = await makeRequestWithRetry(() =>
-                octokit.request('GET /search/issues ', {
-                    q: `reviewed-by:${login} type:pr org:${orgName} review:approved`,
-                    advanced_search: true,
-                }), authToken
-            );
-            allReviews.push(...reviews.items);
+            // Search for reviews
+            const reviews = await githubClient.searchReviews(login, orgName);
+            allReviews.push(...reviews);
         }
 
-        allCommits.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+        allCommits.sort((a, b) => new Date(a.commit.author?.date || 0).getTime() - new Date(b.commit.author?.date || 0).getTime());
         if (allCommits.length > 0) {
-            firstCommitDate = allCommits.length > 0 ? allCommits[0].commit.author.date : null;
-            tenthCommitDate = allCommits.length > 9 ? allCommits[9].commit.author.date : null;
+            firstCommitDate = allCommits.length > 0 ? allCommits[0].commit.author?.date : null;
+            tenthCommitDate = allCommits.length > 9 ? allCommits[9].commit.author?.date : null;
         }
-        allPulls.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+        allPulls.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
         if (allPulls.length > 0) {
             firstPRDate = allPulls.length > 0 ? allPulls[0].created_at : null;
             tenthPRDate = allPulls.length > 9 ? allPulls[9].created_at : null;
         }
         
-        const firstReviewDate = allReviews.length > 0 ? allReviews.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0].created_at : null;
+        const firstReviewDate = allReviews.length > 0 ? allReviews.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0].created_at : null;
 
         
         const record: any = {

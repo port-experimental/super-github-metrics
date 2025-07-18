@@ -1,7 +1,6 @@
-import { Octokit } from '@octokit/rest';
 import _ from 'lodash';
-import { upsertProps } from './port_client';
-import { makeRequestWithRetry } from './utils';
+import { upsertProps } from '../clients/port';
+import { createGitHubClient } from '../clients/github';
 
 interface PRMetrics {
     repoId: string;
@@ -32,32 +31,22 @@ interface PRMetrics {
     
 }
 
-// Using the shared makeRequestWithRetry implementation from utils.ts
-
-const getNumberOfChangesAfterPRIsOpened = async (octokit: Octokit, owner: string, repo: string, prNumber: number, prCreationDate: Date, authToken: string): Promise<{
+const getNumberOfChangesAfterPRIsOpened = async (githubClient: any, owner: string, repo: string, prNumber: number, prCreationDate: Date): Promise<{
     numberOfLineChangesAfterPRIsOpened: number;
     numberOfCommitsAfterPRIsOpened: number;
 }> => {
-    const response = await makeRequestWithRetry(() => 
-        octokit.pulls.listCommits({
-            owner,
-            repo,
-            pull_number: prNumber,
-        }), authToken
-    );
-
-    const commits = response.data;
-    const changesAfterPRIsOpened = commits.filter(commit => commit.commit.author?.date && commit.stats?.total)
-        .filter(commit => new Date(commit.commit.author?.date!) > prCreationDate);
+    const commits = await githubClient.getPullRequestCommits(owner, repo, prNumber);
+    const changesAfterPRIsOpened = commits.filter((commit: any) => commit.commit.author?.date && commit.stats?.total)
+        .filter((commit: any) => new Date(commit.commit.author?.date!) > prCreationDate);
 
     return {
-        numberOfLineChangesAfterPRIsOpened: changesAfterPRIsOpened.reduce((acc, commit) => acc + commit.stats?.total!, 0),
+        numberOfLineChangesAfterPRIsOpened: changesAfterPRIsOpened.reduce((acc: number, commit: any) => acc + commit.stats?.total!, 0),
         numberOfCommitsAfterPRIsOpened: changesAfterPRIsOpened.length
     };
 }
 
 export async function calculateAndStorePRMetrics(repos: any[], authToken: string): Promise<void> {
-    const octokit = new Octokit({ auth: authToken });
+    const githubClient = createGitHubClient(authToken);
     for (const [index, repo] of repos.entries()) {
         console.log(`Processing repo ${repo.name} (${index + 1}/${repos.length})`);
         let page = 1;
@@ -65,39 +54,21 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
         const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
         while (hasMore) {
-            const { data: prs } = await makeRequestWithRetry(() => 
-                octokit.rest.pulls.list({
-                    owner: repo.owner.login,
-                    repo: repo.name,
-                    per_page: 100,
-                    state: 'closed',
-                    sort: 'created',
-                    direction: 'desc',
-                    page: page
-                }), authToken
-            );
+            const prs = await githubClient.getPullRequests(repo.owner.login, repo.name, {
+                state: 'closed',
+                sort: 'created',
+                direction: 'desc',
+                per_page: 100,
+                page: page
+            });
 
             // Filter PRs created in last 90 days
             const recentPRs = prs.filter(pr => new Date(pr.created_at) > ninetyDaysAgo);
             console.log(`Found ${recentPRs.length} PRs in the last 90 days`);
             for (const pr of recentPRs) {
-                const { data: prData } = await makeRequestWithRetry(() =>
-                    octokit.rest.pulls.get({
-                        owner: repo.owner.login,
-                        repo: repo.name,
-                        pull_number: pr.number,
-                    }), authToken
-                );
-    
-                const { data: reviews } = await makeRequestWithRetry(() =>
-                    octokit.rest.pulls.listReviews({
-                        owner: repo.owner.login,
-                        repo: repo.name,
-                        pull_number: pr.number,
-                    }), authToken
-                );
+                const prData = await githubClient.getPullRequest(repo.owner.login, repo.name, pr.number);
+                const reviews = await githubClient.getPullRequestReviews(repo.owner.login, repo.name, pr.number);
 
-    
                 const record: PRMetrics = {
                     repoId: repo.id,
                     repoName: repo.name,
@@ -109,12 +80,11 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
                     prFirstComment: reviews[0]?.submitted_at || null,
                     prFirstApproval: reviews.find(review => review.state === 'APPROVED')?.submitted_at || null,
                     ...(await getNumberOfChangesAfterPRIsOpened(
-                        octokit,
+                        githubClient,
                         repo.owner.login,
                         repo.name,
                         pr.number,
-                        new Date(pr.created_at),
-                        authToken
+                        new Date(pr.created_at)
                     )),
                     // times expressed in hours
                     prLifetime: pr.closed_at && pr.created_at ? (new Date(pr.closed_at).getTime() - new Date(pr.created_at).getTime()) / (1000 * 60 * 60) : 0,
@@ -124,7 +94,7 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
                     comments: prData.comments,
                     reviewComments: prData.review_comments,
                 };
-    
+
                 const props: Record<string, any> = _.chain(record)
                 .pick(['prSize', 'prLifetime', 'prPickupTime', 'prSuccessRate', 'reviewParticipation', 'numberOfLineChangesAfterPRIsOpened', 'numberOfCommitsAfterPRIsOpened'])
                 .mapKeys((_value, key) => _.snakeCase(key));

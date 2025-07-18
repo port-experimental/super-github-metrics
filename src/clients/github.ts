@@ -1,0 +1,340 @@
+import { Octokit } from '@octokit/rest';
+
+export interface Repository {
+    id: number;
+    name: string;
+    owner: {
+        login: string;
+    };
+    default_branch?: string;
+}
+
+export interface PullRequestBasic {
+    id: number;
+    number: number;
+    created_at: string;
+    closed_at?: string | null;
+    merged_at?: string | null;
+}
+
+export interface PullRequest extends PullRequestBasic {
+    additions: number;
+    deletions: number;
+    changed_files: number;
+    comments: number;
+    review_comments: number;
+}
+
+export interface PullRequestReview {
+    id: number;
+    state: string;
+    submitted_at?: string;
+}
+
+export interface Commit {
+    commit: {
+        author?: {
+            date?: string;
+        } | null;
+    };
+    stats?: {
+        total?: number;
+    };
+}
+
+export interface WorkflowRun {
+    id: number;
+    workflow_id: number;
+    name?: string | null;
+    conclusion?: string | null;
+    run_number: number;
+    run_started_at?: string | null;
+    updated_at?: string | null;
+    event: string;
+}
+
+export interface SearchResult<T> {
+    items: T[];
+}
+
+export interface AuditLogEntry {
+    user: string;
+    user_id: number;
+    created_at: string;
+    org_id: number;
+}
+
+export class GitHubClient {
+    private octokit: Octokit;
+    private authToken: string;
+
+    constructor(authToken: string) {
+        this.authToken = authToken;
+        this.octokit = new Octokit({ auth: authToken });
+    }
+
+    /**
+     * Check rate limits and wait if necessary
+     */
+    async checkRateLimits(): Promise<void> {
+        const resp = await this.octokit.rateLimit.get();
+        const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || "0");
+        const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || "") * 1000);
+        const secondsUntilReset = Math.floor((resetTime.getTime() - Date.now()) / 1000);
+        
+        if (remaining <= 5) { // Wait if we have 5 or fewer requests left
+            console.log(`Rate limit low (${remaining} requests left). Waiting ${secondsUntilReset} seconds until reset...`);
+            await new Promise(resolve => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
+            console.log('Rate limit reset, continuing...');
+        }
+    }
+
+    /**
+     * Makes a GitHub API request with exponential backoff retry logic and rate limit handling
+     */
+    async makeRequestWithRetry<T>(
+        requestFn: () => Promise<T>, 
+        maxRetries: number = 3
+    ): Promise<T> {
+        let lastError: any;
+        
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                // Check rate limits before making request
+                await this.checkRateLimits();
+                return await requestFn();
+            } catch (error: any) {
+                lastError = error;
+
+                // For rate limit errors, checkRateLimits should have handled this
+                // Only retry for other types of errors
+                if (error.status === 403 || error.status === 429) {
+                    console.log(`Rate limit error (${error.status}) - this should have been handled by checkRateLimits`);
+                    throw error; // Re-throw rate limit errors as they should be handled by checkRateLimits
+                }
+
+                // For other errors, retry with exponential backoff
+                if (attempt < maxRetries) {
+                    const waitTime = Math.pow(2, attempt) * 1000;
+                    console.log(`Request failed (${error.status}). Waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries + 1}`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                    continue;
+                }
+
+                // Max retries reached, throw the error
+                throw error;
+            }
+        }
+        
+        throw lastError;
+    }
+
+    /**
+     * Fetch all repositories for a given organization
+     */
+    async fetchOrganizationRepositories(orgName: string): Promise<Repository[]> {
+        const allRepos: Repository[] = [];
+        let page = 1;
+        let hasMore = true;
+
+        while (hasMore) {
+            const { data: orgRepos } = await this.makeRequestWithRetry(() =>
+                this.octokit.repos.listForOrg({
+                    org: orgName,
+                    sort: 'pushed', // default = direction: desc
+                    per_page: 100,
+                    page: page
+                })
+            );
+            
+            allRepos.push(...orgRepos);
+            console.log(`Fetched ${orgRepos.length} repos from ${orgName} (page ${page})`);
+            
+            // If we got less than 100 repos, we've reached the end
+            hasMore = orgRepos.length === 100;
+            page++;
+        }
+
+        return allRepos;
+    }
+
+    /**
+     * Get member add dates from enterprise audit log
+     */
+    async getMemberAddDates(enterprise: string): Promise<AuditLogEntry[]> {
+        console.log(enterprise);
+
+        let data = await this.octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
+            enterprise,
+            phrase: "action:org.add_member",
+            include: "web",
+            per_page: 100,
+            order: 'desc',
+            headers: {
+                'X-GitHub-Api-Version': '2022-11-28'
+            }
+        });
+        
+        data = data.filter((x: any) => x.org_id === 177709801);
+        console.log(`Fetched ${data.length} audit log events`);
+        console.log(JSON.stringify(data));
+        
+        return data.map((x: any) => ({ 
+            user: x.user, 
+            user_id: x.user_id, 
+            created_at: x.created_at, 
+            org_id: x.org_id 
+        }));
+    }
+
+    /**
+     * Search for commits by author and organization
+     */
+    async searchCommits(author: string, orgName: string): Promise<Commit[]> {
+        const { data: commits } = await this.makeRequestWithRetry(() =>
+            this.octokit.request('GET /search/commits ', {
+                q: `author:${author} org:${orgName} sort:committer-date-asc`,
+                advanced_search: true,
+                per_page: 10,
+                page: 1,
+                headers: {
+                    'If-None-Match': '', // Bypass cache to avoid stale results
+                    'Accept': 'application/vnd.github.v3+json' // Specify API version
+                }
+            })
+        );
+
+        return commits.items;
+    }
+
+    /**
+     * Search for pull requests by author and organization
+     */
+    async searchPullRequests(author: string, orgName: string): Promise<any[]> {
+        const { data: pulls } = await this.makeRequestWithRetry(() =>
+            this.octokit.request('GET /search/issues ', {
+                q: `author:${author} type:pr org:${orgName} is:merged`,
+                advanced_search: true,
+                sort: 'created',
+                order: 'asc',
+                per_page: 10,
+                headers: {
+                    'If-None-Match': '', // Bypass cache to avoid stale results
+                    'Accept': 'application/vnd.github.v3+json' // Specify API version
+                }
+            })
+        );
+
+        return pulls.items;
+    }
+
+    /**
+     * Search for reviews by reviewer and organization
+     */
+    async searchReviews(reviewer: string, orgName: string): Promise<any[]> {
+        const { data: reviews } = await this.makeRequestWithRetry(() =>
+            this.octokit.request('GET /search/issues ', {
+                q: `reviewed-by:${reviewer} type:pr org:${orgName} review:approved`,
+                advanced_search: true,
+            })
+        );
+        
+        return reviews.items;
+    }
+
+    /**
+     * Get pull requests for a repository (basic info only)
+     */
+    async getPullRequests(owner: string, repo: string, options: {
+        state?: 'open' | 'closed' | 'all';
+        sort?: 'created' | 'updated' | 'popularity' | 'long-running';
+        direction?: 'asc' | 'desc';
+        per_page?: number;
+        page?: number;
+    } = {}): Promise<PullRequestBasic[]> {
+        const { data: prs } = await this.makeRequestWithRetry(() =>
+            this.octokit.rest.pulls.list({
+                owner,
+                repo,
+                state: options.state || 'closed',
+                sort: options.sort || 'created',
+                direction: options.direction || 'desc',
+                per_page: options.per_page || 100,
+                page: options.page || 1
+            })
+        );
+
+        return prs;
+    }
+
+    /**
+     * Get a specific pull request
+     */
+    async getPullRequest(owner: string, repo: string, pullNumber: number): Promise<PullRequest> {
+        const { data: prData } = await this.makeRequestWithRetry(() =>
+            this.octokit.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pullNumber,
+            })
+        );
+
+        return prData;
+    }
+
+    /**
+     * Get reviews for a pull request
+     */
+    async getPullRequestReviews(owner: string, repo: string, pullNumber: number): Promise<PullRequestReview[]> {
+        const { data: reviews } = await this.makeRequestWithRetry(() =>
+            this.octokit.rest.pulls.listReviews({
+                owner,
+                repo,
+                pull_number: pullNumber,
+            })
+        );
+
+        return reviews;
+    }
+
+    /**
+     * Get commits for a pull request
+     */
+    async getPullRequestCommits(owner: string, repo: string, pullNumber: number): Promise<Commit[]> {
+        const response = await this.makeRequestWithRetry(() =>
+            this.octokit.pulls.listCommits({
+                owner,
+                repo,
+                pull_number: pullNumber,
+            })
+        );
+
+        return response.data;
+    }
+
+    /**
+     * Get workflow runs for a repository
+     */
+    async getWorkflowRuns(owner: string, repo: string, branch?: string): Promise<WorkflowRun[]> {
+        const { data: { workflow_runs: runs } } = await this.makeRequestWithRetry(() =>
+            this.octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
+                owner,
+                repo,
+                branch: branch,
+                exclude_pull_requests: true,
+                headers: {
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            })
+        );
+
+        return runs;
+    }
+}
+
+/**
+ * Factory function to create a GitHub client instance
+ */
+export function createGitHubClient(authToken: string): GitHubClient {
+    return new GitHubClient(authToken);
+}

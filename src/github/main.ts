@@ -2,58 +2,27 @@
 
 import { Command } from 'commander';
 
-import { getEntities } from './port_client';
+import { getEntities } from '../clients/port';
 import { getMemberAddDates, hasCompleteOnboardingMetrics, calculateAndStoreDeveloperStats } from './onboarding_metrics';
-import { checkRateLimits } from './utils';
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { getWorkflowMetrics } from './workflow_metrics';
 import { calculateAndStoreServiceMetrics } from './service_metrics';
-import { Octokit } from '@octokit/rest';
+import { createGitHubClient } from '../clients/github';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
   require('dotenv').config();
 }
 
 /**
- * Fetches all repositories for a given organization
- */
-async function fetchOrganizationRepositories(
-  octokit: Octokit, 
-  orgName: string
-): Promise<any[]> {
-  const allRepos: any[] = [];
-  let page = 1;
-  let hasMore = true;
-
-  while (hasMore) {
-    const { data: orgRepos } = await octokit.repos.listForOrg({
-      org: orgName,
-      sort: 'pushed', // default = direction: desc
-      per_page: 100,
-      page: page
-    });
-    
-    allRepos.push(...orgRepos);
-    console.log(`Fetched ${orgRepos.length} repos from ${orgName} (page ${page})`);
-    
-    // If we got less than 100 repos, we've reached the end
-    hasMore = orgRepos.length === 100;
-    page++;
-  }
-
-  return allRepos;
-}
-
-/**
  * Processes repositories for a specific organization
  */
 async function processOrganizationRepositories(
-  octokit: Octokit,
+  githubClient: any,
   orgName: string,
   processor: (repos: any[]) => Promise<void>
 ): Promise<void> {
   console.log(`Processing repositories for organization: ${orgName}`);
-  const repos = await fetchOrganizationRepositories(octokit, orgName);
+  const repos = await githubClient.fetchOrganizationRepositories(orgName);
   console.log(`Processing ${repos.length} repositories from ${orgName}`);
   await processor(repos);
 }
@@ -82,13 +51,14 @@ async function main() {
     .description('Send onboarding metrics to Port')
     .action(async () => {
       console.log('Calculating onboarding metrics...');
-      await checkRateLimits(AUTH_TOKEN);
+      const githubClient = createGitHubClient(AUTH_TOKEN);
+      await githubClient.checkRateLimits();
       const githubUsers = await getEntities('githubUser');
       console.log(`Found ${githubUsers.entities.length} github users in Port`);
       let joinRecords: any[] = [];
       // Try fetch join dates from the audit log
       try {
-        joinRecords = await getMemberAddDates(ENTERPRISE_NAME, AUTH_TOKEN);
+        joinRecords = await githubClient.getMemberAddDates(ENTERPRISE_NAME);
         console.log(`Found ${joinRecords.length} join records`);
       } catch (error) {
         if (error instanceof Error && 'status' in error && error.status === 403) {
@@ -108,7 +78,7 @@ async function main() {
       for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
         console.log(`Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`);
         try {
-          const joinDate = user.properties.join_date ? user.properties.join_date : joinRecords.find(record => record.user === user.identifier)?.createdAt;
+          const joinDate = user.properties.join_date ? user.properties.join_date : joinRecords.find(record => record.user === user.identifier)?.created_at;
           console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
           await calculateAndStoreDeveloperStats(GITHUB_ORGS, AUTH_TOKEN, user, joinDate);
           processedCount++;
@@ -140,11 +110,11 @@ async function main() {
     .action(async () => {
       try {
         console.log('Calculating PR metrics...');
-        await checkRateLimits(AUTH_TOKEN);
-        const octokit = new Octokit({ auth: AUTH_TOKEN });
+        const githubClient = createGitHubClient(AUTH_TOKEN);
+        await githubClient.checkRateLimits();
         
         for (const orgName of GITHUB_ORGS) {
-          await processOrganizationRepositories(octokit, orgName, async (repos) => {
+          await processOrganizationRepositories(githubClient, orgName, async (repos) => {
             await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
           });
         }
@@ -159,11 +129,11 @@ async function main() {
     .action(async () => {
       try {
         console.log('Calculating Workflows metrics...');
-        await checkRateLimits(AUTH_TOKEN);
-        const octokit = new Octokit({ auth: AUTH_TOKEN });
+        const githubClient = createGitHubClient(AUTH_TOKEN);
+        await githubClient.checkRateLimits();
         
         for (const orgName of GITHUB_ORGS) {
-          await processOrganizationRepositories(octokit, orgName, async (repos) => {
+          await processOrganizationRepositories(githubClient, orgName, async (repos) => {
             await getWorkflowMetrics(repos, AUTH_TOKEN);
           });
         }
@@ -178,11 +148,11 @@ async function main() {
     .action(async () => {
       try {
         console.log('Calculating Service metrics...');
-        await checkRateLimits(AUTH_TOKEN);
-        const octokit = new Octokit({ auth: AUTH_TOKEN });
+        const githubClient = createGitHubClient(AUTH_TOKEN);
+        await githubClient.checkRateLimits();
         
         for (const orgName of GITHUB_ORGS) {
-          await processOrganizationRepositories(octokit, orgName, async (repos) => {
+          await processOrganizationRepositories(githubClient, orgName, async (repos) => {
             await calculateAndStoreServiceMetrics(repos, AUTH_TOKEN);
           });
         }
@@ -191,23 +161,6 @@ async function main() {
       }
     });
 
-    // program
-    // .command('write-join-dates')
-    // .description('Write join dates to Port')
-    // .action(async () => {
-    //   console.log('Writing join dates to Port...');
-    //   const githubUsers = await getEntities('githubUser');
-    //   console.log(`Found ${githubUsers.entities.length} github users in Port`);
-    //   const rawData = JSON.parse(fs.readFileSync('../filtered_out.json', 'utf8'));
-
-    //   for (const user of githubUsers.entities) {
-    //     const userRecord = rawData.find((record: any) => record.user === user.identifier);
-    //     if (userRecord) {
-    //       console.log(`Found join date for ${user.identifier}: ${userRecord.created_at}`);
-    //       await upsertProps('githubUser', user.identifier, { join_date: new Date(userRecord.created_at).toISOString() });
-    //     }
-    //   }
-    // });
     await program.parseAsync();
     
   } catch (error) {

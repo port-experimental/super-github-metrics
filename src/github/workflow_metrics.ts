@@ -1,6 +1,5 @@
-import { Octokit } from '@octokit/rest';
-import { upsertProps } from './port_client';
-import { makeRequestWithRetry } from './utils';
+import { upsertProps } from '../clients/port';
+import { createGitHubClient } from '../clients/github';
 
 interface RepositoryWorkflowMetrics {
     repositoryName: string;
@@ -38,23 +37,13 @@ interface WorkflowRun {
 
 export async function getWorkflowMetrics(repos: any[], authToken: string): Promise<RepositoryWorkflowMetrics[]> {
     const workflowMetrics: RepositoryWorkflowMetrics[] = [];
+    const githubClient = createGitHubClient(authToken);
     
-    const octokit = new Octokit({ auth: authToken });
     for (const [index, repository] of repos.entries()) {
         console.log(`Getting workflow metrics for ${repository.name} (${index + 1}/${repos.length})`);
         const workflowMetricMap = new Map<string, WorkflowRun[]>();
         
-        const { data: { workflow_runs: runs } } = await makeRequestWithRetry(() => 
-            octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
-                owner: repository.owner.login,
-                repo: repository.name,
-                branch: repository.default_branch,
-                exclude_pull_requests: true,
-                headers: {
-                    'X-GitHub-Api-Version': '2022-11-28'
-                }
-            }), authToken
-        );
+        const runs = await githubClient.getWorkflowRuns(repository.owner.login, repository.name, repository.default_branch);
         
         for (const run of runs) {
             const workflowRun: WorkflowRun = {

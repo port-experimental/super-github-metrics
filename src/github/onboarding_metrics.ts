@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import { makeRequestWithRetry } from './utils';
 import _ from 'lodash';
 import { upsertEntity } from './port_client';
 
@@ -47,23 +48,7 @@ export async function getMemberAddDates(
     return data.map((x: any) => ({ user: x.user, userId: x.user_id, createdAt: x.created_at }));;
 }
 
-export async function getRepositories(
-    orgNames: string[],
-    authToken: string
-): Promise<any[]> {
-    const octokit = new Octokit({ auth: authToken });
-    const repos: any[] = [];
-    for (const orgName of orgNames) {
-        const { data: orgRepos } = await octokit.repos.listForOrg({
-            org: orgName,
-            sort: 'pushed', // default = direction: desc
-            per_page: 100,
-        });
-        repos.push(...orgRepos);
-    }
-    
-    return repos;
-}
+// Using the shared makeRequestWithRetry implementation from utils.ts
 
 export async function calculateAndStoreDeveloperStats(
     orgNames: string[],
@@ -101,32 +86,6 @@ export async function getDeveloperStats(
         let allReviews: any[] = [];
         
         for (const orgName of orgNames) {
-            // Helper function to make API requests with exponential backoff
-            const makeRequestWithRetry = async (requestFn: () => Promise<any>, maxRetries = 7) => {
-                let lastError: any;
-                for (let attempt = 0; attempt <= maxRetries; attempt++) {
-                    try {
-                        return await requestFn();
-                    } catch (error: any) {
-                        lastError = error;
-
-                        // Check if it's a rate limit or 403 error
-                        if (error.status === 403 || error.status === 429) {
-                            const retryAfter = error.response?.headers?.['retry-after'] || Math.pow(2, attempt);
-                            const waitTime = parseInt(retryAfter) * 1000; // Convert to milliseconds
-
-                            console.log(`Rate limited (${error.status}). Waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries + 1}`);
-                            await new Promise(resolve => setTimeout(resolve, waitTime));
-                            continue;
-                        }
-
-                        // For other errors, throw immediately
-                        throw error;
-                    }
-                }
-                throw lastError;
-            };
-
             // Search for first commit with retry logic
             const { data: commits } = await makeRequestWithRetry(() =>
                 octokit.request('GET /search/commits ', {
@@ -138,7 +97,7 @@ export async function getDeveloperStats(
                         'If-None-Match': '', // Bypass cache to avoid stale results
                         'Accept': 'application/vnd.github.v3+json' // Specify API version
                     }
-                })
+                }), authToken
             );
 
             allCommits.push(...commits.items);
@@ -155,7 +114,7 @@ export async function getDeveloperStats(
                         'If-None-Match': '', // Bypass cache to avoid stale results
                         'Accept': 'application/vnd.github.v3+json' // Specify API version
                     }
-                })
+                }), authToken
             );
 
             allPulls.push(...pulls.items);
@@ -165,7 +124,7 @@ export async function getDeveloperStats(
                 octokit.request('GET /search/issues ', {
                     q: `reviewed-by:${login} type:pr org:${orgName} review:approved`,
                     advanced_search: true,
-                })
+                }), authToken
             );
             allReviews.push(...reviews.items);
         }

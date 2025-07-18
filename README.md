@@ -1,6 +1,6 @@
 # Developer Onboarding Metrics
 
-## Overview
+## Overview 
 
 Want to see each developer's time to first and tenth commit and PR? Want to also persist their join date to your GitHub Org?
 

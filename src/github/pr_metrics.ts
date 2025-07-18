@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import _ from 'lodash';
 import { upsertProps } from './port_client';
+import { makeRequestWithRetry } from './utils';
 
 interface PRMetrics {
     repoId: string;
@@ -31,16 +32,19 @@ interface PRMetrics {
     
 }
 
-const getNumberOfChangesAfterPRIsOpened = async (octokit: Octokit, owner: string, repo: string, prNumber: number, prCreationDate: Date): Promise<{
+// Using the shared makeRequestWithRetry implementation from utils.ts
+
+const getNumberOfChangesAfterPRIsOpened = async (octokit: Octokit, owner: string, repo: string, prNumber: number, prCreationDate: Date, authToken: string): Promise<{
     numberOfLineChangesAfterPRIsOpened: number;
     numberOfCommitsAfterPRIsOpened: number;
 }> => {
-    const response = await octokit.pulls.listCommits({
-        owner,
-        repo,
-        pull_number: prNumber,
-        
-    })
+    const response = await makeRequestWithRetry(() => 
+        octokit.pulls.listCommits({
+            owner,
+            repo,
+            pull_number: prNumber,
+        }), authToken
+    );
 
     const commits = response.data;
     const changesAfterPRIsOpened = commits.filter(commit => commit.commit.author?.date && commit.stats?.total)
@@ -61,31 +65,37 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
         const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
         while (hasMore) {
-            const { data: prs } = await octokit.rest.pulls.list({
-                owner: repo.owner.login,
-                repo: repo.name,
-                per_page: 100,
-                state: 'closed',
-                sort: 'created',
-                direction: 'desc',
-                page: page
-            });
+            const { data: prs } = await makeRequestWithRetry(() => 
+                octokit.rest.pulls.list({
+                    owner: repo.owner.login,
+                    repo: repo.name,
+                    per_page: 100,
+                    state: 'closed',
+                    sort: 'created',
+                    direction: 'desc',
+                    page: page
+                }), authToken
+            );
 
             // Filter PRs created in last 90 days
             const recentPRs = prs.filter(pr => new Date(pr.created_at) > ninetyDaysAgo);
             console.log(`Found ${recentPRs.length} PRs in the last 90 days`);
             for (const pr of recentPRs) {
-                const { data: prData } = await octokit.rest.pulls.get({
-                    owner: repo.owner.login,
-                    repo: repo.name,
-                    pull_number: pr.number,
-                });
+                const { data: prData } = await makeRequestWithRetry(() =>
+                    octokit.rest.pulls.get({
+                        owner: repo.owner.login,
+                        repo: repo.name,
+                        pull_number: pr.number,
+                    }), authToken
+                );
     
-                const { data: reviews } = await octokit.rest.pulls.listReviews({
-                    owner: repo.owner.login,
-                    repo: repo.name,
-                    pull_number: pr.number,
-                });
+                const { data: reviews } = await makeRequestWithRetry(() =>
+                    octokit.rest.pulls.listReviews({
+                        owner: repo.owner.login,
+                        repo: repo.name,
+                        pull_number: pr.number,
+                    }), authToken
+                );
 
     
                 const record: PRMetrics = {
@@ -103,7 +113,8 @@ export async function calculateAndStorePRMetrics(repos: any[], authToken: string
                         repo.owner.login,
                         repo.name,
                         pr.number,
-                        new Date(pr.created_at)
+                        new Date(pr.created_at),
+                        authToken
                     )),
                     // times expressed in hours
                     prLifetime: pr.closed_at && pr.created_at ? (new Date(pr.closed_at).getTime() - new Date(pr.created_at).getTime()) / (1000 * 60 * 60) : 0,

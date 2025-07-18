@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import { upsertProps } from './port_client';
+import { makeRequestWithRetry } from './utils';
 
 interface RepositoryWorkflowMetrics {
     repositoryName: string;
@@ -33,7 +34,7 @@ interface WorkflowRun {
     workflowEvent: string;
 }
 
-
+// Using the shared makeRequestWithRetry implementation from utils.ts
 
 export async function getWorkflowMetrics(repos: any[], authToken: string): Promise<RepositoryWorkflowMetrics[]> {
     const workflowMetrics: RepositoryWorkflowMetrics[] = [];
@@ -42,15 +43,18 @@ export async function getWorkflowMetrics(repos: any[], authToken: string): Promi
     for (const [index, repository] of repos.entries()) {
         console.log(`Getting workflow metrics for ${repository.name} (${index + 1}/${repos.length})`);
         const workflowMetricMap = new Map<string, WorkflowRun[]>();
-        const { data: { workflow_runs: runs } } = await octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
-            owner: repository.owner.login,
-            repo: repository.name,
-            branch: repository.default_branch,
-            exclude_pull_requests: true,
-            headers: {
-                'X-GitHub-Api-Version': '2022-11-28'
-            }
-        });
+        
+        const { data: { workflow_runs: runs } } = await makeRequestWithRetry(() => 
+            octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
+                owner: repository.owner.login,
+                repo: repository.name,
+                branch: repository.default_branch,
+                exclude_pull_requests: true,
+                headers: {
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            }), authToken
+        );
         
         for (const run of runs) {
             const workflowRun: WorkflowRun = {
@@ -102,11 +106,12 @@ export async function getWorkflowMetrics(repos: any[], authToken: string): Promi
                     totalRuns_last_90_days: last90DaysRuns.length,
                     totalFailures_last_90_days: last90DaysRuns.filter(run => run.workflowStatus !== 'success').length,
                     successRate_last_90_days: last90DaysSuccessRuns.length / last90DaysRuns.length,
-                });
-            }
+                }
+            );
         }
-        
-        // Calculate metrics for each workflow
-        return workflowMetrics;
     }
+        
+    // Calculate metrics for each workflow
+    return workflowMetrics;
+}
     

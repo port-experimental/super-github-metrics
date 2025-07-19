@@ -10,6 +10,32 @@ This integration will help you import this data from GitHub into Port, from wher
 
 In order to fetch data on when each user joined your GitHub org, we need to query your Audit Log. This is only available to GitHub Enterprise users today.
 
+## Development
+
+### Code Quality
+
+This project uses [Biome](https://biomejs.dev/) for formatting and linting. Biome is a fast formatter and linter that replaces Prettier, ESLint, and other tools.
+
+#### Available Scripts
+
+- `npm run format` - Format all files
+- `npm run format:check` - Check if files are formatted (useful in CI)
+- `npm run lint` - Lint all files
+- `npm run lint:fix` - Fix auto-fixable linting issues
+- `npm run check` - Run both formatting and linting checks
+- `npm run check:fix` - Fix auto-fixable formatting and linting issues
+- `npm run check:fix-unsafe` - Apply all fixes including unsafe ones
+- `npm run pre-commit` - Run formatting and linting fixes (useful for pre-commit hooks)
+
+#### Configuration
+
+The Biome configuration is in `biome.json` and includes:
+- TypeScript support
+- Import organization
+- Consistent formatting (2 spaces, 100 char line width)
+- Recommended linting rules
+- Custom rules for code quality
+
 ## Setup
 
 1. Clone repo

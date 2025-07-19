@@ -7,7 +7,15 @@
     "workflow-metrics": "bun run src/github/main.ts workflow-metrics",
     "fetch-templates": "bun run src/main.ts fetch-templates",
     "fetch-workspaces": "bun run src/main.ts fetch-workspaces",
-    "create-workspace": "bun run src/main.ts create-workspace"
+    "create-workspace": "bun run src/main.ts create-workspace",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "check:fix-unsafe": "biome check --write --unsafe .",
+    "pre-commit": "biome check --write . && biome format --write ."
   },
   "dependencies": {
     "@octokit/rest": "^21.1.0",
@@ -17,6 +25,7 @@
     "lodash": "^4.17.21"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.1.2",
     "@jest/globals": "^29.7.0",
     "@types/jest": "^29.5.14",
     "@types/lodash": "^4.17.17",

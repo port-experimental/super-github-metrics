@@ -42,12 +42,16 @@ const getNumberOfChangesAfterPRIsOpened = async (
 }> => {
   const commits = await githubClient.getPullRequestCommits(owner, repo, prNumber);
   const changesAfterPRIsOpened = commits
-    .filter((commit: Commit) => commit.commit.author?.date && commit.stats?.total)
-    .filter((commit: Commit) => new Date(commit.commit.author?.date!) > prCreationDate);
+    .filter(
+      (commit: Commit) =>
+        commit.commit.author?.date &&
+        commit.stats?.total &&
+        new Date(commit.commit.author?.date) > prCreationDate
+    );
 
   return {
     numberOfLineChangesAfterPRIsOpened: changesAfterPRIsOpened.reduce(
-      (acc: number, commit: Commit) => acc + commit.stats?.total!,
+      (acc: number, commit: Commit) => acc + (commit.stats?.total ?? 0),
       0
     ),
     numberOfCommitsAfterPRIsOpened: changesAfterPRIsOpened.length,

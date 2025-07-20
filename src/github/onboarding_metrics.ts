@@ -8,7 +8,7 @@ import type {
   GitHubUser,
   MemberJoinRecord,
 } from '../types/github';
-import { PortEntity } from '../types/port';
+import type { PortEntity } from '../types/port';
 
 interface DeveloperStats {
   login: string;

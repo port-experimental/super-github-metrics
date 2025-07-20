@@ -1,4 +1,4 @@
-import { createGitHubClient, Repository } from '../clients/github';
+import { createGitHubClient, type Repository } from '../clients/github';
 import { upsertProps } from '../clients/port';
 import type { GitHubRepository } from '../types/github';
 

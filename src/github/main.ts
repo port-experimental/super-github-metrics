@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { AuditLogEntry, createGitHubClient, GitHubClient, Repository } from '../clients/github';
+import { createGitHubClient, type AuditLogEntry, type GitHubClient, type Repository } from '../clients/github';
 import { getEntities } from '../clients/port';
 import type { GitHubUser } from '../types/github';
 import {
@@ -11,7 +11,7 @@ import {
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { calculateAndStoreServiceMetrics } from './service_metrics';
 import { getWorkflowMetrics } from './workflow_metrics';
-import { PortEntity } from '../types/port';
+import type { PortEntity } from '../types/port';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
   require('dotenv').config();

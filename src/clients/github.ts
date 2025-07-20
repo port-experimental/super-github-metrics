@@ -128,7 +128,7 @@ export class GitHubClient {
    * Makes a GitHub API request with exponential backoff retry logic and rate limit handling
    */
   async makeRequestWithRetry<T>(requestFn: () => Promise<T>, maxRetries: number = 3): Promise<T> {
-    let lastError: Error;
+    let lastError: Error = new Error('Request failed after all retries');
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {

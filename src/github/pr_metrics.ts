@@ -134,7 +134,8 @@ export async function calculateAndStorePRMetrics(
             'numberOfLineChangesAfterPRIsOpened',
             'numberOfCommitsAfterPRIsOpened',
           ])
-          .mapKeys((_value, key) => _.snakeCase(key));
+          .mapKeys((_value, key) => _.snakeCase(key))
+          .value();
 
         try {
           await upsertProps(

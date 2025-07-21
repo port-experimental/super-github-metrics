@@ -975,13 +975,9 @@ npm run github-sync timeseries-service-metrics --period-type daily --days-back 3
 
 #### Automated Workflow
 
-The `collect_timeseries_service_metrics` workflow automatically runs:
+The `collect_timeseries_service_metrics` workflow automatically runs daily at 2 AM UTC to collect time-series metrics for dashboard visualizations.
 
-- **Daily metrics**: Every day at 2 AM UTC
-- **Weekly metrics**: Every Monday at 3 AM UTC  
-- **Monthly metrics**: On the 1st of every month at 4 AM UTC
-
-You can also manually trigger the workflow with custom parameters through the GitHub Actions UI.
+You can also manually trigger the workflow through the GitHub Actions UI.
 
 #### Migration from Aggregated Metrics
 

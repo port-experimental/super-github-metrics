@@ -1,83 +1,17 @@
 name: collect_timeseries_service_metrics
 on:
   workflow_dispatch:
-    inputs:
-      period_type:
-        description: 'Time period type to collect'
-        required: true
-        default: 'daily'
-        type: choice
-        options:
-          - daily
-          - weekly
-          - monthly
-      days_back:
-        description: 'Number of days to look back'
-        required: true
-        default: '90'
-        type: string
   schedule:
-    # Daily metrics - run every day at 2 AM UTC
     - cron: '0 2 * * *'
-    # Weekly metrics - run every Monday at 3 AM UTC
-    - cron: '0 3 * * 1'
-    # Monthly metrics - run on the 1st of every month at 4 AM UTC
-    - cron: '0 4 1 * *'
 
 jobs:
-  daily-metrics:
-    name: daily_timeseries_metrics
+  timeseries-metrics:
+    name: timeseries_service_metrics
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 2 * * *'
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - run: bun run timeseries-service-metrics --period-type daily --days-back 90
-        env:
-          X_GITHUB_ORGS: ${{ secrets.X_GITHUB_ORGS }}
-          X_GITHUB_ENTERPRISE: ${{ secrets.X_GITHUB_ENTERPRISE }}
-          X_GITHUB_TOKEN: ${{ secrets.X_GITHUB_AUTH_TOKEN }}
-          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
-          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
-
-  weekly-metrics:
-    name: weekly_timeseries_metrics
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 3 * * 1'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun run timeseries-service-metrics --period-type weekly --days-back 90
-        env:
-          X_GITHUB_ORGS: ${{ secrets.X_GITHUB_ORGS }}
-          X_GITHUB_ENTERPRISE: ${{ secrets.X_GITHUB_ENTERPRISE }}
-          X_GITHUB_TOKEN: ${{ secrets.X_GITHUB_AUTH_TOKEN }}
-          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
-          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
-
-  monthly-metrics:
-    name: monthly_timeseries_metrics
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && github.event.schedule == '0 4 1 * *'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun run timeseries-service-metrics --period-type monthly --days-back 90
-        env:
-          X_GITHUB_ORGS: ${{ secrets.X_GITHUB_ORGS }}
-          X_GITHUB_ENTERPRISE: ${{ secrets.X_GITHUB_ENTERPRISE }}
-          X_GITHUB_TOKEN: ${{ secrets.X_GITHUB_AUTH_TOKEN }}
-          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
-          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
-
-  manual-run:
-    name: manual_timeseries_metrics
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun run timeseries-service-metrics --period-type ${{ github.event.inputs.period_type }} --days-back ${{ github.event.inputs.days_back }}
+      - run: bun run timeseries-service-metrics
         env:
           X_GITHUB_ORGS: ${{ secrets.X_GITHUB_ORGS }}
           X_GITHUB_ENTERPRISE: ${{ secrets.X_GITHUB_ENTERPRISE }}

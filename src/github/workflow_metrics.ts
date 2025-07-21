@@ -119,7 +119,7 @@ export async function getWorkflowMetrics(
         totalRuns_last_30_days: last30DaysRuns.length,
         totalFailures_last_30_days: last30DaysRuns.filter((run) => run.workflowStatus !== 'success')
           .length,
-        successRate_last_30_days: last30DaysSuccessRuns.length / last30DaysRuns.length,
+        successRate_last_30_days: (last30DaysSuccessRuns.length / last30DaysRuns.length) * 100,
         medianDuration_last_90_days:
           last90DaysSuccessRuns[Math.floor(last90DaysSuccessRuns.length / 2)]
             ?.workflowRunDuration ?? 0,
@@ -137,7 +137,7 @@ export async function getWorkflowMetrics(
         totalRuns_last_90_days: last90DaysRuns.length,
         totalFailures_last_90_days: last90DaysRuns.filter((run) => run.workflowStatus !== 'success')
           .length,
-        successRate_last_90_days: last90DaysSuccessRuns.length / last90DaysRuns.length,
+        successRate_last_90_days: (last90DaysSuccessRuns.length / last90DaysRuns.length) * 100,
       });
     }
   }

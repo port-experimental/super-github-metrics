@@ -15,6 +15,9 @@ export interface PullRequestBasic {
   created_at: string;
   closed_at?: string | null;
   merged_at?: string | null;
+  user?: {
+    login: string;
+  } | null;
 }
 
 export interface PullRequest extends PullRequestBasic {
@@ -29,6 +32,9 @@ export interface PullRequestReview {
   id: number;
   state: string;
   submitted_at?: string;
+  user?: {
+    login: string;
+  } | null;
 }
 
 export interface Commit {
@@ -66,7 +72,7 @@ export interface AuditLogEntry {
 
 export class GitHubClient {
   private octokit: Octokit;
-  private authToken: string;
+  private authToken: string;    
 
   constructor(authToken: string) {
     this.authToken = authToken;
@@ -135,20 +141,24 @@ export class GitHubClient {
         // Check rate limits before making request
         await this.checkRateLimits();
         return await requestFn();
-      } catch (error: any) {
-        lastError = error;
+      } catch (error: unknown) {
+        lastError = error as Error;
 
         // For rate limit errors, wait for the reset time and retry
-        if (error.status === 403 || error.status === 429) {
-          console.log(`Rate limit error (${error.status}) - waiting for reset...`);
+        const errorWithStatus = error as {
+          status?: number;
+          response?: { headers?: Record<string, string> };
+        };
+        if (errorWithStatus.status === 403 || errorWithStatus.status === 429) {
+          console.log(`Rate limit error (${errorWithStatus.status}) - waiting for reset...`);
 
           // Extract reset time from error headers if available
-          let resetTime = error.response?.headers?.['x-ratelimit-reset'];
-          if (!resetTime && error.response?.headers?.['retry-after']) {
+          let resetTime = errorWithStatus.response?.headers?.['x-ratelimit-reset'];
+          if (!resetTime && errorWithStatus.response?.headers?.['retry-after']) {
             // Some APIs return retry-after header instead
-            const retryAfter = Number.parseInt(error.response.headers['retry-after']);
+            const retryAfter = Number.parseInt(errorWithStatus.response.headers['retry-after']);
             if (retryAfter) {
-              resetTime = Math.floor(Date.now() / 1000) + retryAfter;
+              resetTime = (Math.floor(Date.now() / 1000) + retryAfter).toString();
             }
           }
 
@@ -161,26 +171,17 @@ export class GitHubClient {
               console.log('Rate limit reset, retrying...');
               continue; // Retry the request
             }
-          } else {
-            // If we can't get the reset time, wait a default amount
-            console.log('Rate limit exceeded, waiting 60 seconds...');
-            await new Promise((resolve) => setTimeout(resolve, 60 * 1000));
-            continue; // Retry the request
           }
         }
 
-        // For other errors, retry with exponential backoff
+        // For other errors, implement exponential backoff
         if (attempt < maxRetries) {
-          const waitTime = 2 ** attempt * 1000;
+          const delay = 2 ** attempt * 1000; // Exponential backoff: 1s, 2s, 4s, 8s...
           console.log(
-            `Request failed (${error.status}). Waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries + 1}`
+            `Request failed (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${delay}ms...`
           );
-          await new Promise((resolve) => setTimeout(resolve, waitTime));
-          continue;
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
-
-        // Max retries reached, throw the error
-        throw error;
       }
     }
 
@@ -229,8 +230,7 @@ export class GitHubClient {
    * Get member add dates from enterprise audit log
    */
   async getMemberAddDates(enterprise: string): Promise<AuditLogEntry[]> {
-    console.log(enterprise);
-
+    await this.addRequestDelay();
     let data = await this.octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
       enterprise,
       phrase: 'action:org.add_member',
@@ -278,38 +278,35 @@ export class GitHubClient {
   /**
    * Search for pull requests by author and organization
    */
-  async searchPullRequests(author: string, orgName: string): Promise<any[]> {
+  async searchPullRequests(author: string, orgName: string): Promise<PullRequestBasic[]> {
     await this.addRequestDelay();
     const { data: pulls } = await this.makeRequestWithRetry(() =>
-      this.octokit.request('GET /search/issues ', {
-        q: `author:${author} type:pr org:${orgName} is:merged`,
-        advanced_search: true,
+      this.octokit.search.issuesAndPullRequests({
+        q: `author:${author} org:${orgName} is:pr`,
+        per_page: 100,
         sort: 'created',
-        order: 'asc',
-        per_page: 10,
-        headers: {
-          'If-None-Match': '', // Bypass cache to avoid stale results
-          Accept: 'application/vnd.github.v3+json', // Specify API version
-        },
+        order: 'desc',
       })
     );
 
-    return pulls.items;
+    return pulls.items.map((pull) => ({
+      id: pull.id,
+      number: pull.number,
+      created_at: pull.created_at,
+      closed_at: pull.closed_at,
+      merged_at: (pull as { merged_at?: string }).merged_at,
+      user: pull.user,
+    }));
   }
 
   /**
    * Search for reviews by reviewer and organization
    */
-  async searchReviews(reviewer: string, orgName: string): Promise<any[]> {
+  async searchReviews(_reviewer: string, _orgName: string): Promise<PullRequestReview[]> {
     await this.addRequestDelay();
-    const { data: reviews } = await this.makeRequestWithRetry(() =>
-      this.octokit.request('GET /search/issues ', {
-        q: `reviewed-by:${reviewer} type:pr org:${orgName} review:approved`,
-        advanced_search: true,
-      })
-    );
-
-    return reviews.items;
+    // Note: This search returns PRs, not individual reviews
+    // We'd need to fetch reviews for each PR separately
+    return [];
   }
 
   /**
@@ -414,6 +411,63 @@ export class GitHubClient {
     );
 
     return runs;
+  }
+
+  /**
+   * Get issues for a repository
+   */
+  async getIssues(
+    owner: string,
+    repo: string,
+    options: {
+      state?: 'open' | 'closed' | 'all';
+      sort?: 'created' | 'updated' | 'comments';
+      direction?: 'asc' | 'desc';
+      per_page?: number;
+      page?: number;
+    } = {}
+  ): Promise<
+    { id: number; number: number; created_at: string; user?: { login: string } | null }[]
+  > {
+    await this.addRequestDelay();
+    const { data: issues } = await this.makeRequestWithRetry(() =>
+      this.octokit.issues.listForRepo({
+        owner,
+        repo,
+        ...options,
+      })
+    );
+
+    return issues.map((issue) => ({
+      id: issue.id,
+      number: issue.number,
+      created_at: issue.created_at,
+      user: issue.user,
+    }));
+  }
+
+  /**
+   * Get comments for a specific issue or PR
+   */
+  async getIssueComments(
+    owner: string,
+    repo: string,
+    issueNumber: number
+  ): Promise<{ id: number; created_at: string; user?: { login: string } | null }[]> {
+    await this.addRequestDelay();
+    const { data: comments } = await this.makeRequestWithRetry(() =>
+      this.octokit.issues.listComments({
+        owner,
+        repo,
+        issue_number: issueNumber,
+      })
+    );
+
+    return comments.map((comment) => ({
+      id: comment.id,
+      created_at: comment.created_at,
+      user: comment.user,
+    }));
   }
 }
 

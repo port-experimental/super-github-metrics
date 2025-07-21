@@ -139,12 +139,27 @@ Track detailed metrics for individual pull requests including size, lifetime, re
       "pr_lifetime": {
         "type": "number",
         "title": "PR Lifetime",
-        "description": "Time from creation to close in hours"
+        "description": "Time from creation to close in days"
       },
       "pr_pickup_time": {
         "type": "number",
         "title": "PR Pickup Time",
-        "description": "Time from creation to first review in hours"
+        "description": "Time from creation to first review in days"
+      },
+      "pr_approve_time": {
+        "type": "number",
+        "title": "PR Approve Time",
+        "description": "Time from first review to first approval in days"
+      },
+      "pr_merge_time": {
+        "type": "number",
+        "title": "PR Merge Time",
+        "description": "Time from first approval to PR merge in days"
+      },
+      "pr_maturity": {
+        "type": "number",
+        "title": "PR Maturity",
+        "description": "Ratio of changes added after PR publication vs total changes (0.0 to 1.0)"
       },
       "pr_success_rate": {
         "type": "number",
@@ -190,10 +205,11 @@ For each time period (1, 7, 30, 60, and 90 days), the following metrics are calc
 - **Number of PRs Merged Without Review**: Count of PRs merged without any reviews
 - **Percentage of PRs Reviewed**: (reviewed PRs / total PRs) × 100
 - **Percentage of PRs Merged Without Review**: (merged without review / total merged PRs) × 100
-- **Average Time to First Review**: Average hours between PR creation and first review
+- **Average Time to First Review**: Average days between PR creation and first review
 - **PR Success Rate**: (successfully merged PRs / total PRs) × 100
 - **Total PRs**: Total number of PRs processed in the time period
 - **Total Merged PRs**: Total number of merged PRs in the time period
+- **Contribution Standard Deviation**: Standard deviation of the number of contributions per person (PRs, reviews, comments, issues)
 
 ## Time Periods
 
@@ -250,7 +266,7 @@ This allows you to track trends and identify both short-term and long-term patte
       "average_time_to_first_review_1d": {
         "type": "number",
         "title": "Average Time to First Review (1 day)",
-        "description": "Average hours between PR creation and first review in the last 24 hours"
+        "description": "Average days between PR creation and first review in the last 24 hours"
       },
       "pr_success_rate_1d": {
         "type": "number",
@@ -266,6 +282,11 @@ This allows you to track trends and identify both short-term and long-term patte
         "type": "number",
         "title": "Total Merged PRs (1 day)",
         "description": "Total number of merged PRs in the last 24 hours"
+      },
+      "contribution_standard_deviation_1d": {
+        "type": "number",
+        "title": "Contribution Standard Deviation (1 day)",
+        "description": "Standard deviation of the number of contributions per person in the last 24 hours"
       },
       "number_of_prs_reviewed_7d": {
         "type": "number",
@@ -290,7 +311,7 @@ This allows you to track trends and identify both short-term and long-term patte
       "average_time_to_first_review_7d": {
         "type": "number",
         "title": "Average Time to First Review (7 days)",
-        "description": "Average hours between PR creation and first review in the last 7 days"
+        "description": "Average days between PR creation and first review in the last 7 days"
       },
       "pr_success_rate_7d": {
         "type": "number",
@@ -306,6 +327,11 @@ This allows you to track trends and identify both short-term and long-term patte
         "type": "number",
         "title": "Total Merged PRs (7 days)",
         "description": "Total number of merged PRs in the last 7 days"
+      },
+      "contribution_standard_deviation_7d": {
+        "type": "number",
+        "title": "Contribution Standard Deviation (7 days)",
+        "description": "Standard deviation of the number of contributions per person in the last 7 days"
       },
       "number_of_prs_reviewed_30d": {
         "type": "number",
@@ -330,7 +356,7 @@ This allows you to track trends and identify both short-term and long-term patte
       "average_time_to_first_review_30d": {
         "type": "number",
         "title": "Average Time to First Review (30 days)",
-        "description": "Average hours between PR creation and first review in the last 30 days"
+        "description": "Average days between PR creation and first review in the last 30 days"
       },
       "pr_success_rate_30d": {
         "type": "number",
@@ -346,6 +372,11 @@ This allows you to track trends and identify both short-term and long-term patte
         "type": "number",
         "title": "Total Merged PRs (30 days)",
         "description": "Total number of merged PRs in the last 30 days"
+      },
+      "contribution_standard_deviation_30d": {
+        "type": "number",
+        "title": "Contribution Standard Deviation (30 days)",
+        "description": "Standard deviation of the number of contributions per person in the last 30 days"
       },
       "number_of_prs_reviewed_60d": {
         "type": "number",
@@ -370,7 +401,7 @@ This allows you to track trends and identify both short-term and long-term patte
       "average_time_to_first_review_60d": {
         "type": "number",
         "title": "Average Time to First Review (60 days)",
-        "description": "Average hours between PR creation and first review in the last 60 days"
+        "description": "Average days between PR creation and first review in the last 60 days"
       },
       "pr_success_rate_60d": {
         "type": "number",
@@ -386,6 +417,11 @@ This allows you to track trends and identify both short-term and long-term patte
         "type": "number",
         "title": "Total Merged PRs (60 days)",
         "description": "Total number of merged PRs in the last 60 days"
+      },
+      "contribution_standard_deviation_60d": {
+        "type": "number",
+        "title": "Contribution Standard Deviation (60 days)",
+        "description": "Standard deviation of the number of contributions per person in the last 60 days"
       },
       "number_of_prs_reviewed_90d": {
         "type": "number",
@@ -410,7 +446,7 @@ This allows you to track trends and identify both short-term and long-term patte
       "average_time_to_first_review_90d": {
         "type": "number",
         "title": "Average Time to First Review (90 days)",
-        "description": "Average hours between PR creation and first review in the last 90 days"
+        "description": "Average days between PR creation and first review in the last 90 days"
       },
       "pr_success_rate_90d": {
         "type": "number",
@@ -426,6 +462,11 @@ This allows you to track trends and identify both short-term and long-term patte
         "type": "number",
         "title": "Total Merged PRs (90 days)",
         "description": "Total number of merged PRs in the last 90 days"
+      },
+      "contribution_standard_deviation_90d": {
+        "type": "number",
+        "title": "Contribution Standard Deviation (90 days)",
+        "description": "Standard deviation of the number of contributions per person in the last 90 days"
       }
     },
     "required": []

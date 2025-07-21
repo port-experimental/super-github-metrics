@@ -1,5 +1,10 @@
 import _ from 'lodash';
-import { createGitHubClient, type GitHubClient, type Commit, type Repository } from '../clients/github';
+import {
+  type Commit,
+  createGitHubClient,
+  type GitHubClient,
+  type Repository,
+} from '../clients/github';
 import { upsertProps } from '../clients/port';
 
 interface PRMetrics {
@@ -8,10 +13,16 @@ interface PRMetrics {
   pullRequestId: string;
   // PR Size: Sum(lines added + lines deleted)
   prSize: number;
-  // PR Lifetime: (PR close timestamp) - (PR creation timestamp)
-  prLifetime: number;
-  // PR Pickup Time: (First review timestamp) - (PR creation timestamp)
-  prPickupTime: number;
+  // PR Lifetime: (PR close timestamp) - (PR creation timestamp) in days
+  prLifetime: number | null;
+  // PR Pickup Time: (First review timestamp) - (PR creation timestamp) in days
+  prPickupTime: number | null;
+  // PR Approve Time: (First approval timestamp) - (First review timestamp) in days
+  prApproveTime: number | null;
+  // PR Merge Time: (PR merge timestamp) - (First approval timestamp) in days
+  prMergeTime: number | null;
+  // PR Maturity: Ratio of changes added after PR publication vs total changes (0.0 to 1.0)
+  prMaturity: number;
   // PR Success Rate: (# of merged PRs / total # of closed PRs) × 100
   prSuccessRate: number;
   // Review Participation: Average reviewers per PR
@@ -41,13 +52,12 @@ const getNumberOfChangesAfterPRIsOpened = async (
   numberOfCommitsAfterPRIsOpened: number;
 }> => {
   const commits = await githubClient.getPullRequestCommits(owner, repo, prNumber);
-  const changesAfterPRIsOpened = commits
-    .filter(
-      (commit: Commit) =>
-        commit.commit.author?.date &&
-        commit.stats?.total &&
-        new Date(commit.commit.author?.date) > prCreationDate
-    );
+  const changesAfterPRIsOpened = commits.filter(
+    (commit: Commit) =>
+      commit.commit.author?.date &&
+      commit.stats?.total &&
+      new Date(commit.commit.author?.date) > prCreationDate
+  );
 
   return {
     numberOfLineChangesAfterPRIsOpened: changesAfterPRIsOpened.reduce(
@@ -89,6 +99,17 @@ export async function calculateAndStorePRMetrics(
           pr.number
         );
 
+        const prFirstApproval =
+          reviews.find((review) => review.state === 'APPROVED')?.submitted_at || null;
+
+        const changesAfterPR = await getNumberOfChangesAfterPRIsOpened(
+          githubClient,
+          repo.owner.login,
+          repo.name,
+          pr.number,
+          new Date(pr.created_at)
+        );
+
         const record: PRMetrics = {
           repoId: repo.id.toString(),
           repoName: repo.name,
@@ -98,26 +119,40 @@ export async function calculateAndStorePRMetrics(
           prDeletions: prData.deletions,
           prFilesChanged: prData.changed_files,
           prFirstComment: reviews[0]?.submitted_at || null,
-          prFirstApproval:
-            reviews.find((review) => review.state === 'APPROVED')?.submitted_at || null,
-          ...(await getNumberOfChangesAfterPRIsOpened(
-            githubClient,
-            repo.owner.login,
-            repo.name,
-            pr.number,
-            new Date(pr.created_at)
-          )),
-          // times expressed in hours
+          prFirstApproval,
+          ...changesAfterPR,
+          // times expressed in days
           prLifetime:
             pr.closed_at && pr.created_at
               ? (new Date(pr.closed_at).getTime() - new Date(pr.created_at).getTime()) /
-                (1000 * 60 * 60)
-              : 0,
+                (1000 * 60 * 60 * 24)
+              : null,
           prPickupTime:
             reviews.length > 0 && reviews[0].submitted_at && pr.created_at
               ? (new Date(reviews[0].submitted_at).getTime() - new Date(pr.created_at).getTime()) /
-                (1000 * 60 * 60)
-              : 0,
+                (1000 * 60 * 60 * 24)
+              : null,
+          prApproveTime:
+            reviews.length > 0 && reviews[0].submitted_at && prFirstApproval
+              ? (new Date(prFirstApproval).getTime() -
+                  new Date(reviews[0].submitted_at).getTime()) /
+                (1000 * 60 * 60 * 24)
+              : null,
+          prMergeTime:
+            prFirstApproval && pr.merged_at
+              ? (new Date(pr.merged_at).getTime() - new Date(prFirstApproval).getTime()) /
+                (1000 * 60 * 60 * 24)
+              : null,
+          prMaturity:
+            prData.additions + prData.deletions > 0
+              ? Math.max(
+                  0,
+                  (prData.additions +
+                    prData.deletions -
+                    changesAfterPR.numberOfLineChangesAfterPRIsOpened) /
+                    (prData.additions + prData.deletions)
+                )
+              : 1.0,
           prSuccessRate: pr.merged_at ? 1 : 0,
           reviewParticipation: reviews.length > 0 ? reviews.length : 0,
           comments: prData.comments,
@@ -129,6 +164,9 @@ export async function calculateAndStorePRMetrics(
             'prSize',
             'prLifetime',
             'prPickupTime',
+            'prApproveTime',
+            'prMergeTime',
+            'prMaturity',
             'prSuccessRate',
             'reviewParticipation',
             'numberOfLineChangesAfterPRIsOpened',

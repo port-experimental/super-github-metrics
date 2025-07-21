@@ -15,6 +15,7 @@ interface ServiceMetrics {
   prSuccessRate_1d: number;
   totalPRs_1d: number;
   totalMergedPRs_1d: number;
+  contributionStandardDeviation_1d: number;
   // 7 days metrics
   numberOfPRsReviewed_7d: number;
   numberOfPRsMergedWithoutReview_7d: number;
@@ -24,6 +25,7 @@ interface ServiceMetrics {
   prSuccessRate_7d: number;
   totalPRs_7d: number;
   totalMergedPRs_7d: number;
+  contributionStandardDeviation_7d: number;
   // 30 days metrics
   numberOfPRsReviewed_30d: number;
   numberOfPRsMergedWithoutReview_30d: number;
@@ -33,6 +35,7 @@ interface ServiceMetrics {
   prSuccessRate_30d: number;
   totalPRs_30d: number;
   totalMergedPRs_30d: number;
+  contributionStandardDeviation_30d: number;
   // 60 days metrics
   numberOfPRsReviewed_60d: number;
   numberOfPRsMergedWithoutReview_60d: number;
@@ -42,6 +45,7 @@ interface ServiceMetrics {
   prSuccessRate_60d: number;
   totalPRs_60d: number;
   totalMergedPRs_60d: number;
+  contributionStandardDeviation_60d: number;
   // 90 days metrics
   numberOfPRsReviewed_90d: number;
   numberOfPRsMergedWithoutReview_90d: number;
@@ -51,6 +55,7 @@ interface ServiceMetrics {
   prSuccessRate_90d: number;
   totalPRs_90d: number;
   totalMergedPRs_90d: number;
+  contributionStandardDeviation_90d: number;
 }
 
 interface PRReviewData {
@@ -72,6 +77,102 @@ interface Repository {
 }
 
 type TimePeriod = 1 | 7 | 30 | 60 | 90;
+
+/**
+ * Calculates the standard deviation of contribution counts
+ */
+function calculateContributionStandardDeviation(contributionCounts: number[]): number {
+  if (contributionCounts.length === 0) return 0;
+  if (contributionCounts.length === 1) return 0;
+
+  const mean =
+    contributionCounts.reduce((sum, count) => sum + count, 0) / contributionCounts.length;
+  const squaredDifferences = contributionCounts.map((count) => (count - mean) ** 2);
+  const variance =
+    squaredDifferences.reduce((sum, diff) => sum + diff, 0) / contributionCounts.length;
+
+  return Math.sqrt(variance);
+}
+
+/**
+ * Fetches all contributions for a repository within the specified time period
+ */
+async function fetchRepositoryContributions(
+  githubClient: GitHubClient,
+  owner: string,
+  repoName: string,
+  daysBack: number
+): Promise<Map<string, number>> {
+  const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+  const contributorCounts = new Map<string, number>();
+
+  // Fetch PRs and their reviews
+  const prs = await githubClient.getPullRequests(owner, repoName, {
+    state: 'all',
+    sort: 'created',
+    direction: 'desc',
+    per_page: 100,
+  });
+
+  const recentPRs = prs.filter((pr: PullRequestBasic) => new Date(pr.created_at) > cutoffDate);
+
+  for (const pr of recentPRs) {
+    // Count PR author
+    if (pr.user?.login) {
+      const currentCount = contributorCounts.get(pr.user.login) || 0;
+      contributorCounts.set(pr.user.login, currentCount + 1);
+    }
+
+    // Count PR reviewers
+    const reviews = await githubClient.getPullRequestReviews(owner, repoName, pr.number);
+    for (const review of reviews) {
+      if (review.user?.login) {
+        const currentCount = contributorCounts.get(review.user.login) || 0;
+        contributorCounts.set(review.user.login, currentCount + 1);
+      }
+    }
+
+    // Count PR commenters
+    const comments = await githubClient.getIssueComments(owner, repoName, pr.number);
+    for (const comment of comments) {
+      if (comment.user?.login) {
+        const currentCount = contributorCounts.get(comment.user.login) || 0;
+        contributorCounts.set(comment.user.login, currentCount + 1);
+      }
+    }
+  }
+
+  // Fetch issues and their comments
+  const issues = await githubClient.getIssues(owner, repoName, {
+    state: 'all',
+    sort: 'created',
+    direction: 'desc',
+    per_page: 100,
+  });
+
+  const recentIssues = issues.filter(
+    (issue: { created_at: string }) => new Date(issue.created_at) > cutoffDate
+  );
+
+  for (const issue of recentIssues) {
+    // Count issue author
+    if (issue.user?.login) {
+      const currentCount = contributorCounts.get(issue.user.login) || 0;
+      contributorCounts.set(issue.user.login, currentCount + 1);
+    }
+
+    // Count issue commenters
+    const comments = await githubClient.getIssueComments(owner, repoName, issue.number);
+    for (const comment of comments) {
+      if (comment.user?.login) {
+        const currentCount = contributorCounts.get(comment.user.login) || 0;
+        contributorCounts.set(comment.user.login, currentCount + 1);
+      }
+    }
+  }
+
+  return contributorCounts;
+}
 
 /**
  * Fetches all PRs for a repository within the specified time period
@@ -136,7 +237,7 @@ async function analyzePR(
   if (isReviewed && reviews[0].submitted_at && pr.created_at) {
     timeToFirstReview =
       (new Date(reviews[0].submitted_at).getTime() - new Date(pr.created_at).getTime()) /
-      (1000 * 60 * 60);
+      (1000 * 60 * 60 * 24);
   }
 
   return {
@@ -315,7 +416,7 @@ function logServiceMetricsSummary(record: ServiceMetrics): void {
       mergedWithoutReview,
       reviewPercentage: `${reviewPercentage.toFixed(2)}%`,
       mergedWithoutReviewPercentage: `${mergedWithoutReviewPercentage.toFixed(2)}%`,
-      avgTimeToReview: `${avgTimeToReview.toFixed(2)} hours`,
+      avgTimeToReview: `${avgTimeToReview.toFixed(2)} days`,
       successRate: `${successRate.toFixed(2)}%`,
     });
   });
@@ -349,6 +450,18 @@ async function processRepositoryServiceMetrics(
       );
       const finalMetrics = calculateFinalMetrics(reviewData);
       const periodMetrics = createTimePeriodMetrics(reviewData, finalMetrics, period);
+
+      // Calculate contribution standard deviation
+      console.log(`  Fetching contributions for ${period} day period...`);
+      const contributorCounts = await fetchRepositoryContributions(
+        githubClient,
+        repo.owner.login,
+        repo.name,
+        period
+      );
+      const contributionCounts = Array.from(contributorCounts.values());
+      const contributionStdDev = calculateContributionStandardDeviation(contributionCounts);
+      periodMetrics[`contributionStandardDeviation_${period}d`] = contributionStdDev;
 
       Object.assign(allTimePeriodMetrics, periodMetrics);
     }

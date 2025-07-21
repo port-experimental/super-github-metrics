@@ -26,8 +26,8 @@ export interface GitHubCommit {
 export interface GitHubPullRequest {
   number: number;
   created_at: string;
-  closed_at?: string;
-  merged_at?: string;
+  closed_at?: string | null;
+  merged_at?: string | null;
   user: {
     login: string;
   };

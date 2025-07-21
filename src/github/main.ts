@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { createGitHubClient, type AuditLogEntry, type GitHubClient, type Repository } from '../clients/github';
+import {
+  type AuditLogEntry,
+  createGitHubClient,
+  type GitHubClient,
+  type Repository,
+} from '../clients/github';
 import { getEntities } from '../clients/port';
 import type { GitHubUser } from '../types/github';
+import type { PortEntity } from '../types/port';
 import {
   calculateAndStoreDeveloperStats,
   hasCompleteOnboardingMetrics,
@@ -11,7 +17,6 @@ import {
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { calculateAndStoreServiceMetrics } from './service_metrics';
 import { getWorkflowMetrics } from './workflow_metrics';
-import type { PortEntity } from '../types/port';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
   require('dotenv').config();
@@ -103,9 +108,11 @@ async function main() {
               continue;
             }
 
-            const joinDate = (user.properties?.join_date
-              ? (user.properties.join_date as string)
-              : joinRecords.find((record) => record.user === user.identifier)?.created_at)!;
+            const joinDate =
+              (user.properties?.join_date
+                ? (user.properties.join_date as string)
+                : joinRecords.find((record) => record.user === user.identifier)?.created_at) ||
+              new Date().toISOString();
             console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
 
             // Convert PortEntity to GitHubUser format

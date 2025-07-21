@@ -515,13 +515,31 @@ export async function calculateAndStoreServiceMetrics(
   authToken: string
 ): Promise<void> {
   const githubClient = createGitHubClient(authToken);
+  let hasFatalError = false;
+  const failedRepos: string[] = [];
 
   for (const [index, repo] of repos.entries()) {
     try {
       await processRepositoryServiceMetrics(githubClient, repo, index, repos.length);
     } catch (error) {
       console.error(`Error processing repo ${repo.name}:`, error);
-      // Continue with next repo instead of failing completely
+      failedRepos.push(repo.name);
+      hasFatalError = true;
     }
+  }
+
+  // If all repositories failed, that's a fatal error
+  if (failedRepos.length === repos.length && repos.length > 0) {
+    throw new Error(`Failed to process any repositories. Failed repos: ${failedRepos.join(', ')}`);
+  }
+
+  // If some repositories failed, log a warning but don't fail the entire process
+  if (failedRepos.length > 0) {
+    console.warn(`Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`);
+  }
+
+  // If there were any fatal errors and no successful processing, throw an error
+  if (hasFatalError && failedRepos.length === repos.length) {
+    throw new Error('All repositories failed to process');
   }
 }

@@ -18,6 +18,16 @@ if (process.env.GITHUB_ACTIONS !== 'true') {
 }
 
 /**
+ * Custom error class for fatal errors that should cause the process to exit
+ */
+class FatalError extends Error {
+  constructor(message: string, public readonly originalError?: Error) {
+    super(message);
+    this.name = 'FatalError';
+  }
+}
+
+/**
  * Processes repositories for a specific organization
  */
 async function processOrganizationRepositories(
@@ -31,27 +41,41 @@ async function processOrganizationRepositories(
   await processor(repos);
 }
 
-async function main() {
+/**
+ * Validates required environment variables
+ */
+function validateEnvironment(): void {
   const PORT_CLIENT_ID = process.env.PORT_CLIENT_ID;
   const PORT_CLIENT_SECRET = process.env.PORT_CLIENT_SECRET;
   const AUTH_TOKEN = process.env.X_GITHUB_TOKEN;
   const ENTERPRISE_NAME = process.env.X_GITHUB_ENTERPRISE;
   const GITHUB_ORGS = process.env.X_GITHUB_ORGS?.split(',') || [];
 
-  if (
-    !PORT_CLIENT_ID ||
-    !PORT_CLIENT_SECRET ||
-    !AUTH_TOKEN ||
-    !ENTERPRISE_NAME ||
-    GITHUB_ORGS.length === 0
-  ) {
-    console.log(
-      'Please provide env vars PORT_CLIENT_ID, PORT_CLIENT_SECRET, X_GITHUB_TOKEN, X_GITHUB_ENTERPRISE, and X_GITHUB_ORGS'
-    );
-    process.exit(0);
-  }
+  const missingVars = [];
+  if (!PORT_CLIENT_ID) missingVars.push('PORT_CLIENT_ID');
+  if (!PORT_CLIENT_SECRET) missingVars.push('PORT_CLIENT_SECRET');
+  if (!AUTH_TOKEN) missingVars.push('X_GITHUB_TOKEN');
+  if (!ENTERPRISE_NAME) missingVars.push('X_GITHUB_ENTERPRISE');
+  if (GITHUB_ORGS.length === 0) missingVars.push('X_GITHUB_ORGS');
 
+  if (missingVars.length > 0) {
+    throw new FatalError(
+      `Missing required environment variables: ${missingVars.join(', ')}`
+    );
+  }
+}
+
+async function main() {
   try {
+    // Validate environment variables first
+    validateEnvironment();
+
+    const PORT_CLIENT_ID = process.env.PORT_CLIENT_ID!;
+    const PORT_CLIENT_SECRET = process.env.PORT_CLIENT_SECRET!;
+    const AUTH_TOKEN = process.env.X_GITHUB_TOKEN!;
+    const ENTERPRISE_NAME = process.env.X_GITHUB_ENTERPRISE!;
+    const GITHUB_ORGS = process.env.X_GITHUB_ORGS!.split(',');
+
     const program = new Command();
 
     program.name('github-sync').description('CLI to pull metrics from GitHub to Port');
@@ -60,87 +84,109 @@ async function main() {
       .command('onboarding-metrics')
       .description('Send onboarding metrics to Port')
       .action(async () => {
-        console.log('Calculating onboarding metrics...');
-        const githubClient = createGitHubClient(AUTH_TOKEN);
-        await githubClient.checkRateLimits();
-        const githubUsers = await getEntities('githubUser');
-        console.log(`Found ${githubUsers.entities.length} github users in Port`);
-        let joinRecords: AuditLogEntry[] = [];
-        // Try fetch join dates from the audit log
+        let hasFatalError = false;
+        
         try {
-          joinRecords = await githubClient.getMemberAddDates(ENTERPRISE_NAME);
-          console.log(`Found ${joinRecords.length} join records`);
-        } catch (error) {
-          if (error instanceof Error && 'status' in error && error.status === 403) {
-            console.log(
-              'Looks like insufficient permissions to query audit log. Skipping join records...'
-            );
-          }
-        }
-
-        // Only go over users without complete onboarding metrics in Port
-        const usersWithoutOnboardingMetrics = githubUsers.entities.filter(
-          (user: PortEntity) => !hasCompleteOnboardingMetrics(user)
-        );
-        console.log(
-          `Found ${usersWithoutOnboardingMetrics.length} users without complete onboarding metrics`
-        );
-
-        // For each user, get the onboarding metrics
-        let processedCount = 0;
-        let errorCount = 0;
-        const usersWithErrors: string[] = [];
-
-        for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
-          console.log(
-            `Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`
-          );
+          console.log('Calculating onboarding metrics...');
+          const githubClient = createGitHubClient(AUTH_TOKEN);
+          await githubClient.checkRateLimits();
+          const githubUsers = await getEntities('githubUser');
+          console.log(`Found ${githubUsers.entities.length} github users in Port`);
+          
+          let joinRecords: AuditLogEntry[] = [];
+          // Try fetch join dates from the audit log
           try {
-            // Ensure user has required properties
-            if (!user.identifier) {
-              console.error(`User missing identifier:`, user);
-              errorCount++;
-              continue;
-            }
-
-            const joinDate =
-              (user.properties?.join_date
-                ? (user.properties.join_date as string)
-                : joinRecords.find((record) => record.user === user.identifier)?.created_at) ||
-              new Date().toISOString();
-            console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
-
-            // Convert PortEntity to GitHubUser format
-            const githubUser: GitHubUser = {
-              identifier: user.identifier,
-              title: user.title,
-              properties: user.properties || {},
-              relations: user.relations || undefined,
-            };
-
-            await calculateAndStoreDeveloperStats(GITHUB_ORGS, AUTH_TOKEN, githubUser, joinDate);
-            processedCount++;
+            joinRecords = await githubClient.getMemberAddDates(ENTERPRISE_NAME);
+            console.log(`Found ${joinRecords.length} join records`);
           } catch (error) {
-            errorCount++;
-            if (user.identifier) {
-              usersWithErrors.push(user.identifier);
-            }
-            if (error instanceof TypeError) {
-              console.error(`TypeError processing developer ${user.identifier}:`, user);
+            if (error instanceof Error && 'status' in error && error.status === 403) {
+              console.log(
+                'Looks like insufficient permissions to query audit log. Skipping join records...'
+              );
             } else {
+              console.warn('Failed to fetch join records, continuing without them:', error);
+            }
+          }
+
+          // Only go over users without complete onboarding metrics in Port
+          const usersWithoutOnboardingMetrics = githubUsers.entities.filter(
+            (user: PortEntity) => !hasCompleteOnboardingMetrics(user)
+          );
+          console.log(
+            `Found ${usersWithoutOnboardingMetrics.length} users without complete onboarding metrics`
+          );
+
+          // For each user, get the onboarding metrics
+          let processedCount = 0;
+          let errorCount = 0;
+          const usersWithErrors: string[] = [];
+
+          for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
+            console.log(
+              `Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`
+            );
+            try {
+              // Ensure user has required properties
+              if (!user.identifier) {
+                console.error(`User missing identifier:`, user);
+                errorCount++;
+                continue;
+              }
+
+              const joinDate =
+                (user.properties?.join_date
+                  ? (user.properties.join_date as string)
+                  : joinRecords.find((record) => record.user === user.identifier)?.created_at) ||
+                new Date().toISOString();
+              console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
+
+              // Convert PortEntity to GitHubUser format
+              const githubUser: GitHubUser = {
+                identifier: user.identifier,
+                title: user.title,
+                properties: user.properties || {},
+                relations: user.relations || undefined,
+              };
+
+              await calculateAndStoreDeveloperStats(GITHUB_ORGS, AUTH_TOKEN, githubUser, joinDate);
+              processedCount++;
+            } catch (error) {
+              errorCount++;
+              if (user.identifier) {
+                usersWithErrors.push(user.identifier);
+              }
               console.error(`Error processing developer ${user.identifier}:`, error);
             }
           }
+
+          // Print summary
+          console.log('\n=== Processing Summary ===');
+          console.log(`Total users processed: ${processedCount}`);
+          console.log(`Users with errors: ${errorCount}`);
+
+          if (usersWithErrors.length > 0) {
+            console.log('\nUsers with errors:');
+            usersWithErrors.forEach((userId) => console.log(`- ${userId}`));
+          }
+
+          // If all users failed, that's a fatal error
+          if (processedCount === 0 && usersWithoutOnboardingMetrics.length > 0) {
+            hasFatalError = true;
+            throw new FatalError('Failed to process any users for onboarding metrics');
+          }
+
+        } catch (error) {
+          if (error instanceof FatalError) {
+            hasFatalError = true;
+            throw error;
+          }
+          console.error('Unexpected error in onboarding metrics:', error);
+          hasFatalError = true;
+          throw new FatalError('Unexpected error in onboarding metrics', error as Error);
         }
 
-        // Print summary
-        console.log('\n=== Processing Summary ===');
-        console.log(`Total users processed: ${processedCount}`);
-        console.log(`Users with errors: ${errorCount}`);
-
-        if (usersWithErrors.length > 0) {
-          console.log('\nUsers with errors:');
-          usersWithErrors.forEach((userId) => console.log(`- ${userId}`));
+        if (hasFatalError) {
+          process.exit(1);
         }
       });
 
@@ -148,18 +194,33 @@ async function main() {
       .command('pr-metrics')
       .description('Send PR metrics to Port')
       .action(async () => {
+        let hasFatalError = false;
+        
         try {
           console.log('Calculating PR metrics...');
           const githubClient = createGitHubClient(AUTH_TOKEN);
           await githubClient.checkRateLimits();
 
           for (const orgName of GITHUB_ORGS) {
-            await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-              await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
-            });
+            try {
+              await processOrganizationRepositories(githubClient, orgName, async (repos) => {
+                await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
+              });
+            } catch (error) {
+              console.error(`Error processing organization ${orgName}:`, error);
+              hasFatalError = true;
+            }
+          }
+
+          if (hasFatalError) {
+            throw new FatalError('Failed to process PR metrics for one or more organizations');
           }
         } catch (error) {
-          console.error('Error:', error);
+          if (error instanceof FatalError) {
+            throw error;
+          }
+          console.error('Unexpected error in PR metrics:', error);
+          throw new FatalError('Unexpected error in PR metrics', error as Error);
         }
       });
 
@@ -167,18 +228,33 @@ async function main() {
       .command('workflow-metrics')
       .description('Send GitHub Workflow metrics to Port')
       .action(async () => {
+        let hasFatalError = false;
+        
         try {
           console.log('Calculating Workflows metrics...');
           const githubClient = createGitHubClient(AUTH_TOKEN);
           await githubClient.checkRateLimits();
 
           for (const orgName of GITHUB_ORGS) {
-            await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-              await getWorkflowMetrics(repos, AUTH_TOKEN);
-            });
+            try {
+              await processOrganizationRepositories(githubClient, orgName, async (repos) => {
+                await getWorkflowMetrics(repos, AUTH_TOKEN);
+              });
+            } catch (error) {
+              console.error(`Error processing organization ${orgName}:`, error);
+              hasFatalError = true;
+            }
+          }
+
+          if (hasFatalError) {
+            throw new FatalError('Failed to process workflow metrics for one or more organizations');
           }
         } catch (error) {
-          console.error('Error:', error);
+          if (error instanceof FatalError) {
+            throw error;
+          }
+          console.error('Unexpected error in workflow metrics:', error);
+          throw new FatalError('Unexpected error in workflow metrics', error as Error);
         }
       });
 
@@ -186,27 +262,43 @@ async function main() {
       .command('service-metrics')
       .description('Send GitHub Service metrics to Port')
       .action(async () => {
+        let hasFatalError = false;
+        
         try {
           console.log('Calculating Service metrics...');
           const githubClient = createGitHubClient(AUTH_TOKEN);
           await githubClient.checkRateLimits();
 
           for (const orgName of GITHUB_ORGS) {
-            await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-              await calculateAndStoreServiceMetrics(
-                repos.map((repo) => ({ ...repo, id: repo.id.toString() })),
-                AUTH_TOKEN
-              );
-            });
+            try {
+              await processOrganizationRepositories(githubClient, orgName, async (repos) => {
+                await calculateAndStoreServiceMetrics(
+                  repos.map((repo) => ({ ...repo, id: repo.id.toString() })),
+                  AUTH_TOKEN
+                );
+              });
+            } catch (error) {
+              console.error(`Error processing organization ${orgName}:`, error);
+              hasFatalError = true;
+            }
+          }
+
+          if (hasFatalError) {
+            throw new FatalError('Failed to process service metrics for one or more organizations');
           }
         } catch (error) {
-          console.error('Error:', error);
+          if (error instanceof FatalError) {
+            throw error;
+          }
+          console.error('Unexpected error in service metrics:', error);
+          throw new FatalError('Unexpected error in service metrics', error as Error);
         }
       });
 
     await program.parseAsync();
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Fatal error:', error);
+    process.exit(1);
   }
 }
 

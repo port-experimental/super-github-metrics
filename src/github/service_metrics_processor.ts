@@ -43,15 +43,18 @@ export function groupPRsByPeriod(
 
     switch (periodType) {
       case 'daily':
-        periodKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+        // Format: YYYYMMDD (e.g., "20240115")
+        periodKey = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
         break;
       case 'weekly':
+        // Format: YYYYWW (e.g., "202403" for week 3 of 2024)
         const year = date.getFullYear();
         const week = Math.ceil((date.getTime() - new Date(year, 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
-        periodKey = `${year}-W${week.toString().padStart(2, '0')}`;
+        periodKey = `${year}${week.toString().padStart(2, '0')}`;
         break;
       case 'monthly':
-        periodKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        // Format: YYYYMM (e.g., "202401")
+        periodKey = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}`;
         break;
       default:
         continue;
@@ -98,7 +101,17 @@ export function createServiceMetricsEntity(
   repo: Repository,
   metrics: TimeSeriesMetrics
 ): ServiceMetricsEntity {
-  const identifier = `${repo.id}-${metrics.period}-${metrics.periodType}`;
+  // Create a compact identifier that fits within 30 characters
+  // Format: {repoId}{periodType}{period} (e.g., "123456789d20240115")
+  const repoId = repo.id.toString();
+  const periodType = metrics.periodType.charAt(0); // 'd' for daily, 'w' for weekly, 'm' for monthly
+  const period = metrics.period; // Already in compact format (YYYYMMDD, YYYYWW, or YYYYMM)
+  
+  // Ensure the identifier doesn't exceed 30 characters
+  const maxRepoIdLength = 30 - periodType.length - period.length;
+  const truncatedRepoId = repoId.length > maxRepoIdLength ? repoId.slice(-maxRepoIdLength) : repoId;
+  
+  const identifier = `${truncatedRepoId}${periodType}${period}`;
   const title = `${repo.name} - ${metrics.period}`;
 
   return {

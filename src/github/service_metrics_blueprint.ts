@@ -5,11 +5,11 @@ export const SERVICE_METRICS_BLUEPRINT = {
   icon: 'Chart',
   schema: {
     properties: {
-      // Time period identifier (e.g., "2024-01-15" for daily, "2024-W03" for weekly)
+      // Time period identifier (e.g., "20240115" for daily, "202403" for weekly, "202401" for monthly)
       period: {
         type: 'string',
         title: 'Time Period',
-        description: 'The time period this metric represents (YYYY-MM-DD for daily, YYYY-WNN for weekly, YYYY-MM for monthly)',
+        description: 'The time period this metric represents (YYYYMMDD for daily, YYYYWW for weekly, YYYYMM for monthly)',
       },
       period_type: {
         type: 'string',

@@ -849,7 +849,7 @@ Want to see a catalog of all of your Coder.com development workspaces and availa
       "period": {
         "type": "string",
         "title": "Time Period",
-        "description": "The time period this metric represents (YYYY-MM-DD for daily, YYYY-WNN for weekly, YYYY-MM for monthly)"
+        "description": "The time period this metric represents (YYYYMMDD for daily, YYYYWW for weekly, YYYYMM for monthly)"
       },
       "period_type": {
         "type": "string",

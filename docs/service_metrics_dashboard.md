@@ -121,16 +121,29 @@ Each time period contains the following metrics:
 ## Period Types
 
 ### Daily
-- Format: `YYYY-MM-DD` (e.g., "2024-01-15")
+- Format: `YYYYMMDD` (e.g., "20240115")
 - Best for: Detailed analysis and short-term trends
 
 ### Weekly
-- Format: `YYYY-WNN` (e.g., "2024-W03")
+- Format: `YYYYWW` (e.g., "202403" for week 3 of 2024)
 - Best for: Weekly reporting and medium-term trends
 
 ### Monthly
-- Format: `YYYY-MM` (e.g., "2024-01")
+- Format: `YYYYMM` (e.g., "202401")
 - Best for: Long-term trends and monthly reporting
+
+## Identifier Format
+
+Each service metrics entity has a compact identifier that fits within Port's 30-character limit:
+
+- **Format**: `{repoId}{periodType}{period}`
+- **Example**: `123456789d20240115` (repo ID 123456789, daily, January 15, 2024)
+- **Period Type Codes**: 
+  - `d` for daily
+  - `w` for weekly  
+  - `m` for monthly
+
+The identifier is automatically truncated if the repository ID is too long to fit within the 30-character limit.
 
 ## Data Retention
 

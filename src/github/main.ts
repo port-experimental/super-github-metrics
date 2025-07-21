@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
-import { getEntities } from '../clients/port';
+import { getEntities, PortClient } from '../clients/port';
 import type { GitHubUser, AuditLogEntry, Repository } from '../types/github';
 import type { PortEntity } from '../types/port';
 import {
@@ -11,7 +11,7 @@ import {
 } from './onboarding_metrics';
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { calculateAndStoreServiceMetrics } from './service_metrics';
-import { getWorkflowMetrics } from './workflow_metrics';
+import { calculateWorkflowMetrics } from './workflow_metrics';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
   require('dotenv').config();
@@ -231,12 +231,11 @@ async function main() {
           console.log('Calculating Workflows metrics...');
           const githubClient = createGitHubClient(AUTH_TOKEN);
           await githubClient.checkRateLimits();
+          const portClient = await PortClient.getInstance();
 
           for (const orgName of GITHUB_ORGS) {
             try {
-              await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-                await getWorkflowMetrics(repos, AUTH_TOKEN);
-              });
+              await calculateWorkflowMetrics(githubClient, portClient, orgName);
             } catch (error) {
               console.error(`Error processing organization ${orgName}:`, error);
               hasFatalError = true;

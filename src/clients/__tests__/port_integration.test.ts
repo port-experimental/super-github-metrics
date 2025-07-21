@@ -1,9 +1,20 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { PortClient } from '../port';
-import { mockAxios } from '../../__tests__/utils/mocks';
 
-// Mock axios
-jest.mock('axios', () => mockAxios);
+// Mock axios with proper typing
+const mockAxios = {
+  get: jest.fn<() => any>(),
+  post: jest.fn<() => any>(),
+  patch: jest.fn<() => any>(),
+  delete: jest.fn<() => any>(),
+  isAxiosError: jest.fn<() => any>(),
+};
+
+jest.mock('axios', () => ({
+  __esModule: true,
+  default: mockAxios,
+  isAxiosError: mockAxios.isAxiosError,
+}));
 
 // Mock environment variables
 const originalEnv = process.env;
@@ -26,8 +37,8 @@ describe('Port Client Integration', () => {
   describe('OAuth Token Management', () => {
     it('should handle OAuth token generation with expiresIn', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token-123',
-        expires_in: 3600, // 1 hour
+        accessToken: 'test-token-123',
+        expiresIn: 3600, // 1 hour
       };
 
       mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
@@ -59,13 +70,13 @@ describe('Port Client Integration', () => {
 
     it('should regenerate token when expired', async () => {
       const mockOAuthResponse1 = {
-        access_token: 'old-token',
-        expires_in: 3600,
+        accessToken: 'old-token',
+        expiresIn: 3600,
       };
 
       const mockOAuthResponse2 = {
-        access_token: 'new-token',
-        expires_in: 7200,
+        accessToken: 'new-token',
+        expiresIn: 7200,
       };
 
       mockAxios.post
@@ -114,8 +125,8 @@ describe('Port Client Integration', () => {
   describe('API Request Handling', () => {
     it('should make authenticated GET requests', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       const mockApiResponse = {
@@ -141,8 +152,8 @@ describe('Port Client Integration', () => {
 
     it('should make authenticated POST requests', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       const mockApiResponse = {
@@ -172,13 +183,13 @@ describe('Port Client Integration', () => {
 
     it('should retry requests with new token on 401 errors', async () => {
       const mockOAuthResponse1 = {
-        access_token: 'old-token',
-        expires_in: 3600,
+        accessToken: 'old-token',
+        expiresIn: 3600,
       };
 
       const mockOAuthResponse2 = {
-        access_token: 'new-token',
-        expires_in: 3600,
+        accessToken: 'new-token',
+        expiresIn: 3600,
       };
 
       const mockApiResponse = {
@@ -202,8 +213,8 @@ describe('Port Client Integration', () => {
 
     it('should handle non-401 errors without retry', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
@@ -219,8 +230,8 @@ describe('Port Client Integration', () => {
   describe('Entity Operations', () => {
     it('should upsert entity properties', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       const mockApiResponse = {
@@ -236,8 +247,8 @@ describe('Port Client Integration', () => {
       await client.upsertProps('github_user', 'test-user', properties);
 
       expect(mockAxios.patch).toHaveBeenCalledWith(
-        'https://api.getport.io/v1/entities/github_user/test-user',
-        properties,
+        'https://api.getport.io/v1/blueprints/github_user/entities/test-user',
+        { properties: { name: 'test', value: 123 } },
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer test-token',
@@ -248,8 +259,8 @@ describe('Port Client Integration', () => {
 
     it('should create new entities', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       const mockApiResponse = {
@@ -270,7 +281,7 @@ describe('Port Client Integration', () => {
       await client.createEntity('github_user', entity);
 
       expect(mockAxios.post).toHaveBeenCalledWith(
-        'https://api.getport.io/v1/entities',
+        'https://api.getport.io/v1/blueprints/github_user/entities',
         entity,
         expect.objectContaining({
           headers: expect.objectContaining({
@@ -282,8 +293,8 @@ describe('Port Client Integration', () => {
 
     it('should update existing entities', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       const mockApiResponse = {
@@ -303,7 +314,7 @@ describe('Port Client Integration', () => {
       await client.updateEntity('github_user', entity);
 
       expect(mockAxios.patch).toHaveBeenCalledWith(
-        'https://api.getport.io/v1/entities/github_user/test-user',
+        'https://api.getport.io/v1/blueprints/github_user/entities',
         entity,
         expect.objectContaining({
           headers: expect.objectContaining({
@@ -315,8 +326,8 @@ describe('Port Client Integration', () => {
 
     it('should delete all entities of a type', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
@@ -327,7 +338,7 @@ describe('Port Client Integration', () => {
       await client.deleteAllEntities('github_user');
 
       expect(mockAxios.delete).toHaveBeenCalledWith(
-        'https://api.getport.io/v1/entities/github_user',
+        'https://api.getport.io/v1/blueprints/github_user/entities',
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer test-token',
@@ -340,8 +351,8 @@ describe('Port Client Integration', () => {
   describe('Static Methods', () => {
     it('should provide static access to entity operations', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       const mockApiResponse = {
@@ -354,8 +365,8 @@ describe('Port Client Integration', () => {
       await PortClient.upsertProps('github_user', 'test-user', { name: 'test' });
 
       expect(mockAxios.patch).toHaveBeenCalledWith(
-        'https://api.getport.io/v1/entities/github_user/test-user',
-        { name: 'test' },
+        'https://api.getport.io/v1/blueprints/github_user/entities/test-user',
+        { properties: { name: 'test' } },
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer test-token',
@@ -366,8 +377,8 @@ describe('Port Client Integration', () => {
 
     it('should handle concurrent static method calls', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       mockAxios.post.mockResolvedValue({ data: mockOAuthResponse });
@@ -400,8 +411,8 @@ describe('Port Client Integration', () => {
 
     it('should handle network errors', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
@@ -414,8 +425,8 @@ describe('Port Client Integration', () => {
 
     it('should handle malformed API responses', async () => {
       const mockOAuthResponse = {
-        access_token: 'test-token',
-        expires_in: 3600,
+        accessToken: 'test-token',
+        expiresIn: 3600,
       };
 
       mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });

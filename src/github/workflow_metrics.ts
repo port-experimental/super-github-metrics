@@ -103,6 +103,14 @@ export async function getWorkflowMetrics(
         const last90DaysSuccessRuns = last90DaysRuns.filter(
           (run) => run.workflowStatus === 'success'
         );
+        
+        // Filter runs to only include success and failure (exclude cancelled, skipped, etc.)
+        const last30DaysCompletedRuns = last30DaysRuns.filter(
+          (run) => run.workflowStatus === 'success' || run.workflowStatus === 'failure'
+        );
+        const last90DaysCompletedRuns = last90DaysRuns.filter(
+          (run) => run.workflowStatus === 'success' || run.workflowStatus === 'failure'
+        );
 
         try {
           await upsertProps('githubWorkflow', `${repository.name}${workflowRuns[0].workflowId}`, {
@@ -120,11 +128,13 @@ export async function getWorkflowMetrics(
             meanDuration_last_30_days:
               last30DaysSuccessRuns.reduce((acc, run) => acc + run.workflowRunDuration, 0) /
               last30DaysSuccessRuns.length,
-            totalRuns_last_30_days: last30DaysRuns.length,
-            totalFailures_last_30_days: last30DaysRuns.filter(
-              (run) => run.workflowStatus !== 'success'
+            totalRuns_last_30_days: last30DaysCompletedRuns.length,
+            totalFailures_last_30_days: last30DaysCompletedRuns.filter(
+              (run) => run.workflowStatus === 'failure'
             ).length,
-            successRate_last_30_days: (last30DaysSuccessRuns.length / last30DaysRuns.length) * 100,
+            successRate_last_30_days: last30DaysCompletedRuns.length > 0 
+              ? (last30DaysSuccessRuns.length / last30DaysCompletedRuns.length) * 100 
+              : 0,
             medianDuration_last_90_days:
               last90DaysSuccessRuns[Math.floor(last90DaysSuccessRuns.length / 2)]
                 ?.workflowRunDuration ?? 0,
@@ -139,11 +149,13 @@ export async function getWorkflowMetrics(
             meanDuration_last_90_days:
               last90DaysSuccessRuns.reduce((acc, run) => acc + run.workflowRunDuration, 0) /
               last90DaysSuccessRuns.length,
-            totalRuns_last_90_days: last90DaysRuns.length,
-            totalFailures_last_90_days: last90DaysRuns.filter(
-              (run) => run.workflowStatus !== 'success'
+            totalRuns_last_90_days: last90DaysCompletedRuns.length,
+            totalFailures_last_90_days: last90DaysCompletedRuns.filter(
+              (run) => run.workflowStatus === 'failure'
             ).length,
-            successRate_last_90_days: (last90DaysSuccessRuns.length / last90DaysRuns.length) * 100,
+            successRate_last_90_days: last90DaysCompletedRuns.length > 0 
+              ? (last90DaysSuccessRuns.length / last90DaysCompletedRuns.length) * 100 
+              : 0,
           });
         } catch (error) {
           console.error(`Failed to update workflow metrics for ${repository.name}:`, error);
@@ -184,32 +196,127 @@ export async function calculateWorkflowMetrics(
   orgName: string
 ): Promise<void> {
   const repos = await githubClient.fetchOrganizationRepositories(orgName);
-  const workflowMetrics = await getWorkflowMetrics(repos, 'dummy-token'); // We'll need to pass the actual token
   
-  // Store the metrics using the port client
-  for (const metric of workflowMetrics) {
-    await portClient.upsertProps({
-      identifier: `${metric.repositoryName}-${metric.workflowId}`,
-      title: `${metric.repositoryName} - ${metric.workflowName}`,
-      properties: {
-        repositoryName: metric.repositoryName,
-        workflowId: metric.workflowId,
-        workflowName: metric.workflowName,
-        medianDuration_last_30_days: metric.medianDuration_last_30_days,
-        maxDuration_last_30_days: metric.maxDuration_last_30_days,
-        minDuration_last_30_days: metric.minDuration_last_30_days,
-        meanDuration_last_30_days: metric.meanDuration_last_30_days,
-        totalRuns_last_30_days: metric.totalRuns_last_30_days,
-        totalFailures_last_30_days: metric.totalFailures_last_30_days,
-        successRate_last_30_days: metric.successRate_last_30_days,
-        medianDuration_last_90_days: metric.medianDuration_last_90_days,
-        maxDuration_last_90_days: metric.maxDuration_last_90_days,
-        minDuration_last_90_days: metric.minDuration_last_90_days,
-        meanDuration_last_90_days: metric.meanDuration_last_90_days,
-        totalRuns_last_90_days: metric.totalRuns_last_90_days,
-        totalFailures_last_90_days: metric.totalFailures_last_90_days,
-        successRate_last_90_days: metric.successRate_last_90_days,
-      },
-    });
+  // Process each repository directly instead of calling getWorkflowMetrics
+  for (const repository of repos) {
+    try {
+      console.log(`Getting workflow metrics for ${repository.name}`);
+      const workflowMetricMap = new Map<string, WorkflowRun[]>();
+
+      const runs = await githubClient.getWorkflowRuns(
+        repository.owner.login,
+        repository.name,
+        repository.default_branch
+      );
+
+      for (const run of runs) {
+        const workflowRun: WorkflowRun = {
+          workflowRunId: run.id.toString(),
+          workflowId: run.workflow_id.toString(),
+          workflowName: run.name ?? '',
+          workflowStatus: run.conclusion ?? '',
+          workflowRunNumber: run.run_number.toString(),
+          workflowRunStartedAt: run.run_started_at ?? '',
+          workflowRunCompletedAt: run.updated_at ?? '',
+          // in seconds
+          workflowRunDuration:
+            run.updated_at && run.run_started_at
+              ? (new Date(run.updated_at).getTime() - new Date(run.run_started_at).getTime()) / 1000
+              : 0,
+          workflowEvent: run.event,
+        };
+
+        // Add the workflow run to the map
+        const workflowRuns = workflowMetricMap.get(run.workflow_id.toString()) || [];
+        workflowRuns.push(workflowRun);
+        workflowMetricMap.set(run.workflow_id.toString(), workflowRuns);
+      }
+
+      // Calculate metrics for each workflow
+      for (const [_workflowId, workflowRuns] of workflowMetricMap.entries()) {
+        if (workflowRuns.length === 0) {
+          continue;
+        }
+
+        const sortedRuns = workflowRuns.sort(
+          (a, b) =>
+            new Date(a.workflowRunStartedAt).getTime() - new Date(b.workflowRunStartedAt).getTime()
+        );
+        const last30DaysRuns = sortedRuns.filter(
+          (run) =>
+            new Date(run.workflowRunStartedAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        );
+        const last90DaysRuns = sortedRuns.filter(
+          (run) =>
+            new Date(run.workflowRunStartedAt) > new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+        );
+        const last30DaysSuccessRuns = last30DaysRuns.filter(
+          (run) => run.workflowStatus === 'success'
+        );
+        const last90DaysSuccessRuns = last90DaysRuns.filter(
+          (run) => run.workflowStatus === 'success'
+        );
+        
+        // Filter runs to only include success and failure (exclude cancelled, skipped, etc.)
+        const last30DaysCompletedRuns = last30DaysRuns.filter(
+          (run) => run.workflowStatus === 'success' || run.workflowStatus === 'failure'
+        );
+        const last90DaysCompletedRuns = last90DaysRuns.filter(
+          (run) => run.workflowStatus === 'success' || run.workflowStatus === 'failure'
+        );
+
+        // Store the metrics using the provided port client
+        await portClient.upsertProps('githubWorkflow', `${repository.name}-${workflowRuns[0].workflowId}`, {
+          repositoryName: repository.name,
+          workflowId: workflowRuns[0].workflowId,
+          workflowName: workflowRuns[0].workflowName,
+          medianDuration_last_30_days:
+            last30DaysSuccessRuns[Math.floor(last30DaysSuccessRuns.length / 2)]
+              ?.workflowRunDuration ?? 0,
+          maxDuration_last_30_days: last30DaysSuccessRuns.reduce(
+            (acc, run) => Math.max(acc, run.workflowRunDuration),
+            0
+          ),
+          minDuration_last_30_days: last30DaysSuccessRuns.reduce(
+            (acc, run) => Math.min(acc, run.workflowRunDuration),
+            0
+          ),
+          meanDuration_last_30_days:
+            last30DaysSuccessRuns.reduce((acc, run) => acc + run.workflowRunDuration, 0) /
+            last30DaysSuccessRuns.length,
+          totalRuns_last_30_days: last30DaysCompletedRuns.length,
+          totalFailures_last_30_days: last30DaysCompletedRuns.filter(
+            (run) => run.workflowStatus === 'failure'
+          ).length,
+          successRate_last_30_days: last30DaysCompletedRuns.length > 0 
+            ? (last30DaysSuccessRuns.length / last30DaysCompletedRuns.length) * 100 
+            : 0,
+          medianDuration_last_90_days:
+            last90DaysSuccessRuns[Math.floor(last90DaysSuccessRuns.length / 2)]
+              ?.workflowRunDuration ?? 0,
+          maxDuration_last_90_days: last90DaysSuccessRuns.reduce(
+            (acc, run) => Math.max(acc, run.workflowRunDuration),
+            0
+          ),
+          minDuration_last_90_days: last90DaysSuccessRuns.reduce(
+            (acc, run) => Math.min(acc, run.workflowRunDuration),
+            0
+          ),
+          meanDuration_last_90_days:
+            last90DaysSuccessRuns.reduce((acc, run) => acc + run.workflowRunDuration, 0) /
+            last90DaysSuccessRuns.length,
+          totalRuns_last_90_days: last90DaysCompletedRuns.length,
+          totalFailures_last_90_days: last90DaysCompletedRuns.filter(
+            (run) => run.workflowStatus === 'failure'
+          ).length,
+          successRate_last_90_days: last90DaysCompletedRuns.length > 0 
+            ? (last90DaysSuccessRuns.length / last90DaysCompletedRuns.length) * 100 
+            : 0,
+        });
+      }
+    } catch (error) {
+      console.error(`Error processing workflow metrics for repo ${repository.name}:`, error);
+      // Continue with next repository instead of failing the entire process
+    }
   }
 }

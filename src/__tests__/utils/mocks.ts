@@ -12,6 +12,41 @@ import type {
 import type { PortEntity, PortEntitiesResponse, PortEntityResponse } from '../../types/port';
 import { createGitHubClient } from '../../clients/github';
 
+// Mock axios with simplified typing - moved to top to fix import order
+export const mockAxios: any = {
+  get: jest.fn(),
+  post: jest.fn(),
+  patch: jest.fn(),
+  delete: jest.fn(),
+  isAxiosError: jest.fn(),
+};
+
+// Mock Octokit with simplified typing
+export const mockOctokit: any = {
+  rest: {
+    pulls: {
+      list: jest.fn(),
+      get: jest.fn(),
+      listReviews: jest.fn(),
+    },
+    repos: {
+      listCommits: jest.fn(),
+      listForOrg: jest.fn(),
+    },
+    rateLimit: {
+      get: jest.fn(),
+    },
+  },
+  paginate: jest.fn(),
+  request: jest.fn(),
+  search: {
+    issuesAndPullRequests: jest.fn(),
+  },
+  pulls: {
+    listCommits: jest.fn(),
+  },
+};
+
 // Mock GitHub API responses
 export const mockRepository: Repository = {
   id: 123456,
@@ -193,39 +228,4 @@ export const createMockPortClient = (): any => {
     getInstance: jest.fn<() => Promise<typeof mockInstance>>().mockResolvedValue(mockInstance),
     ...mockInstance,
   };
-};
-
-// Mock axios with simplified typing
-export const mockAxios: any = {
-  get: jest.fn(),
-  post: jest.fn(),
-  patch: jest.fn(),
-  delete: jest.fn(),
-  isAxiosError: jest.fn(),
-};
-
-// Mock Octokit with simplified typing
-export const mockOctokit: any = {
-  rest: {
-    pulls: {
-      list: jest.fn(),
-      get: jest.fn(),
-      listReviews: jest.fn(),
-    },
-    repos: {
-      listCommits: jest.fn(),
-      listForOrg: jest.fn(),
-    },
-    rateLimit: {
-      get: jest.fn(),
-    },
-  },
-  paginate: jest.fn(),
-  request: jest.fn(),
-  search: {
-    issuesAndPullRequests: jest.fn(),
-  },
-  pulls: {
-    listCommits: jest.fn(),
-  },
 }; 

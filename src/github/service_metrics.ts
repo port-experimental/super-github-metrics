@@ -4,6 +4,8 @@ import { updateEntity } from '../clients/port';
 import type { PullRequestBasic } from '../types/github';
 import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, getMaxTimePeriod } from './utils';
 
+
+const BLUEPRINT_NAME = 'service';
 interface ServiceMetrics {
   repoId: string;
   repoName: string;
@@ -373,7 +375,7 @@ async function storeServiceMetrics(record: ServiceMetrics): Promise<void> {
       .mapKeys((_value, key) => _.snakeCase(key))
       .value();
 
-    await updateEntity('githubRepository', {
+    await updateEntity(BLUEPRINT_NAME, {
       identifier: record.repoId,
       title: record.repoName,
       properties: props,

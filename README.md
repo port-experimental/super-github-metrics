@@ -50,6 +50,26 @@ The Biome configuration is in `biome.json` and includes:
 1. Modify your `github_user` blueprint in port to include the properties `first_commit`, `tenth_commit`, `first_pr`, `tenth_pr` (see an example blueprint below)
 1. Have fun!
 
+### Force Processing All Users
+
+By default, the onboarding metrics integration only processes users who don't already have complete onboarding metrics. However, you can force the integration to process all users regardless of their existing metrics by setting the `FORCE_ONBOARDING_METRICS` environment variable to `'true'`.
+
+This is useful when you want to:
+- Correct or update existing onboarding data
+- Recalculate metrics after changes to the calculation logic
+- Ensure all users have the most up-to-date metrics
+
+**Example:**
+```bash
+# Process only users without complete metrics (default behavior)
+npm run github-sync onboarding-metrics
+
+# Process all users regardless of existing metrics
+FORCE_ONBOARDING_METRICS=true npm run github-sync onboarding-metrics
+```
+
+**Note:** When force processing is enabled, the integration will overwrite existing onboarding metrics for all users. This may take longer to complete since it processes all users in your organization.
+
 #### Blueprint Template
 ```json
 {
@@ -793,6 +813,7 @@ npm run coder-integration create-workspace --name "my-workspace" --template "tem
 - `X_GITHUB_TOKEN` - GitHub personal access token
 - `X_GITHUB_ENTERPRISE` - GitHub Enterprise name
 - `X_GITHUB_ORGS` - Comma-separated list of GitHub organizations
+- `FORCE_ONBOARDING_METRICS` - Set to 'true' to process all users regardless of existing onboarding metrics (optional, defaults to false)
 
 ### Coder Integrations
 - `PORT_CLIENT_ID` - Port client ID

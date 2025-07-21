@@ -94,22 +94,31 @@ async function main() {
             }
           }
 
-          // Only go over users without complete onboarding metrics in Port
-          const usersWithoutOnboardingMetrics = githubUsers.entities.filter(
-            (user: PortEntity) => !hasCompleteOnboardingMetrics(user)
-          );
-          console.log(
-            `Found ${usersWithoutOnboardingMetrics.length} users without complete onboarding metrics`
-          );
+          // Check if we should force processing all users regardless of existing metrics
+          const forceProcessing = process.env.FORCE_ONBOARDING_METRICS === 'true';
+          
+          let usersToProcess: PortEntity[];
+          if (forceProcessing) {
+            console.log('FORCE_ONBOARDING_METRICS is enabled - processing all users regardless of existing metrics');
+            usersToProcess = githubUsers.entities;
+          } else {
+            // Only go over users without complete onboarding metrics in Port
+            usersToProcess = githubUsers.entities.filter(
+              (user: PortEntity) => !hasCompleteOnboardingMetrics(user)
+            );
+            console.log(
+              `Found ${usersToProcess.length} users without complete onboarding metrics`
+            );
+          }
 
           // For each user, get the onboarding metrics
           let processedCount = 0;
           let errorCount = 0;
           const usersWithErrors: string[] = [];
 
-          for (const [index, user] of usersWithoutOnboardingMetrics.entries()) {
+          for (const [index, user] of usersToProcess.entries()) {
             console.log(
-              `Processing developer ${index + 1} of ${usersWithoutOnboardingMetrics.length}`
+              `Processing developer ${index + 1} of ${usersToProcess.length}`
             );
             try {
               // Ensure user has required properties
@@ -149,6 +158,9 @@ async function main() {
           console.log('\n=== Processing Summary ===');
           console.log(`Total users processed: ${processedCount}`);
           console.log(`Users with errors: ${errorCount}`);
+          if (forceProcessing) {
+            console.log('Note: All users were processed due to FORCE_ONBOARDING_METRICS=true');
+          }
 
           if (usersWithErrors.length > 0) {
             console.log('\nUsers with errors:');
@@ -156,7 +168,7 @@ async function main() {
           }
 
           // If all users failed, that's a fatal error
-          if (processedCount === 0 && usersWithoutOnboardingMetrics.length > 0) {
+          if (processedCount === 0 && usersToProcess.length > 0) {
             hasFatalError = true;
             throw new FatalError('Failed to process any users for onboarding metrics');
           }

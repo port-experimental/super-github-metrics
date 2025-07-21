@@ -11,6 +11,7 @@ import {
 } from './onboarding_metrics';
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { calculateAndStoreServiceMetrics } from './service_metrics';
+import { calculateAndStoreTimeSeriesServiceMetrics } from './service_metrics_processor';
 import { calculateWorkflowMetrics } from './workflow_metrics';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
@@ -287,6 +288,47 @@ async function main() {
           }
           console.error('Unexpected error in service metrics:', error);
           throw new FatalError('Unexpected error in service metrics', error as Error);
+        }
+      });
+
+    program
+      .command('timeseries-service-metrics')
+      .description('Send GitHub Time-Series Service metrics to Port')
+      .option('-p, --period-type <type>', 'Time period type (daily, weekly, monthly)', 'daily')
+      .option('-d, --days-back <number>', 'Number of days to look back', '90')
+      .action(async (options) => {
+        let hasFatalError = false;
+
+        try {
+          console.log('Calculating Time-Series Service metrics...');
+          const githubClient = createGitHubClient(AUTH_TOKEN);
+          await githubClient.checkRateLimits();
+
+          const periodType = options.periodType as 'daily' | 'weekly' | 'monthly';
+          const daysBack = parseInt(options.daysBack, 10);
+
+          console.log(`Processing ${periodType} metrics for the last ${daysBack} days`);
+
+          for (const orgName of GITHUB_ORGS) {
+            try {
+              await processOrganizationRepositories(githubClient, orgName, async (repos) => {
+                await calculateAndStoreTimeSeriesServiceMetrics(repos, AUTH_TOKEN, periodType, daysBack);
+              });
+            } catch (error) {
+              console.error(`Error processing organization ${orgName}:`, error);
+              hasFatalError = true;
+            }
+          }
+
+          if (hasFatalError) {
+            throw new FatalError('Failed to process time-series service metrics for one or more organizations');
+          }
+        } catch (error) {
+          if (error instanceof FatalError) {
+            throw error;
+          }
+          console.error('Unexpected error in time-series service metrics:', error);
+          throw new FatalError('Unexpected error in time-series service metrics', error as Error);
         }
       });
 

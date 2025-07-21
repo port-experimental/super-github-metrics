@@ -836,6 +836,98 @@ Want to see a catalog of all of your Coder.com development workspaces and availa
 }
 ```
 
+#### Service Metrics
+
+```json
+{
+  "identifier": "serviceMetrics",
+  "description": "Time-series metrics for services to enable dashboard visualizations",
+  "title": "Service Metrics",
+  "icon": "Chart",
+  "schema": {
+    "properties": {
+      "period": {
+        "type": "string",
+        "title": "Time Period",
+        "description": "The time period this metric represents (YYYY-MM-DD for daily, YYYY-WNN for weekly, YYYY-MM for monthly)"
+      },
+      "period_type": {
+        "type": "string",
+        "title": "Period Type",
+        "description": "The type of time period (daily, weekly, monthly)",
+        "enum": ["daily", "weekly", "monthly"]
+      },
+      "total_prs": {
+        "type": "number",
+        "title": "Total Pull Requests",
+        "description": "Total number of pull requests in this period"
+      },
+      "total_merged_prs": {
+        "type": "number",
+        "title": "Total Merged PRs",
+        "description": "Total number of merged pull requests in this period"
+      },
+      "number_of_prs_reviewed": {
+        "type": "number",
+        "title": "PRs Reviewed",
+        "description": "Number of pull requests that received at least one review"
+      },
+      "number_of_prs_merged_without_review": {
+        "type": "number",
+        "title": "PRs Merged Without Review",
+        "description": "Number of pull requests merged without any reviews"
+      },
+      "percentage_of_prs_reviewed": {
+        "type": "number",
+        "title": "PR Review Percentage",
+        "description": "Percentage of pull requests that received at least one review"
+      },
+      "percentage_of_prs_merged_without_review": {
+        "type": "number",
+        "title": "PR Merged Without Review Percentage",
+        "description": "Percentage of pull requests merged without any reviews"
+      },
+      "average_time_to_first_review": {
+        "type": "number",
+        "title": "Average Time to First Review (Days)",
+        "description": "Average time in days from PR creation to first review"
+      },
+      "pr_success_rate": {
+        "type": "number",
+        "title": "PR Success Rate (%)",
+        "description": "Percentage of pull requests that were successfully merged"
+      },
+      "contribution_standard_deviation": {
+        "type": "number",
+        "title": "Contribution Standard Deviation",
+        "description": "Standard deviation of contribution counts across contributors"
+      },
+      "calculated_at": {
+        "type": "string",
+        "title": "Calculated At",
+        "description": "Timestamp when these metrics were calculated",
+        "format": "date-time"
+      },
+      "data_source": {
+        "type": "string",
+        "title": "Data Source",
+        "description": "Source of the metrics data",
+        "default": "github"
+      }
+    },
+    "required": ["period", "period_type", "total_prs", "total_merged_prs"]
+  },
+  "relations": {
+    "service": {
+      "title": "Service",
+      "target": "service",
+      "required": true,
+      "many": false
+    }
+  }
+}
+```
+
 # Usage
 
 ## CLI Commands
@@ -854,9 +946,53 @@ npm run github-sync pr-metrics
 # Service metrics (review quality)
 npm run github-sync service-metrics
 
+# Time-series service metrics (for dashboard visualizations)
+npm run github-sync timeseries-service-metrics
+
 # Workflow metrics
 npm run github-sync workflow-metrics
 ```
+
+### Time-Series Service Metrics
+
+The time-series service metrics provide individual data points for each time period, enabling better dashboard visualizations with line charts and trend analysis.
+
+#### CLI Options
+
+```bash
+# Process daily metrics for the last 90 days (default)
+npm run github-sync timeseries-service-metrics
+
+# Process weekly metrics for the last 90 days
+npm run github-sync timeseries-service-metrics --period-type weekly
+
+# Process monthly metrics for the last 90 days
+npm run github-sync timeseries-service-metrics --period-type monthly
+
+# Process daily metrics for the last 30 days
+npm run github-sync timeseries-service-metrics --period-type daily --days-back 30
+```
+
+#### Automated Workflow
+
+The `collect_timeseries_service_metrics` workflow automatically runs:
+
+- **Daily metrics**: Every day at 2 AM UTC
+- **Weekly metrics**: Every Monday at 3 AM UTC  
+- **Monthly metrics**: On the 1st of every month at 4 AM UTC
+
+You can also manually trigger the workflow with custom parameters through the GitHub Actions UI.
+
+#### Migration from Aggregated Metrics
+
+To migrate from the old aggregated metrics to the new time-series approach:
+
+1. Create the `serviceMetrics` blueprint in Port (see blueprint template above)
+2. Run the migration script: `npm run migrate-to-timeseries`
+3. Update your dashboards to use the new time-series data
+4. Optionally clean up old aggregated metrics: `npm run migrate-to-timeseries cleanup`
+
+For detailed migration instructions, see [docs/timeseries_migration_guide.md](./docs/timeseries_migration_guide.md).
 
 ### Coder Integrations
 

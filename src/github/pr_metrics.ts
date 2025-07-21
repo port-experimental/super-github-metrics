@@ -243,7 +243,7 @@ export async function calculateAndStorePRMetrics(
 
             await upsertProps(
               'githubPullRequest',
-              `${record.repoName}-${record.pullRequestId}`,
+              `${record.repoName}${record.pullRequestId}`,
               props
             );
           } catch (error) {

@@ -29,7 +29,7 @@ async function migrateToTimeSeriesMetrics() {
       owner: {
         login: (service.properties?.organization as string) || 'unknown',
       },
-    })).filter(repo => repo.id > 0);
+    })).filter(repo => repo.name !== 'Unknown');
 
     console.log(`Converted ${repositories.length} services to repository format`);
 

@@ -102,16 +102,16 @@ export function createServiceMetricsEntity(
   metrics: TimeSeriesMetrics
 ): ServiceMetricsEntity {
   // Create a compact identifier that fits within 30 characters
-  // Format: {repoId}{periodType}{period} (e.g., "123456789d20240115")
-  const repoId = repo.id.toString();
+  // Format: {serviceName}{periodType}{period} (e.g., "my-service-d20240115")
+  const serviceName = repo.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); // Replace non-alphanumeric with hyphens
   const periodType = metrics.periodType.charAt(0); // 'd' for daily, 'w' for weekly, 'm' for monthly
   const period = metrics.period; // Already in compact format (YYYYMMDD, YYYYWW, or YYYYMM)
   
   // Ensure the identifier doesn't exceed 30 characters
-  const maxRepoIdLength = 30 - periodType.length - period.length;
-  const truncatedRepoId = repoId.length > maxRepoIdLength ? repoId.slice(-maxRepoIdLength) : repoId;
+  const maxServiceNameLength = 30 - periodType.length - period.length;
+  const truncatedServiceName = serviceName.length > maxServiceNameLength ? serviceName.slice(0, maxServiceNameLength) : serviceName;
   
-  const identifier = `${truncatedRepoId}${periodType}${period}`;
+  const identifier = `${truncatedServiceName}${periodType}${period}`;
   const title = `${repo.name} - ${metrics.period}`;
 
   return {
@@ -133,7 +133,7 @@ export function createServiceMetricsEntity(
       data_source: 'github',
     },
     relations: {
-      service: repo.id.toString(),
+      service: repo.name, // Use service name as the relation identifier
     },
   };
 }

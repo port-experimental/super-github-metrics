@@ -136,14 +136,14 @@ Each time period contains the following metrics:
 
 Each service metrics entity has a compact identifier that fits within Port's 30-character limit:
 
-- **Format**: `{repoId}{periodType}{period}`
-- **Example**: `123456789d20240115` (repo ID 123456789, daily, January 15, 2024)
+- **Format**: `{serviceName}{periodType}{period}`
+- **Example**: `my-service-d20240115` (service name "my-service", daily, January 15, 2024)
 - **Period Type Codes**: 
   - `d` for daily
   - `w` for weekly  
   - `m` for monthly
 
-The identifier is automatically truncated if the repository ID is too long to fit within the 30-character limit.
+The service name is automatically sanitized (non-alphanumeric characters replaced with hyphens) and truncated if needed to fit within the 30-character limit.
 
 ## Data Retention
 

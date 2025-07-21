@@ -13,6 +13,11 @@ describe('Onboarding Metrics - Simple Tests', () => {
           tenth_commit: '2024-01-10T00:00:00Z',
           first_pr: '2024-01-05T00:00:00Z',
           tenth_pr: '2024-01-15T00:00:00Z',
+          time_to_first_commit: 24,
+          time_to_first_pr: 96,
+          time_to_10th_commit: 240,
+          time_to_10th_pr: 312,
+          initial_review_response_time: 15,
         },
       };
 
@@ -91,6 +96,11 @@ describe('Onboarding Metrics - Simple Tests', () => {
           tenth_commit: '2024-01-10T00:00:00Z',
           first_pr: '2024-01-05T00:00:00Z',
           tenth_pr: '2024-01-15T00:00:00Z',
+          time_to_first_commit: 24,
+          time_to_first_pr: 96,
+          time_to_10th_commit: 240,
+          time_to_10th_pr: 312,
+          initial_review_response_time: 15,
         },
       };
 

@@ -40,6 +40,8 @@ const config: Config.InitialOptions = {
       useESM: false,
     },
   },
+  moduleFileExtensions: ['ts', 'js', 'json'],
+  testPathIgnorePatterns: ['/node_modules/'],
 };
 
 export default config; 

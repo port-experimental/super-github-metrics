@@ -8,6 +8,31 @@ process.env.X_GITHUB_TOKEN = 'test-github-token';
 process.env.X_GITHUB_ENTERPRISE = 'test-enterprise';
 process.env.X_GITHUB_ORGS = 'test-org1,test-org2';
 
+// Mock problematic ES modules
+jest.mock('@octokit/rest', () => ({
+  Octokit: jest.fn().mockImplementation(() => ({
+    rest: {
+      pulls: {
+        list: jest.fn(),
+        get: jest.fn(),
+        listReviews: jest.fn(),
+      },
+      repos: {
+        listCommits: jest.fn(),
+        listForOrg: jest.fn(),
+      },
+      rateLimit: {
+        get: jest.fn(),
+      },
+    },
+    paginate: jest.fn(),
+    request: jest.fn(),
+    search: {
+      issuesAndPullRequests: jest.fn(),
+    },
+  })),
+}));
+
 // Global test timeout
 jest.setTimeout(30000);
 

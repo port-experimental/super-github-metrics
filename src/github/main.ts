@@ -271,10 +271,7 @@ async function main() {
           for (const orgName of GITHUB_ORGS) {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-                await calculateAndStoreServiceMetrics(
-                  repos.map((repo) => ({ ...repo, id: repo.id.toString() })),
-                  AUTH_TOKEN
-                );
+                await calculateAndStoreServiceMetrics(repos, AUTH_TOKEN);
               });
             } catch (error) {
               console.error(`Error processing organization ${orgName}:`, error);
@@ -300,5 +297,8 @@ async function main() {
     process.exit(1);
   }
 }
+
+// Export main function for testing
+export { main };
 
 main();

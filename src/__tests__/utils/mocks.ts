@@ -110,93 +110,93 @@ export const mockPortEntityResponse: PortEntityResponse = {
 };
 
 // Mock GitHub Client with proper typing
-export const createMockGitHubClient: jest.MockedFunction<ReturnType<typeof createGitHubClient>> = () => {
+export const createMockGitHubClient = (): any => {
   const mockClient = {
-    checkRateLimits: jest.fn(),
-    getRateLimitStatus: jest.fn(),
-    fetchOrganizationRepositories: jest.fn(),
-    getPullRequests: jest.fn(),
-    getPullRequest: jest.fn(),
-    getPullRequestReviews: jest.fn(),
-    getPullRequestCommits: jest.fn(),
-    getRepositoryCommits: jest.fn(),
-    getWorkflowRuns: jest.fn(),
-    getMemberAddDates: jest.fn(),
-    searchCommits: jest.fn(),
-    searchPullRequests: jest.fn(),
-    searchReviews: jest.fn(),
-    getIssues: jest.fn(),
-    getIssueComments: jest.fn(),
-    makeRequestWithRetry: jest.fn(),
-    addRequestDelay: jest.fn(),
+    checkRateLimits: jest.fn<() => Promise<void>>(),
+    getRateLimitStatus: jest.fn<() => Promise<{ remaining: number; limit: number; resetTime: Date; secondsUntilReset: number }>>(),
+    fetchOrganizationRepositories: jest.fn<() => Promise<Repository[]>>(),
+    getPullRequests: jest.fn<() => Promise<PullRequestBasic[]>>(),
+    getPullRequest: jest.fn<() => Promise<PullRequest>>(),
+    getPullRequestReviews: jest.fn<() => Promise<PullRequestReview[]>>(),
+    getPullRequestCommits: jest.fn<() => Promise<Commit[]>>(),
+    getRepositoryCommits: jest.fn<() => Promise<Commit[]>>(),
+    getWorkflowRuns: jest.fn<() => Promise<WorkflowRun[]>>(),
+    getMemberAddDates: jest.fn<() => Promise<AuditLogEntry[]>>(),
+    searchCommits: jest.fn<() => Promise<Commit[]>>(),
+    searchPullRequests: jest.fn<() => Promise<PullRequestBasic[]>>(),
+    searchReviews: jest.fn<() => Promise<PullRequestReview[]>>(),
+    getIssues: jest.fn<() => Promise<any[]>>(),
+    getIssueComments: jest.fn<() => Promise<any[]>>(),
+    makeRequestWithRetry: jest.fn<(fn: () => Promise<any>) => Promise<any>>(),
+    addRequestDelay: jest.fn<() => Promise<void>>(),
   };
 
   // Set default return values
-  (mockClient.checkRateLimits as any).mockResolvedValue(undefined);
-  (mockClient.getRateLimitStatus as any).mockResolvedValue({
+  mockClient.checkRateLimits.mockResolvedValue(undefined);
+  mockClient.getRateLimitStatus.mockResolvedValue({
     remaining: 5000,
     limit: 5000,
     resetTime: new Date(Date.now() + 3600000),
     secondsUntilReset: 3600,
   });
-  (mockClient.fetchOrganizationRepositories as any).mockResolvedValue([mockRepository]);
-  (mockClient.getPullRequests as any).mockResolvedValue([mockPullRequestBasic]);
-  (mockClient.getPullRequest as any).mockResolvedValue(mockPullRequest);
-  (mockClient.getPullRequestReviews as any).mockResolvedValue([mockPullRequestReview]);
-  (mockClient.getPullRequestCommits as any).mockResolvedValue([mockCommit]);
-  (mockClient.getRepositoryCommits as any).mockResolvedValue([mockCommit]);
-  (mockClient.getWorkflowRuns as any).mockResolvedValue([mockWorkflowRun]);
-  (mockClient.getMemberAddDates as any).mockResolvedValue([mockAuditLogEntry]);
-  (mockClient.searchCommits as any).mockResolvedValue([mockCommit]);
-  (mockClient.searchPullRequests as any).mockResolvedValue([mockPullRequestBasic]);
-  (mockClient.searchReviews as any).mockResolvedValue([mockPullRequestReview]);
-  (mockClient.getIssues as any).mockResolvedValue([]);
-  (mockClient.getIssueComments as any).mockResolvedValue([]);
-  (mockClient.makeRequestWithRetry as any).mockImplementation((fn: any) => fn());
-  (mockClient.addRequestDelay as any).mockResolvedValue(undefined);
+  mockClient.fetchOrganizationRepositories.mockResolvedValue([mockRepository]);
+  mockClient.getPullRequests.mockResolvedValue([mockPullRequestBasic]);
+  mockClient.getPullRequest.mockResolvedValue(mockPullRequest);
+  mockClient.getPullRequestReviews.mockResolvedValue([mockPullRequestReview]);
+  mockClient.getPullRequestCommits.mockResolvedValue([mockCommit]);
+  mockClient.getRepositoryCommits.mockResolvedValue([mockCommit]);
+  mockClient.getWorkflowRuns.mockResolvedValue([mockWorkflowRun]);
+  mockClient.getMemberAddDates.mockResolvedValue([mockAuditLogEntry]);
+  mockClient.searchCommits.mockResolvedValue([mockCommit]);
+  mockClient.searchPullRequests.mockResolvedValue([mockPullRequestBasic]);
+  mockClient.searchReviews.mockResolvedValue([mockPullRequestReview]);
+  mockClient.getIssues.mockResolvedValue([]);
+  mockClient.getIssueComments.mockResolvedValue([]);
+  mockClient.makeRequestWithRetry.mockImplementation((fn: any) => fn());
+  mockClient.addRequestDelay.mockResolvedValue(undefined);
 
   return mockClient;
 };
 
 // Mock Port Client with proper typing
-export const createMockPortClient = () => {
+export const createMockPortClient = (): any => {
   const mockInstance = {
-    getEntities: jest.fn(),
-    getEntity: jest.fn(),
-    upsertProps: jest.fn(),
-    upsertEntity: jest.fn(),
-    createEntity: jest.fn(),
-    updateEntity: jest.fn(),
-    deleteAllEntities: jest.fn(),
-    getUsers: jest.fn(),
-    getUser: jest.fn(),
-    getTokenInfo: jest.fn(),
+    getEntities: jest.fn<() => Promise<PortEntitiesResponse>>(),
+    getEntity: jest.fn<() => Promise<PortEntityResponse>>(),
+    upsertProps: jest.fn<() => Promise<any>>(),
+    upsertEntity: jest.fn<() => Promise<any>>(),
+    createEntity: jest.fn<() => Promise<any>>(),
+    updateEntity: jest.fn<() => Promise<PortEntity>>(),
+    deleteAllEntities: jest.fn<() => Promise<void>>(),
+    getUsers: jest.fn<() => Promise<PortEntitiesResponse>>(),
+    getUser: jest.fn<() => Promise<PortEntityResponse>>(),
+    getTokenInfo: jest.fn<() => { hasToken: boolean; expiresAt: Date; isExpired: boolean }>(),
   };
 
   // Set default return values
-  (mockInstance.getEntities as any).mockResolvedValue(mockPortEntitiesResponse);
-  (mockInstance.getEntity as any).mockResolvedValue(mockPortEntityResponse);
-  (mockInstance.upsertProps as any).mockResolvedValue({});
-  (mockInstance.upsertEntity as any).mockResolvedValue({});
-  (mockInstance.createEntity as any).mockResolvedValue({});
-  (mockInstance.updateEntity as any).mockResolvedValue(mockPortEntity);
-  (mockInstance.deleteAllEntities as any).mockResolvedValue(undefined);
-  (mockInstance.getUsers as any).mockResolvedValue(mockPortEntitiesResponse);
-  (mockInstance.getUser as any).mockResolvedValue(mockPortEntityResponse);
-  (mockInstance.getTokenInfo as any).mockReturnValue({
+  mockInstance.getEntities.mockResolvedValue(mockPortEntitiesResponse);
+  mockInstance.getEntity.mockResolvedValue(mockPortEntityResponse);
+  mockInstance.upsertProps.mockResolvedValue({});
+  mockInstance.upsertEntity.mockResolvedValue({});
+  mockInstance.createEntity.mockResolvedValue({});
+  mockInstance.updateEntity.mockResolvedValue(mockPortEntity);
+  mockInstance.deleteAllEntities.mockResolvedValue(undefined);
+  mockInstance.getUsers.mockResolvedValue(mockPortEntitiesResponse);
+  mockInstance.getUser.mockResolvedValue(mockPortEntityResponse);
+  mockInstance.getTokenInfo.mockReturnValue({
     hasToken: true,
     expiresAt: new Date(Date.now() + 3600000),
     isExpired: false,
   });
 
   return {
-    getInstance: (jest.fn() as any).mockResolvedValue(mockInstance),
+    getInstance: jest.fn<() => Promise<typeof mockInstance>>().mockResolvedValue(mockInstance),
     ...mockInstance,
   };
 };
 
 // Mock axios with simplified typing
-export const mockAxios = {
+export const mockAxios: any = {
   get: jest.fn(),
   post: jest.fn(),
   patch: jest.fn(),
@@ -205,7 +205,7 @@ export const mockAxios = {
 };
 
 // Mock Octokit with simplified typing
-export const mockOctokit = {
+export const mockOctokit: any = {
   rest: {
     pulls: {
       list: jest.fn(),

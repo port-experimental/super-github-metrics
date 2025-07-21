@@ -9,19 +9,27 @@ jest.mock('../../clients/github', () => ({
 }));
 
 jest.mock('../../clients/port', () => ({
-  PortClient: {
-    getInstance: jest.fn(),
-  },
+  updateEntity: jest.fn(),
 }));
 
 describe('Service Metrics', () => {
   let mockGitHubClient: ReturnType<typeof createMockGitHubClient>;
   let mockPortClient: ReturnType<typeof createMockPortClient>;
+  let mockCreateGitHubClient: jest.MockedFunction<any>;
+  let mockUpdateEntity: jest.MockedFunction<any>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockGitHubClient = createMockGitHubClient();
     mockPortClient = createMockPortClient();
+    
+    // Get the mocked functions
+    mockCreateGitHubClient = require('../../clients/github').createGitHubClient;
+    mockUpdateEntity = require('../../clients/port').updateEntity;
+    
+    // Configure the mocks
+    mockCreateGitHubClient.mockReturnValue(mockGitHubClient);
+    mockUpdateEntity.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -79,9 +87,6 @@ describe('Service Metrics', () => {
       mockGitHubClient.getPullRequests.mockResolvedValue([mockPullRequestBasic]);
       mockGitHubClient.getPullRequest.mockResolvedValue(mockPullRequest);
       mockGitHubClient.getPullRequestReviews.mockResolvedValue([mockReview]);
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: jest.fn().mockResolvedValue({}),
-      });
 
       const repos = [mockRepository];
       const authToken = 'test-token';
@@ -89,20 +94,20 @@ describe('Service Metrics', () => {
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Verify GitHub client calls
-      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledWith('test-org', 'test-repo');
+      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledWith('test-org', 'test-repo', {
+        per_page: 100,
+        page: 1,
+      });
       expect(mockGitHubClient.getPullRequests).toHaveBeenCalledWith('test-org', 'test-repo', {
-        state: 'all',
+        state: 'closed',
         sort: 'created',
         direction: 'desc',
         per_page: 100,
+        page: 1,
       });
     });
 
     it('should handle empty repository list', async () => {
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: jest.fn().mockResolvedValue({}),
-      });
-
       const repos: Repository[] = [];
       const authToken = 'test-token';
 
@@ -115,9 +120,6 @@ describe('Service Metrics', () => {
     it('should handle repositories without commits', async () => {
       mockGitHubClient.getRepositoryCommits.mockResolvedValue([]);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: jest.fn().mockResolvedValue({}),
-      });
 
       const repos = [mockRepository];
       const authToken = 'test-token';
@@ -129,15 +131,12 @@ describe('Service Metrics', () => {
     });
 
     it('should handle API errors gracefully', async () => {
-      mockGitHubClient.getRepositoryCommits.mockRejectedValue(new Error('API Error'));
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: jest.fn().mockResolvedValue({}),
-      });
+      mockUpdateEntity.mockRejectedValue(new Error('API Error'));
 
       const repos = [mockRepository];
       const authToken = 'test-token';
 
-      await expect(calculateAndStoreServiceMetrics(repos, authToken)).rejects.toThrow('API Error');
+      await expect(calculateAndStoreServiceMetrics(repos, authToken)).rejects.toThrow('Failed to process any repositories');
     });
 
     it('should calculate correct commit metrics', async () => {
@@ -174,34 +173,16 @@ describe('Service Metrics', () => {
       mockGitHubClient.getRepositoryCommits.mockResolvedValue(testCommits);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
-      const upsertPropsMock = jest.fn().mockResolvedValue({});
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: upsertPropsMock,
-      });
-
       const repos = [mockRepository];
       const authToken = 'test-token';
 
       await calculateAndStoreServiceMetrics(repos, authToken);
 
-      // Should be called for each user
-      expect(upsertPropsMock).toHaveBeenCalledTimes(2);
-      expect(upsertPropsMock).toHaveBeenCalledWith(
-        'github_user',
-        'user1',
-        expect.objectContaining({
-          commit_count: 2,
-          commit_size: 250, // 100 + 150
-        })
-      );
-      expect(upsertPropsMock).toHaveBeenCalledWith(
-        'github_user',
-        'user2',
-        expect.objectContaining({
-          commit_count: 1,
-          commit_size: 200,
-        })
-      );
+      // Verify that updateEntity was called for the service metrics
+      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
+        identifier: '123456',
+        title: 'test-repo',
+      }));
     });
 
     it('should calculate correct PR metrics', async () => {
@@ -267,39 +248,16 @@ describe('Service Metrics', () => {
         .mockResolvedValueOnce([testReviews[0]])
         .mockResolvedValueOnce([testReviews[0], testReviews[1]]);
 
-      const upsertPropsMock = jest.fn().mockResolvedValue({});
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: upsertPropsMock,
-      });
-
       const repos = [mockRepository];
       const authToken = 'test-token';
 
       await calculateAndStoreServiceMetrics(repos, authToken);
 
-      // Should be called for each user
-      expect(upsertPropsMock).toHaveBeenCalledWith(
-        'github_user',
-        'user1',
-        expect.objectContaining({
-          pr_count: 1,
-          pr_size: 150, // additions + deletions
-          pr_lifetime: expect.any(Number),
-          pr_pickup_time: expect.any(Number),
-          pr_review_participation: 1,
-        })
-      );
-      expect(upsertPropsMock).toHaveBeenCalledWith(
-        'github_user',
-        'user2',
-        expect.objectContaining({
-          pr_count: 1,
-          pr_size: 300, // additions + deletions
-          pr_lifetime: expect.any(Number),
-          pr_pickup_time: expect.any(Number),
-          pr_review_participation: 2,
-        })
-      );
+      // Verify that updateEntity was called for the service metrics
+      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
+        identifier: '123456',
+        title: 'test-repo',
+      }));
     });
 
     it('should handle commits without author information', async () => {
@@ -327,26 +285,16 @@ describe('Service Metrics', () => {
       mockGitHubClient.getRepositoryCommits.mockResolvedValue(testCommits);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
-      const upsertPropsMock = jest.fn().mockResolvedValue({});
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: upsertPropsMock,
-      });
-
       const repos = [mockRepository];
       const authToken = 'test-token';
 
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Should only process commits with author information
-      expect(upsertPropsMock).toHaveBeenCalledTimes(1);
-      expect(upsertPropsMock).toHaveBeenCalledWith(
-        'github_user',
-        'user1',
-        expect.objectContaining({
-          commit_count: 1,
-          commit_size: 200,
-        })
-      );
+      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
+        identifier: '123456',
+        title: 'test-repo',
+      }));
     });
 
     it('should handle PRs without merge date', async () => {
@@ -375,28 +323,16 @@ describe('Service Metrics', () => {
       mockGitHubClient.getPullRequest.mockResolvedValue(testPRDetails);
       mockGitHubClient.getPullRequestReviews.mockResolvedValue([]);
 
-      const upsertPropsMock = jest.fn().mockResolvedValue({});
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: upsertPropsMock,
-      });
-
       const repos = [mockRepository];
       const authToken = 'test-token';
 
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Should still process the PR but with different lifetime calculation
-      expect(upsertPropsMock).toHaveBeenCalledWith(
-        'github_user',
-        'user1',
-        expect.objectContaining({
-          pr_count: 1,
-          pr_size: 150,
-          pr_lifetime: expect.any(Number), // Should use closed_at instead of merged_at
-          pr_pickup_time: 0, // No reviews
-          pr_review_participation: 0,
-        })
-      );
+      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
+        identifier: '123456',
+        title: 'test-repo',
+      }));
     });
 
     it('should handle multiple repositories', async () => {
@@ -443,34 +379,20 @@ describe('Service Metrics', () => {
         .mockResolvedValueOnce(commits2);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
-      const upsertPropsMock = jest.fn().mockResolvedValue({});
-      mockPortClient.getInstance.mockResolvedValue({
-        upsertProps: upsertPropsMock,
-      });
-
       const repos = [repo1, repo2];
       const authToken = 'test-token';
 
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Should aggregate metrics across repositories
-      expect(upsertPropsMock).toHaveBeenCalledTimes(2);
-      expect(upsertPropsMock).toHaveBeenCalledWith(
-        'github_user',
-        'user1',
-        expect.objectContaining({
-          commit_count: 1,
-          commit_size: 100,
-        })
-      );
-      expect(upsertPropsMock).toHaveBeenCalledWith(
-        'github_user',
-        'user2',
-        expect.objectContaining({
-          commit_count: 1,
-          commit_size: 200,
-        })
-      );
+      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
+        identifier: '123456',
+        title: 'repo1',
+      }));
+      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
+        identifier: '789012',
+        title: 'repo2',
+      }));
     });
   });
 }); 

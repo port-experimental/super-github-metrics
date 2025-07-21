@@ -1,7 +1,7 @@
 import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { updateEntity } from '../clients/port';
-import type { PullRequestBasic } from '../types/github';
+import type { PullRequestBasic, Repository } from '../types/github';
 import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, getMaxTimePeriod } from './utils';
 
 
@@ -70,14 +70,6 @@ export interface PRReviewData {
   totalTimeToFirstReview: number;
   prsWithReviewTime: number;
   totalSuccessfulPRs: number; // PRs that were merged
-}
-
-export interface Repository {
-  id: string;
-  name: string;
-  owner: {
-    login: string;
-  };
 }
 
 /**
@@ -358,7 +350,7 @@ export function createServiceMetricsRecord(
   timePeriodMetrics: Record<string, number>
 ): ServiceMetrics {
   return {
-    repoId: repo.id,
+    repoId: repo.id.toString(),
     repoName: repo.name,
     organization: repo.owner.login,
     ...timePeriodMetrics,

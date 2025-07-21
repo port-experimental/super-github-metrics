@@ -3,6 +3,7 @@ import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { upsertProps } from '../clients/port';
 import type { Repository, Commit } from '../types/github';
 import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod } from './utils';
+import type { PullRequestBasic } from '../types/github';
 
 interface PRMetrics {
   repoId: string;
@@ -73,8 +74,8 @@ async function fetchRepositoryPRs(
   owner: string,
   repoName: string,
   daysBack: number
-): Promise<any[]> {
-  const prs: any[] = [];
+): Promise<PullRequestBasic[]> {
+  const prs: PullRequestBasic[] = [];
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
 
   try {
@@ -82,24 +83,20 @@ async function fetchRepositoryPRs(
     let hasMore = true;
 
     while (hasMore) {
-      const response = await githubClient.makeRequestWithRetry(() =>
-        githubClient['octokit'].pulls.list({
-          owner,
-          repo: repoName,
-          state: 'closed',
-          sort: 'created',
-          direction: 'desc',
-          per_page: 100,
-          page,
-        })
-      );
+      const response = await githubClient.getPullRequests(owner, repoName, {
+        state: 'closed',
+        sort: 'created',
+        direction: 'desc',
+        per_page: 100,
+        page,
+      });
 
-      if (response.data.length === 0) {
+      if (response.length === 0) {
         hasMore = false;
         break;
       }
 
-      for (const pr of response.data) {
+      for (const pr of response) {
         if (pr.created_at) {
           const prDate = new Date(pr.created_at);
           if (prDate >= cutoffDate) {

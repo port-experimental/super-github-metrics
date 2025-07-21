@@ -5,7 +5,6 @@ import type {
   PortEntitiesResponse,
   PortEntity,
   PortEntityResponse,
-  PortUpsertPayload,
 } from '../types/port';
 
 /**
@@ -111,7 +110,12 @@ export class PortClient {
       Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
     }
 
-    const config: any = {
+    const config: {
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+      data?: Record<string, unknown>;
+    } = {
       method,
       url: url.toString(),
       headers: {
@@ -180,10 +184,26 @@ export class PortClient {
   }
 
   /**
+   * Delete all entities of a specific type (static method)
+   */
+  static async deleteAllEntities(entityType: string): Promise<void> {
+    const client = await PortClient.getInstance();
+    return client.deleteAllEntities(entityType);
+  }
+
+  /**
    * Get all entities of a specific type
    */
   async getEntities(entityType: string): Promise<PortEntitiesResponse> {
     return this.get<PortEntitiesResponse>(`/blueprints/${entityType}/entities`);
+  }
+
+  /**
+   * Get all entities of a specific type (static method)
+   */
+  static async getEntities(entityType: string): Promise<PortEntitiesResponse> {
+    const client = await PortClient.getInstance();
+    return client.getEntities(entityType);
   }
 
   /**
@@ -194,10 +214,26 @@ export class PortClient {
   }
 
   /**
+   * Get a specific entity by identifier (static method)
+   */
+  static async getEntity(entityType: string, identifier: string): Promise<PortEntityResponse> {
+    const client = await PortClient.getInstance();
+    return client.getEntity(entityType, identifier);
+  }
+
+  /**
    * Get all users
    */
   async getUsers(): Promise<PortEntitiesResponse> {
     return this.get<PortEntitiesResponse>('/blueprints/_user/entities');
+  }
+
+  /**
+   * Get all users (static method)
+   */
+  static async getUsers(): Promise<PortEntitiesResponse> {
+    const client = await PortClient.getInstance();
+    return client.getUsers();
   }
 
   /**
@@ -208,6 +244,14 @@ export class PortClient {
   }
 
   /**
+   * Get a specific user by identifier (static method)
+   */
+  static async getUser(identifier: string): Promise<PortEntityResponse> {
+    const client = await PortClient.getInstance();
+    return client.getUser(identifier);
+  }
+
+  /**
    * Upsert entity properties
    */
   async upsertProps(
@@ -215,10 +259,21 @@ export class PortClient {
     identifier: string,
     properties: Record<string, unknown>
   ): Promise<unknown> {
-    return this.post(`/blueprints/${entity}/entities?upsert=true&merge=true`, {
-      identifier,
+    return this.patch(`/blueprints/${entity}/entities/${identifier}`, {
       properties,
     });
+  }
+
+  /**
+   * Upsert entity properties (static method)
+   */
+  static async upsertProps(
+    entity: string,
+    identifier: string,
+    properties: Record<string, unknown>
+  ): Promise<unknown> {
+    const client = await PortClient.getInstance();
+    return client.upsertProps(entity, identifier, properties);
   }
 
   /**
@@ -232,106 +287,12 @@ export class PortClient {
     relations: Record<string, unknown>,
     team: string[] | null = null
   ): Promise<unknown> {
-    const payload: PortUpsertPayload = {
-      identifier,
+    return this.patch(`/blueprints/${entity}/entities/${identifier}`, {
       title,
       properties,
       relations,
-    };
-    if (team) {
-      payload.team = team;
-    }
-    return this.post(`/blueprints/${entity}/entities?upsert=true&merge=true`, payload);
-  }
-
-  /**
-   * Create a new entity
-   */
-  async createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
-    return this.post(`/blueprints/${blueprint}/entities`, entity);
-  }
-
-  /**
-   * Update an existing entity
-   */
-  async updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
-    return this.patch<PortEntity>(`/blueprints/${blueprint}/entities/${entity.identifier}`, entity);
-  }
-
-  /**
-   * Get token information for debugging
-   */
-  getTokenInfo(): { hasToken: boolean; expiresAt: Date | null; isExpired: boolean } {
-    const now = Date.now();
-    const expiresAt = this.tokenExpiryTime ? new Date(this.tokenExpiryTime) : null;
-    const isExpired = this.tokenExpiryTime ? this.tokenExpiryTime - now < 0 : true;
-
-    return {
-      hasToken: !!this.accessToken,
-      expiresAt,
-      isExpired,
-    };
-  }
-
-  // Static methods for backward compatibility and convenience
-
-  /**
-   * Get singleton instance of PortClient (alias for getInstance)
-   */
-  static async getClient(): Promise<PortClient> {
-    return PortClient.getInstance();
-  }
-
-  /**
-   * Delete all entities of a specific type (static method)
-   */
-  static async deleteAllEntities(entityType: string): Promise<void> {
-    const client = await PortClient.getInstance();
-    return client.deleteAllEntities(entityType);
-  }
-
-  /**
-   * Get all entities of a specific type (static method)
-   */
-  static async getEntities(entityType: string): Promise<PortEntitiesResponse> {
-    const client = await PortClient.getInstance();
-    return client.getEntities(entityType);
-  }
-
-  /**
-   * Get a specific entity by identifier (static method)
-   */
-  static async getEntity(entityType: string, identifier: string): Promise<PortEntityResponse> {
-    const client = await PortClient.getInstance();
-    return client.getEntity(entityType, identifier);
-  }
-
-  /**
-   * Get all users (static method)
-   */
-  static async getUsers(): Promise<PortEntitiesResponse> {
-    const client = await PortClient.getInstance();
-    return client.getUsers();
-  }
-
-  /**
-   * Get a specific user by identifier (static method)
-   */
-  static async getUser(identifier: string): Promise<PortEntityResponse> {
-    const client = await PortClient.getInstance();
-    return client.getUser(identifier);
-  }
-
-  /**
-   * Upsert entity properties (static method)
-   */
-  static async upsertProps(
-    entity: string,
-    identifier: string,
-    properties: Record<string, unknown>
-  ): Promise<unknown> {
-    const client = await PortClient.getInstance();
-    return client.upsertProps(entity, identifier, properties);
+      team,
+    });
   }
 
   /**
@@ -350,6 +311,13 @@ export class PortClient {
   }
 
   /**
+   * Create a new entity
+   */
+  async createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
+    return this.post(`/blueprints/${blueprint}/entities`, entity);
+  }
+
+  /**
    * Create a new entity (static method)
    */
   static async createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
@@ -358,11 +326,38 @@ export class PortClient {
   }
 
   /**
+   * Update an existing entity
+   */
+  async updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
+    return this.patch<PortEntity>(`/blueprints/${blueprint}/entities/${entity.identifier}`, entity);
+  }
+
+  /**
    * Update an existing entity (static method)
    */
   static async updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
     const client = await PortClient.getInstance();
     return client.updateEntity(blueprint, entity);
+  }
+
+  /**
+   * Get token information
+   */
+  getTokenInfo(): { hasToken: boolean; expiresAt: Date | null; isExpired: boolean } {
+    return {
+      hasToken: !!this.accessToken,
+      expiresAt: this.tokenExpiryTime ? new Date(this.tokenExpiryTime) : null,
+      isExpired: this.tokenExpiryTime ? Date.now() > this.tokenExpiryTime : true,
+    };
+  }
+
+  // Static methods for backward compatibility and convenience
+
+  /**
+   * Get singleton instance of PortClient (alias for getInstance)
+   */
+  static async getClient(): Promise<PortClient> {
+    return PortClient.getInstance();
   }
 }
 

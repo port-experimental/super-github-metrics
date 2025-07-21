@@ -44,38 +44,23 @@ async function processOrganizationRepositories(
   await processor(repos);
 }
 
-/**
- * Validates required environment variables
- */
-function validateEnvironment(): void {
-  const PORT_CLIENT_ID = process.env.PORT_CLIENT_ID;
-  const PORT_CLIENT_SECRET = process.env.PORT_CLIENT_SECRET;
-  const AUTH_TOKEN = process.env.X_GITHUB_TOKEN;
-  const ENTERPRISE_NAME = process.env.X_GITHUB_ENTERPRISE;
-  const GITHUB_ORGS = process.env.X_GITHUB_ORGS?.split(',') || [];
-
-  const missingVars = [];
-  if (!PORT_CLIENT_ID) missingVars.push('PORT_CLIENT_ID');
-  if (!PORT_CLIENT_SECRET) missingVars.push('PORT_CLIENT_SECRET');
-  if (!AUTH_TOKEN) missingVars.push('X_GITHUB_TOKEN');
-  if (!ENTERPRISE_NAME) missingVars.push('X_GITHUB_ENTERPRISE');
-  if (GITHUB_ORGS.length === 0) missingVars.push('X_GITHUB_ORGS');
-
-  if (missingVars.length > 0) {
-    throw new FatalError(`Missing required environment variables: ${missingVars.join(', ')}`);
-  }
-}
-
 async function main() {
   try {
-    // Validate environment variables first
-    validateEnvironment();
+    const AUTH_TOKEN = process.env.X_GITHUB_TOKEN;
+    const ENTERPRISE_NAME = process.env.X_GITHUB_ENTERPRISE;
+    const GITHUB_ORGS = process.env.X_GITHUB_ORGS?.split(',');
 
-    const PORT_CLIENT_ID = process.env.PORT_CLIENT_ID!;
-    const PORT_CLIENT_SECRET = process.env.PORT_CLIENT_SECRET!;
-    const AUTH_TOKEN = process.env.X_GITHUB_TOKEN!;
-    const ENTERPRISE_NAME = process.env.X_GITHUB_ENTERPRISE!;
-    const GITHUB_ORGS = process.env.X_GITHUB_ORGS!.split(',');
+    if (!AUTH_TOKEN) {
+      throw new FatalError('X_GITHUB_TOKEN environment variable is required');
+    }
+    if (!ENTERPRISE_NAME) {
+      throw new FatalError('X_GITHUB_ENTERPRISE environment variable is required');
+    }
+    if (!GITHUB_ORGS || GITHUB_ORGS.length === 0) {
+      throw new FatalError(
+        'X_GITHUB_ORGS environment variable is required and must contain at least one organization'
+      );
+    }
 
     const program = new Command();
 

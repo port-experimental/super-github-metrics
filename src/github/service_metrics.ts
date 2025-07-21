@@ -111,21 +111,17 @@ async function fetchRepositoryContributions(
     let hasMore = true;
 
     while (hasMore) {
-      const commits = await githubClient.makeRequestWithRetry(() =>
-        githubClient['octokit'].repos.listCommits({
-          owner,
-          repo: repoName,
-          per_page: 100,
-          page,
-        })
-      );
+      const commits = await githubClient.getRepositoryCommits(owner, repoName, {
+        per_page: 100,
+        page,
+      });
 
-      if (commits.data.length === 0) {
+      if (commits.length === 0) {
         hasMore = false;
         break;
       }
 
-      for (const commit of commits.data) {
+      for (const commit of commits) {
         if (commit.commit.author?.date) {
           const commitDate = new Date(commit.commit.author.date);
           if (commitDate >= cutoffDate) {
@@ -165,24 +161,20 @@ async function fetchRepositoryPRs(
     let hasMore = true;
 
     while (hasMore) {
-      const response = await githubClient.makeRequestWithRetry(() =>
-        githubClient['octokit'].pulls.list({
-          owner,
-          repo: repoName,
-          state: 'closed',
-          sort: 'created',
-          direction: 'desc',
-          per_page: 100,
-          page,
-        })
-      );
+      const response = await githubClient.getPullRequests(owner, repoName, {
+        state: 'closed',
+        sort: 'created',
+        direction: 'desc',
+        per_page: 100,
+        page,
+      });
 
-      if (response.data.length === 0) {
+      if (response.length === 0) {
         hasMore = false;
         break;
       }
 
-      for (const pr of response.data) {
+      for (const pr of response) {
         if (pr.created_at) {
           const prDate = new Date(pr.created_at);
           if (prDate >= cutoffDate) {
@@ -227,21 +219,15 @@ async function analyzePR(
   timeToFirstReview?: number;
 }> {
   try {
-    const reviews = await githubClient.makeRequestWithRetry(() =>
-      githubClient['octokit'].pulls.listReviews({
-        owner,
-        repo: repoName,
-        pull_number: pr.number,
-      })
-    );
+    const reviews = await githubClient.getPullRequestReviews(owner, repoName, pr.number);
 
-    const isReviewed = reviews.data.length > 0;
+    const isReviewed = reviews.length > 0;
     const isMerged = !!pr.merged_at;
     const isSuccessful = !!pr.merged_at;
 
     let timeToFirstReview: number | undefined;
     if (isReviewed && pr.created_at) {
-      const firstReview = reviews.data.find((review) => review.submitted_at);
+      const firstReview = reviews.find((review) => review.submitted_at);
       if (firstReview?.submitted_at) {
         timeToFirstReview =
           (new Date(firstReview.submitted_at).getTime() - new Date(pr.created_at).getTime()) /
@@ -487,7 +473,6 @@ async function processRepositoryServiceMetrics(
 
       // Calculate contribution standard deviation for this period
       const periodContributions = new Map<string, number>();
-      const cutoffDate = new Date(Date.now() - period * 24 * 60 * 60 * 1000);
 
       for (const [contributor, count] of allContributions.entries()) {
         // Note: We can't filter contributions by date since we don't have individual commit dates

@@ -168,7 +168,7 @@ export class GitHubClient {
    */
   async getMemberAddDates(enterprise: string): Promise<AuditLogEntry[]> {
     await this.addRequestDelay();
-    let data = await this.octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
+    let data = (await this.octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
       enterprise,
       phrase: 'action:org.add_member',
       include: 'web',
@@ -177,13 +177,13 @@ export class GitHubClient {
       headers: {
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    });
+    })) as Array<{ org_id: number; user: string; user_id: number; created_at: string }>;
 
-    data = data.filter((x: any) => x.org_id === 177709801);
+    data = data.filter((x) => x.org_id === 177709801);
     console.log(`Fetched ${data.length} audit log events`);
     console.log(JSON.stringify(data));
 
-    return data.map((x: any) => ({
+    return data.map((x) => ({
       user: x.user,
       user_id: x.user_id,
       created_at: x.created_at,
@@ -244,6 +244,30 @@ export class GitHubClient {
     // Note: This search returns PRs, not individual reviews
     // We'd need to fetch reviews for each PR separately
     return [];
+  }
+
+  /**
+   * Get commits for a repository
+   */
+  async getRepositoryCommits(
+    owner: string,
+    repo: string,
+    options: {
+      per_page?: number;
+      page?: number;
+    } = {}
+  ): Promise<Commit[]> {
+    await this.addRequestDelay();
+    const { data: commits } = await this.makeRequestWithRetry(() =>
+      this.octokit.rest.repos.listCommits({
+        owner,
+        repo,
+        per_page: options.per_page || 100,
+        page: options.page || 1,
+      })
+    );
+
+    return commits;
   }
 
   /**

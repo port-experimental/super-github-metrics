@@ -136,8 +136,12 @@ export interface Commit {
   commit: {
     author?: {
       date?: string;
+      name?: string;
     } | null;
   };
+  author?: {
+    login?: string;
+  } | null;
   stats?: {
     total?: number;
   };

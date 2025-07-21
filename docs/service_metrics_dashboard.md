@@ -143,7 +143,7 @@ Each service metrics entity has a compact identifier that fits within Port's 30-
   - `w` for weekly  
   - `m` for monthly
 
-The service name is automatically sanitized (non-alphanumeric characters replaced with hyphens) and truncated if needed to fit within the 30-character limit.
+The service name is used as-is and truncated if needed to fit within the 30-character limit.
 
 ## Data Retention
 

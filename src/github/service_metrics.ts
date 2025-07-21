@@ -368,7 +368,7 @@ export async function storeServiceMetrics(record: ServiceMetrics): Promise<void>
       .value();
 
     await updateEntity(BLUEPRINT_NAME, {
-      identifier: record.repoId,
+      identifier: record.repoName,
       title: record.repoName,
       properties: props,
     });

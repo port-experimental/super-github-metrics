@@ -103,7 +103,7 @@ export function createServiceMetricsEntity(
 ): ServiceMetricsEntity {
   // Create a compact identifier that fits within 30 characters
   // Format: {serviceName}{periodType}{period} (e.g., "my-service-d20240115")
-  const serviceName = repo.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase(); // Replace non-alphanumeric with hyphens
+  const serviceName = repo.name; // Use service name as-is
   const periodType = metrics.periodType.charAt(0); // 'd' for daily, 'w' for weekly, 'm' for monthly
   const period = metrics.period; // Already in compact format (YYYYMMDD, YYYYWW, or YYYYMM)
   

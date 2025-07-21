@@ -8,136 +8,400 @@ import type {
   PortUpsertPayload,
 } from '../types/port';
 
-async function generateOAuthToken(): Promise<string> {
-  const clientId = process.env.PORT_CLIENT_ID;
-  const clientSecret = process.env.PORT_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error('CLIENT_ID and CLIENT_SECRET must be set in the environment variables');
-  }
-
-  try {
-    const response = await axios.post<OAuthResponse>(
-      'https://api.getport.io/v1/auth/access_token',
-      {
-        clientId,
-        clientSecret,
-      }
-    );
-
-    return response.data.accessToken;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error('OAuth token generation failed:', error.response?.data || error.message);
-    } else {
-      console.error('An unexpected error occurred:', error);
-    }
-    throw error;
-  }
-}
-
-class ApiClient {
+/**
+ * PortClient class for interacting with Port API
+ * Handles token management, validation, and regeneration
+ */
+export class PortClient {
   private baseUrl: string;
-  private bearerToken: string;
-  private static instance: ApiClient;
+  private accessToken: string | null = null;
+  private tokenExpiryTime: number | null = null;
+  private clientId: string;
+  private clientSecret: string;
+  private static instance: PortClient | null = null;
 
-  static async getClient() {
-    const bearerToken: string = process.env.PORT_BEARER_TOKEN || (await generateOAuthToken());
-    if (!ApiClient.instance) {
-      ApiClient.instance = new ApiClient('https://api.getport.io/v1', bearerToken);
+  private constructor() {
+    this.baseUrl = 'https://api.getport.io/v1';
+    this.clientId = process.env.PORT_CLIENT_ID || '';
+    this.clientSecret = process.env.PORT_CLIENT_SECRET || '';
+
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('PORT_CLIENT_ID and PORT_CLIENT_SECRET must be set in environment variables');
     }
-    return ApiClient.instance;
   }
 
-  constructor(baseUrl: string, bearerToken: string) {
-    this.baseUrl = baseUrl;
-    this.bearerToken = bearerToken;
+  /**
+   * Get singleton instance of PortClient
+   */
+  static async getInstance(): Promise<PortClient> {
+    if (!PortClient.instance) {
+      PortClient.instance = new PortClient();
+      await PortClient.instance.initializeToken();
+    }
+    return PortClient.instance;
   }
 
-  async get<T = unknown>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
+  /**
+   * Initialize the access token
+   */
+  private async initializeToken(): Promise<void> {
+    // Check if we have a bearer token in environment
+    const bearerToken = process.env.PORT_BEARER_TOKEN;
+    if (bearerToken) {
+      this.accessToken = bearerToken;
+      // Set a default expiry time for bearer tokens (24 hours)
+      this.tokenExpiryTime = Date.now() + 24 * 60 * 60 * 1000;
+    } else {
+      await this.generateNewToken();
+    }
+  }
+
+  /**
+   * Generate a new OAuth token
+   */
+  private async generateNewToken(): Promise<void> {
+    try {
+      console.log('Generating new OAuth token...');
+      const response = await axios.post<OAuthResponse>(`${this.baseUrl}/auth/access_token`, {
+        clientId: this.clientId,
+        clientSecret: this.clientSecret,
+      });
+
+      this.accessToken = response.data.accessToken;
+      // Calculate expiry time based on expiresIn (seconds)
+      this.tokenExpiryTime = Date.now() + response.data.expiresIn * 1000;
+
+      console.log(`Token generated successfully. Expires in ${response.data.expiresIn} seconds`);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('OAuth token generation failed:', error.response?.data || error.message);
+      } else {
+        console.error('An unexpected error occurred during token generation:', error);
+      }
+      throw new Error('Failed to generate OAuth token');
+    }
+  }
+
+  /**
+   * Check if the current token is valid and regenerate if needed
+   */
+  private async ensureValidToken(): Promise<void> {
+    const now = Date.now();
+    const bufferTime = 5 * 60 * 1000; // 5 minutes buffer before expiry
+
+    // If no token or token is expired (with buffer), generate new one
+    if (!this.accessToken || !this.tokenExpiryTime || this.tokenExpiryTime - now < bufferTime) {
+      await this.generateNewToken();
+    }
+  }
+
+  /**
+   * Make an authenticated request with automatic token refresh
+   */
+  private async makeAuthenticatedRequest<T>(
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    endpoint: string,
+    data?: Record<string, unknown>,
+    params?: Record<string, string>
+  ): Promise<T> {
+    await this.ensureValidToken();
+
     const url = new URL(`${this.baseUrl}${endpoint}`);
-    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+    }
 
-    const response = await axios.get<T>(url.toString(), {
+    const config: any = {
+      method,
+      url: url.toString(),
       headers: {
-        Authorization: `Bearer ${this.bearerToken}`,
-      },
-    });
-
-    return response.data;
-  }
-
-  async post<T = unknown>(endpoint: string, data: Record<string, unknown>): Promise<T> {
-    const response = await axios.post<T>(`${this.baseUrl}${endpoint}`, data, {
-      headers: {
-        Authorization: `Bearer ${this.bearerToken}`,
+        Authorization: `Bearer ${this.accessToken}`,
         'Content-Type': 'application/json',
       },
-    });
-    return response.data;
+    };
+
+    if (data) {
+      config.data = data;
+    }
+
+    try {
+      const response = await axios(config);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        // Token might be invalid, try regenerating and retry once
+        console.log('Token appears invalid, regenerating...');
+        await this.generateNewToken();
+
+        // Retry the request with new token
+        config.headers.Authorization = `Bearer ${this.accessToken}`;
+        const retryResponse = await axios(config);
+        return retryResponse.data;
+      }
+      throw error;
+    }
   }
 
+  /**
+   * GET request
+   */
+  async get<T = unknown>(endpoint: string, params?: Record<string, string>): Promise<T> {
+    return this.makeAuthenticatedRequest<T>('GET', endpoint, undefined, params);
+  }
+
+  /**
+   * POST request
+   */
+  async post<T = unknown>(endpoint: string, data: Record<string, unknown>): Promise<T> {
+    return this.makeAuthenticatedRequest<T>('POST', endpoint, data);
+  }
+
+  /**
+   * PATCH request
+   */
+  async patch<T = unknown>(endpoint: string, data: Record<string, unknown>): Promise<T> {
+    return this.makeAuthenticatedRequest<T>('PATCH', endpoint, data);
+  }
+
+  /**
+   * DELETE request
+   */
   async delete(endpoint: string): Promise<void> {
-    const url = `${this.baseUrl}${endpoint}`;
-    await axios.delete(url, {
-      headers: {
-        Authorization: `Bearer ${this.bearerToken}`,
-      },
+    return this.makeAuthenticatedRequest<void>('DELETE', endpoint);
+  }
+
+  // Entity Management Methods
+
+  /**
+   * Delete all entities of a specific type
+   */
+  async deleteAllEntities(entityType: string): Promise<void> {
+    return this.delete(`/blueprints/${entityType}/all-entities`);
+  }
+
+  /**
+   * Get all entities of a specific type
+   */
+  async getEntities(entityType: string): Promise<PortEntitiesResponse> {
+    return this.get<PortEntitiesResponse>(`/blueprints/${entityType}/entities`);
+  }
+
+  /**
+   * Get a specific entity by identifier
+   */
+  async getEntity(entityType: string, identifier: string): Promise<PortEntityResponse> {
+    return this.get<PortEntityResponse>(`/blueprints/${entityType}/entities/${identifier}`);
+  }
+
+  /**
+   * Get all users
+   */
+  async getUsers(): Promise<PortEntitiesResponse> {
+    return this.get<PortEntitiesResponse>('/blueprints/_user/entities');
+  }
+
+  /**
+   * Get a specific user by identifier
+   */
+  async getUser(identifier: string): Promise<PortEntityResponse> {
+    return this.get<PortEntityResponse>(`/blueprints/_user/entities/${identifier}`);
+  }
+
+  /**
+   * Upsert entity properties
+   */
+  async upsertProps(
+    entity: string,
+    identifier: string,
+    properties: Record<string, unknown>
+  ): Promise<unknown> {
+    return this.post(`/blueprints/${entity}/entities?upsert=true&merge=true`, {
+      identifier,
+      properties,
     });
   }
 
-  async patch<T>(endpoint: string, data: Record<string, unknown>): Promise<T> {
-    const response = await axios.patch<T>(`${this.baseUrl}${endpoint}`, data, {
-      headers: {
-        Authorization: `Bearer ${this.bearerToken}`,
-      },
-    });
-    return response.data;
+  /**
+   * Upsert a complete entity
+   */
+  async upsertEntity(
+    entity: string,
+    identifier: string,
+    title: string,
+    properties: Record<string, unknown>,
+    relations: Record<string, unknown>,
+    team: string[] | null = null
+  ): Promise<unknown> {
+    const payload: PortUpsertPayload = {
+      identifier,
+      title,
+      properties,
+      relations,
+    };
+    if (team) {
+      payload.team = team;
+    }
+    return this.post(`/blueprints/${entity}/entities?upsert=true&merge=true`, payload);
+  }
+
+  /**
+   * Create a new entity
+   */
+  async createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
+    return this.post(`/blueprints/${blueprint}/entities`, entity);
+  }
+
+  /**
+   * Update an existing entity
+   */
+  async updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
+    return this.patch<PortEntity>(`/blueprints/${blueprint}/entities/${entity.identifier}`, entity);
+  }
+
+  /**
+   * Get token information for debugging
+   */
+  getTokenInfo(): { hasToken: boolean; expiresAt: Date | null; isExpired: boolean } {
+    const now = Date.now();
+    const expiresAt = this.tokenExpiryTime ? new Date(this.tokenExpiryTime) : null;
+    const isExpired = this.tokenExpiryTime ? this.tokenExpiryTime - now < 0 : true;
+
+    return {
+      hasToken: !!this.accessToken,
+      expiresAt,
+      isExpired,
+    };
+  }
+
+  // Static methods for backward compatibility and convenience
+
+  /**
+   * Get singleton instance of PortClient (alias for getInstance)
+   */
+  static async getClient(): Promise<PortClient> {
+    return PortClient.getInstance();
+  }
+
+  /**
+   * Delete all entities of a specific type (static method)
+   */
+  static async deleteAllEntities(entityType: string): Promise<void> {
+    const client = await PortClient.getInstance();
+    return client.deleteAllEntities(entityType);
+  }
+
+  /**
+   * Get all entities of a specific type (static method)
+   */
+  static async getEntities(entityType: string): Promise<PortEntitiesResponse> {
+    const client = await PortClient.getInstance();
+    return client.getEntities(entityType);
+  }
+
+  /**
+   * Get a specific entity by identifier (static method)
+   */
+  static async getEntity(entityType: string, identifier: string): Promise<PortEntityResponse> {
+    const client = await PortClient.getInstance();
+    return client.getEntity(entityType, identifier);
+  }
+
+  /**
+   * Get all users (static method)
+   */
+  static async getUsers(): Promise<PortEntitiesResponse> {
+    const client = await PortClient.getInstance();
+    return client.getUsers();
+  }
+
+  /**
+   * Get a specific user by identifier (static method)
+   */
+  static async getUser(identifier: string): Promise<PortEntityResponse> {
+    const client = await PortClient.getInstance();
+    return client.getUser(identifier);
+  }
+
+  /**
+   * Upsert entity properties (static method)
+   */
+  static async upsertProps(
+    entity: string,
+    identifier: string,
+    properties: Record<string, unknown>
+  ): Promise<unknown> {
+    const client = await PortClient.getInstance();
+    return client.upsertProps(entity, identifier, properties);
+  }
+
+  /**
+   * Upsert a complete entity (static method)
+   */
+  static async upsertEntity(
+    entity: string,
+    identifier: string,
+    title: string,
+    properties: Record<string, unknown>,
+    relations: Record<string, unknown>,
+    team: string[] | null = null
+  ): Promise<unknown> {
+    const client = await PortClient.getInstance();
+    return client.upsertEntity(entity, identifier, title, properties, relations, team);
+  }
+
+  /**
+   * Create a new entity (static method)
+   */
+  static async createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
+    const client = await PortClient.getInstance();
+    return client.createEntity(blueprint, entity);
+  }
+
+  /**
+   * Update an existing entity (static method)
+   */
+  static async updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
+    const client = await PortClient.getInstance();
+    return client.updateEntity(blueprint, entity);
   }
 }
 
-export async function getClient() {
-  return ApiClient.getClient();
+// Legacy function exports for backward compatibility
+// These now use the static methods of PortClient
+
+export async function getClient(): Promise<PortClient> {
+  return PortClient.getClient();
 }
 
-export async function deleteAllEntities(entityType: string) {
-  const client = await ApiClient.getClient();
-  return client.delete(`/blueprints/${entityType}/all-entities`);
+export async function deleteAllEntities(entityType: string): Promise<void> {
+  return PortClient.deleteAllEntities(entityType);
 }
 
 export async function getEntities(entityType: string): Promise<PortEntitiesResponse> {
-  const client = await ApiClient.getClient();
-  return client.get<PortEntitiesResponse>(`/blueprints/${entityType}/entities`);
+  return PortClient.getEntities(entityType);
 }
 
 export async function getEntity(
   entityType: string,
   identifier: string
 ): Promise<PortEntityResponse> {
-  const client = await ApiClient.getClient();
-  return client.get<PortEntityResponse>(`/blueprints/${entityType}/entities/${identifier}`);
+  return PortClient.getEntity(entityType, identifier);
 }
 
 export async function getUsers(): Promise<PortEntitiesResponse> {
-  const client = await ApiClient.getClient();
-  return client.get<PortEntitiesResponse>('/blueprints/_user/entities');
+  return PortClient.getUsers();
 }
 
 export async function getUser(identifier: string): Promise<PortEntityResponse> {
-  const client = await ApiClient.getClient();
-  return client.get<PortEntityResponse>(`/blueprints/_user/entities/${identifier}`);
+  return PortClient.getUser(identifier);
 }
 
 export async function upsertProps(
   entity: string,
   identifier: string,
   properties: Record<string, unknown>
-) {
-  const client = await ApiClient.getClient();
-  return client.post(`/blueprints/${entity}/entities?upsert=true&merge=true`, {
-    identifier,
-    properties,
-  });
+): Promise<unknown> {
+  return PortClient.upsertProps(entity, identifier, properties);
 }
 
 export async function upsertEntity(
@@ -147,26 +411,14 @@ export async function upsertEntity(
   properties: Record<string, unknown>,
   relations: Record<string, unknown>,
   team: string[] | null = null
-) {
-  const client = await ApiClient.getClient();
-  const payload: PortUpsertPayload = {
-    identifier,
-    title,
-    properties,
-    relations,
-  };
-  if (team) {
-    payload.team = team;
-  }
-  return client.post(`/blueprints/${entity}/entities?upsert=true&merge=true`, payload);
+): Promise<unknown> {
+  return PortClient.upsertEntity(entity, identifier, title, properties, relations, team);
 }
 
-export async function createEntity(blueprint: string, entity: PortEntity) {
-  const client = await ApiClient.getClient();
-  return client.post(`/blueprints/${blueprint}/entities`, entity);
+export async function createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
+  return PortClient.createEntity(blueprint, entity);
 }
 
-export async function updateEntity(blueprint: string, entity: PortEntity) {
-  const client = await ApiClient.getClient();
-  return client.patch<PortEntity>(`/blueprints/${blueprint}/entities/${entity.identifier}`, entity);
+export async function updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
+  return PortClient.updateEntity(blueprint, entity);
 }

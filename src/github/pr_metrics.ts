@@ -2,11 +2,7 @@ import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { upsertProps } from '../clients/port';
 import type { Repository, Commit } from '../types/github';
-import { 
-  filterDataForTimePeriod, 
-  TIME_PERIODS, 
-  type TimePeriod 
-} from './utils';
+import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod } from './utils';
 
 interface PRMetrics {
   repoId: string;
@@ -132,11 +128,11 @@ export async function calculateAndStorePRMetrics(
   const githubClient = createGitHubClient(authToken);
   let hasFatalError = false;
   const failedRepos: string[] = [];
-  
+
   for (const [index, repo] of repos.entries()) {
     try {
       console.log(`Processing repo ${repo.name} (${index + 1}/${repos.length})`);
-      
+
       // Fetch all PRs for the maximum time period (90 days) once
       const maxPeriod = TIME_PERIODS.NINETY_DAYS;
       console.log(`  Fetching PRs for ${maxPeriod} day period...`);
@@ -144,18 +140,27 @@ export async function calculateAndStorePRMetrics(
       console.log(`  Found ${allPRs.length} PRs in the last ${maxPeriod} days`);
 
       // Process each time period by filtering the already-fetched data
-      const timePeriods: TimePeriod[] = [TIME_PERIODS.ONE_DAY, TIME_PERIODS.SEVEN_DAYS, TIME_PERIODS.THIRTY_DAYS, TIME_PERIODS.NINETY_DAYS];
-      
+      const timePeriods: TimePeriod[] = [
+        TIME_PERIODS.ONE_DAY,
+        TIME_PERIODS.SEVEN_DAYS,
+        TIME_PERIODS.THIRTY_DAYS,
+        TIME_PERIODS.NINETY_DAYS,
+      ];
+
       for (const period of timePeriods) {
         console.log(`  Processing ${period} day period...`);
-        
+
         // Filter PRs for this time period
         const periodPRs = filterDataForTimePeriod(allPRs, period);
         console.log(`  Filtered to ${periodPRs.length} PRs for ${period} day period`);
 
         for (const pr of periodPRs) {
           try {
-            const prData = await githubClient.getPullRequest(repo.owner.login, repo.name, pr.number);
+            const prData = await githubClient.getPullRequest(
+              repo.owner.login,
+              repo.name,
+              pr.number
+            );
             const reviews = await githubClient.getPullRequestReviews(
               repo.owner.login,
               repo.name,
@@ -192,7 +197,8 @@ export async function calculateAndStorePRMetrics(
                   : null,
               prPickupTime:
                 reviews.length > 0 && reviews[0].submitted_at && pr.created_at
-                  ? (new Date(reviews[0].submitted_at).getTime() - new Date(pr.created_at).getTime()) /
+                  ? (new Date(reviews[0].submitted_at).getTime() -
+                      new Date(pr.created_at).getTime()) /
                     (1000 * 60 * 60 * 24)
                   : null,
               prApproveTime:
@@ -263,7 +269,9 @@ export async function calculateAndStorePRMetrics(
 
   // If some repositories failed, log a warning but don't fail the entire process
   if (failedRepos.length > 0) {
-    console.warn(`Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`);
+    console.warn(
+      `Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`
+    );
   }
 
   // If there were any fatal errors and no successful processing, throw an error

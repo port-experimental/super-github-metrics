@@ -21,7 +21,10 @@ if (process.env.GITHUB_ACTIONS !== 'true') {
  * Custom error class for fatal errors that should cause the process to exit
  */
 class FatalError extends Error {
-  constructor(message: string, public readonly originalError?: Error) {
+  constructor(
+    message: string,
+    public readonly originalError?: Error
+  ) {
     super(message);
     this.name = 'FatalError';
   }
@@ -59,9 +62,7 @@ function validateEnvironment(): void {
   if (GITHUB_ORGS.length === 0) missingVars.push('X_GITHUB_ORGS');
 
   if (missingVars.length > 0) {
-    throw new FatalError(
-      `Missing required environment variables: ${missingVars.join(', ')}`
-    );
+    throw new FatalError(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
 }
 
@@ -85,14 +86,14 @@ async function main() {
       .description('Send onboarding metrics to Port')
       .action(async () => {
         let hasFatalError = false;
-        
+
         try {
           console.log('Calculating onboarding metrics...');
           const githubClient = createGitHubClient(AUTH_TOKEN);
           await githubClient.checkRateLimits();
           const githubUsers = await getEntities('githubUser');
           console.log(`Found ${githubUsers.entities.length} github users in Port`);
-          
+
           let joinRecords: AuditLogEntry[] = [];
           // Try fetch join dates from the audit log
           try {
@@ -174,7 +175,6 @@ async function main() {
             hasFatalError = true;
             throw new FatalError('Failed to process any users for onboarding metrics');
           }
-
         } catch (error) {
           if (error instanceof FatalError) {
             hasFatalError = true;
@@ -195,7 +195,7 @@ async function main() {
       .description('Send PR metrics to Port')
       .action(async () => {
         let hasFatalError = false;
-        
+
         try {
           console.log('Calculating PR metrics...');
           const githubClient = createGitHubClient(AUTH_TOKEN);
@@ -229,7 +229,7 @@ async function main() {
       .description('Send GitHub Workflow metrics to Port')
       .action(async () => {
         let hasFatalError = false;
-        
+
         try {
           console.log('Calculating Workflows metrics...');
           const githubClient = createGitHubClient(AUTH_TOKEN);
@@ -247,7 +247,9 @@ async function main() {
           }
 
           if (hasFatalError) {
-            throw new FatalError('Failed to process workflow metrics for one or more organizations');
+            throw new FatalError(
+              'Failed to process workflow metrics for one or more organizations'
+            );
           }
         } catch (error) {
           if (error instanceof FatalError) {
@@ -263,7 +265,7 @@ async function main() {
       .description('Send GitHub Service metrics to Port')
       .action(async () => {
         let hasFatalError = false;
-        
+
         try {
           console.log('Calculating Service metrics...');
           const githubClient = createGitHubClient(AUTH_TOKEN);

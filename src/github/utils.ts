@@ -42,7 +42,7 @@ export const TIME_PERIODS = {
   NINETY_DAYS: 90,
 } as const;
 
-export type TimePeriod = typeof TIME_PERIODS[keyof typeof TIME_PERIODS];
+export type TimePeriod = (typeof TIME_PERIODS)[keyof typeof TIME_PERIODS];
 
 /**
  * Gets the maximum time period from an array of time periods
@@ -56,4 +56,4 @@ export function getMaxTimePeriod(periods: TimePeriod[]): TimePeriod {
  */
 export function createCutoffDate(daysBack: number): Date {
   return new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
-} 
+}

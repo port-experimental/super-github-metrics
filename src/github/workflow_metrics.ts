@@ -121,8 +121,9 @@ export async function getWorkflowMetrics(
               last30DaysSuccessRuns.reduce((acc, run) => acc + run.workflowRunDuration, 0) /
               last30DaysSuccessRuns.length,
             totalRuns_last_30_days: last30DaysRuns.length,
-            totalFailures_last_30_days: last30DaysRuns.filter((run) => run.workflowStatus !== 'success')
-              .length,
+            totalFailures_last_30_days: last30DaysRuns.filter(
+              (run) => run.workflowStatus !== 'success'
+            ).length,
             successRate_last_30_days: (last30DaysSuccessRuns.length / last30DaysRuns.length) * 100,
             medianDuration_last_90_days:
               last90DaysSuccessRuns[Math.floor(last90DaysSuccessRuns.length / 2)]
@@ -139,8 +140,9 @@ export async function getWorkflowMetrics(
               last90DaysSuccessRuns.reduce((acc, run) => acc + run.workflowRunDuration, 0) /
               last90DaysSuccessRuns.length,
             totalRuns_last_90_days: last90DaysRuns.length,
-            totalFailures_last_90_days: last90DaysRuns.filter((run) => run.workflowStatus !== 'success')
-              .length,
+            totalFailures_last_90_days: last90DaysRuns.filter(
+              (run) => run.workflowStatus !== 'success'
+            ).length,
             successRate_last_90_days: (last90DaysSuccessRuns.length / last90DaysRuns.length) * 100,
           });
         } catch (error) {
@@ -162,7 +164,9 @@ export async function getWorkflowMetrics(
 
   // If some repositories failed, log a warning but don't fail the entire process
   if (failedRepos.length > 0) {
-    console.warn(`Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`);
+    console.warn(
+      `Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`
+    );
   }
 
   // If there were any fatal errors and no successful processing, throw an error

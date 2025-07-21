@@ -2,12 +2,7 @@ import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { updateEntity } from '../clients/port';
 import type { PullRequestBasic } from '../types/github';
-import { 
-  filterDataForTimePeriod, 
-  TIME_PERIODS, 
-  type TimePeriod,
-  getMaxTimePeriod 
-} from './utils';
+import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, getMaxTimePeriod } from './utils';
 
 interface ServiceMetrics {
   repoId: string;
@@ -358,7 +353,8 @@ function createTimePeriodMetrics(
     [`numberOfPRsReviewed_${period}d`]: reviewData.numberOfPRsReviewed,
     [`numberOfPRsMergedWithoutReview_${period}d`]: reviewData.numberOfPRsMergedWithoutReview,
     [`percentageOfPRsReviewed_${period}d`]: finalMetrics.percentageOfPRsReviewed,
-    [`percentageOfPRsMergedWithoutReview_${period}d`]: finalMetrics.percentageOfPRsMergedWithoutReview,
+    [`percentageOfPRsMergedWithoutReview_${period}d`]:
+      finalMetrics.percentageOfPRsMergedWithoutReview,
     [`averageTimeToFirstReview_${period}d`]: finalMetrics.averageTimeToFirstReview,
     [`prSuccessRate_${period}d`]: finalMetrics.prSuccessRate,
     [`totalPRs_${period}d`]: reviewData.totalPRs,
@@ -416,7 +412,9 @@ function logServiceMetricsSummary(record: ServiceMetrics): void {
     console.log(`\n--- ${period} Day Period ---`);
     console.log(`Total PRs: ${record[`totalPRs_${period}d` as keyof ServiceMetrics]}`);
     console.log(`Merged PRs: ${record[`totalMergedPRs_${period}d` as keyof ServiceMetrics]}`);
-    console.log(`Reviewed PRs: ${record[`numberOfPRsReviewed_${period}d` as keyof ServiceMetrics]}`);
+    console.log(
+      `Reviewed PRs: ${record[`numberOfPRsReviewed_${period}d` as keyof ServiceMetrics]}`
+    );
     console.log(
       `Merged without review: ${record[`numberOfPRsMergedWithoutReview_${period}d` as keyof ServiceMetrics]}`
     );
@@ -447,7 +445,13 @@ async function processRepositoryServiceMetrics(
   console.log(`Processing service metrics for repo ${repo.name} (${repoIndex + 1}/${totalRepos})`);
 
   try {
-    const timePeriods: TimePeriod[] = [TIME_PERIODS.ONE_DAY, TIME_PERIODS.SEVEN_DAYS, TIME_PERIODS.THIRTY_DAYS, TIME_PERIODS.SIXTY_DAYS, TIME_PERIODS.NINETY_DAYS];
+    const timePeriods: TimePeriod[] = [
+      TIME_PERIODS.ONE_DAY,
+      TIME_PERIODS.SEVEN_DAYS,
+      TIME_PERIODS.THIRTY_DAYS,
+      TIME_PERIODS.SIXTY_DAYS,
+      TIME_PERIODS.NINETY_DAYS,
+    ];
     const maxPeriod = getMaxTimePeriod(timePeriods); // 90 days
     const allTimePeriodMetrics: Record<string, number> = {};
 
@@ -467,7 +471,7 @@ async function processRepositoryServiceMetrics(
     // Process each time period by filtering the already-fetched data
     for (const period of timePeriods) {
       console.log(`  Processing ${period} day period...`);
-      
+
       // Filter PRs for this time period
       const periodPRs = filterDataForTimePeriod(allPRs, period);
       console.log(`  Filtered to ${periodPRs.length} PRs for ${period} day period`);
@@ -484,13 +488,13 @@ async function processRepositoryServiceMetrics(
       // Calculate contribution standard deviation for this period
       const periodContributions = new Map<string, number>();
       const cutoffDate = new Date(Date.now() - period * 24 * 60 * 60 * 1000);
-      
+
       for (const [contributor, count] of allContributions.entries()) {
         // Note: We can't filter contributions by date since we don't have individual commit dates
         // This is a limitation of the current API approach, but we're still optimizing the PR fetching
         periodContributions.set(contributor, count);
       }
-      
+
       const contributionCounts = Array.from(periodContributions.values());
       const contributionStdDev = calculateContributionStandardDeviation(contributionCounts);
       periodMetrics[`contributionStandardDeviation_${period}d`] = contributionStdDev;
@@ -535,7 +539,9 @@ export async function calculateAndStoreServiceMetrics(
 
   // If some repositories failed, log a warning but don't fail the entire process
   if (failedRepos.length > 0) {
-    console.warn(`Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`);
+    console.warn(
+      `Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`
+    );
   }
 
   // If there were any fatal errors and no successful processing, throw an error

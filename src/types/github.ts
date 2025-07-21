@@ -95,7 +95,6 @@ export interface RepositoryWorkflowMetrics {
   lastRunDate: string;
 }
 
-
 export interface Repository {
   id: number;
   name: string;

@@ -1,5 +1,6 @@
 export interface OAuthResponse {
   accessToken: string;
+  expiresIn: number; // Token expiry time in seconds
 }
 
 export interface PortEntity {

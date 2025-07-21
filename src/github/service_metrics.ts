@@ -5,8 +5,8 @@ import type { PullRequestBasic } from '../types/github';
 import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, getMaxTimePeriod } from './utils';
 
 
-const BLUEPRINT_NAME = 'service';
-interface ServiceMetrics {
+export const BLUEPRINT_NAME = 'service';
+export interface ServiceMetrics {
   repoId: string;
   repoName: string;
   organization: string;
@@ -62,7 +62,7 @@ interface ServiceMetrics {
   contributionStandardDeviation_90d: number;
 }
 
-interface PRReviewData {
+export interface PRReviewData {
   totalPRs: number;
   totalMergedPRs: number;
   numberOfPRsReviewed: number;
@@ -72,7 +72,7 @@ interface PRReviewData {
   totalSuccessfulPRs: number; // PRs that were merged
 }
 
-interface Repository {
+export interface Repository {
   id: string;
   name: string;
   owner: {
@@ -83,7 +83,7 @@ interface Repository {
 /**
  * Calculates the standard deviation of contribution counts
  */
-function calculateContributionStandardDeviation(contributionCounts: number[]): number {
+export function calculateContributionStandardDeviation(contributionCounts: number[]): number {
   if (contributionCounts.length === 0) return 0;
   if (contributionCounts.length === 1) return 0;
 
@@ -99,7 +99,7 @@ function calculateContributionStandardDeviation(contributionCounts: number[]): n
 /**
  * Fetches all contributions for a repository within the specified time period
  */
-async function fetchRepositoryContributions(
+export async function fetchRepositoryContributions(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
@@ -149,7 +149,7 @@ async function fetchRepositoryContributions(
 /**
  * Fetches all PRs for a repository within the specified time period
  */
-async function fetchRepositoryPRs(
+export async function fetchRepositoryPRs(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
@@ -208,7 +208,7 @@ async function fetchRepositoryPRs(
 /**
  * Analyzes a single PR to determine review status and timing
  */
-async function analyzePR(
+export async function analyzePR(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
@@ -260,7 +260,7 @@ async function analyzePR(
 /**
  * Calculates review metrics for a set of PRs
  */
-async function calculateRepositoryReviewMetrics(
+export async function calculateRepositoryReviewMetrics(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
@@ -307,7 +307,7 @@ async function calculateRepositoryReviewMetrics(
 /**
  * Calculates final metrics from review data
  */
-function calculateFinalMetrics(reviewData: PRReviewData): {
+export function calculateFinalMetrics(reviewData: PRReviewData): {
   percentageOfPRsReviewed: number;
   percentageOfPRsMergedWithoutReview: number;
   averageTimeToFirstReview: number;
@@ -332,7 +332,7 @@ function calculateFinalMetrics(reviewData: PRReviewData): {
 /**
  * Creates metrics for a specific time period
  */
-function createTimePeriodMetrics(
+export function createTimePeriodMetrics(
   reviewData: PRReviewData,
   finalMetrics: ReturnType<typeof calculateFinalMetrics>,
   period: TimePeriod
@@ -353,7 +353,7 @@ function createTimePeriodMetrics(
 /**
  * Creates a service metrics record
  */
-function createServiceMetricsRecord(
+export function createServiceMetricsRecord(
   repo: Repository,
   timePeriodMetrics: Record<string, number>
 ): ServiceMetrics {
@@ -368,7 +368,7 @@ function createServiceMetricsRecord(
 /**
  * Stores service metrics in Port
  */
-async function storeServiceMetrics(record: ServiceMetrics): Promise<void> {
+export async function storeServiceMetrics(record: ServiceMetrics): Promise<void> {
   try {
     const props: Record<string, unknown> = _.chain(record)
       .omit(['repoId', 'repoName'])
@@ -390,7 +390,7 @@ async function storeServiceMetrics(record: ServiceMetrics): Promise<void> {
 /**
  * Logs a summary of service metrics
  */
-function logServiceMetricsSummary(record: ServiceMetrics): void {
+export function logServiceMetricsSummary(record: ServiceMetrics): void {
   console.log(`\n=== Service Metrics Summary for ${record.repoName} ===`);
   console.log(`Organization: ${record.organization}`);
   console.log(`Repository ID: ${record.repoId}`);
@@ -424,7 +424,7 @@ function logServiceMetricsSummary(record: ServiceMetrics): void {
 /**
  * Processes service metrics for a single repository with optimized data fetching
  */
-async function processRepositoryServiceMetrics(
+export async function processRepositoryServiceMetrics(
   githubClient: GitHubClient,
   repo: Repository,
   repoIndex: number,

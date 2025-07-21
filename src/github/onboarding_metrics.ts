@@ -36,9 +36,10 @@ export async function calculateAndStoreDeveloperStats(
   orgNames: string[],
   authToken: string,
   user: GitHubUser,
-  joinDate: string
+  joinDate: string,
+  githubClient?: any
 ): Promise<void> {
-  const stats = await getDeveloperStats(orgNames, authToken, user.identifier, joinDate);
+  const stats = await getDeveloperStats(orgNames, authToken, user.identifier, joinDate, githubClient);
   const record = stats.find((rec) => rec.login === user.identifier);
   if (!record) {
     console.log(`No record found for ${user.identifier}, unprocessable, skipping...`);
@@ -52,16 +53,18 @@ export async function getDeveloperStats(
   orgNames: string[],
   authToken: string,
   login: string,
-  joinDate: string
+  joinDate: string,
+  githubClient?: any
 ): Promise<DeveloperStats[]> {
-  const githubClient = createGitHubClient(authToken);
+  const client = githubClient || createGitHubClient(authToken);
+  console.log('Using client:', client === githubClient ? 'injected client' : 'created client');
   const stats: DeveloperStats[] = [];
 
   try {
     console.log(`Getting stats for ${login}`);
 
     // Log rate limit status at the start
-    const rateLimitStatus = await githubClient.getRateLimitStatus();
+    const rateLimitStatus = await client.getRateLimitStatus();
     console.log(
       `Rate limit status: ${rateLimitStatus.remaining}/${rateLimitStatus.limit} requests remaining, resets in ${rateLimitStatus.secondsUntilReset} seconds`
     );
@@ -75,31 +78,38 @@ export async function getDeveloperStats(
     const allReviews: GitHubReview[] = [];
 
     for (const orgName of orgNames) {
-      // Search for first commit
-      const commits = await githubClient.searchCommits(login, orgName);
-      allCommits.push(...commits);
+      try {
+        // Search for first commit
+        const commits = await client.searchCommits(login, orgName);
+        console.log('Commits returned:', commits.length, commits[0]?.commit?.author?.date);
+        allCommits.push(...commits);
 
-      // Search for first pull request
-      const pulls = await githubClient.searchPullRequests(login, orgName);
-      // Convert PullRequestBasic to GitHubPullRequest
-      const convertedPulls: GitHubPullRequest[] = pulls.map((pull) => ({
-        number: pull.number,
-        created_at: pull.created_at,
-        closed_at: pull.closed_at,
-        merged_at: pull.merged_at,
-        user: pull.user,
-      }));
-      allPulls.push(...convertedPulls);
+        // Search for first pull request
+        const pulls = await client.searchPullRequests(login, orgName);
+        console.log('PRs returned:', pulls.length, pulls[0]?.created_at);
+        // Convert PullRequestBasic to GitHubPullRequest
+        const convertedPulls: GitHubPullRequest[] = pulls.map((pull: any) => ({
+          number: pull.number,
+          created_at: pull.created_at,
+          closed_at: pull.closed_at,
+          merged_at: pull.merged_at,
+          user: pull.user,
+        }));
+        allPulls.push(...convertedPulls);
 
-      // Search for reviews
-      const reviews = await githubClient.searchReviews(login, orgName);
-      // Convert PullRequestReview to GitHubReview
-      const convertedReviews: GitHubReview[] = reviews.map((review) => ({
-        user: review.user,
-        submitted_at: review.submitted_at,
-        created_at: review.submitted_at, // Use submitted_at as fallback for created_at
-      }));
-      allReviews.push(...convertedReviews);
+        // Search for reviews
+        const reviews = await client.searchReviews(login, orgName);
+        // Convert PullRequestReview to GitHubReview
+        const convertedReviews: GitHubReview[] = reviews.map((review: any) => ({
+          user: review.user,
+          submitted_at: review.submitted_at,
+          created_at: review.submitted_at, // Use submitted_at as fallback for created_at
+        }));
+        allReviews.push(...convertedReviews);
+      } catch (error) {
+        console.error(`Error fetching data for org ${orgName}:`, error);
+        // Continue with other orgs instead of failing completely
+      }
     }
 
     allCommits.sort(
@@ -164,7 +174,23 @@ export async function getDeveloperStats(
     console.log(stats);
     return stats;
   } catch (error) {
-    throw new Error(`Failed to fetch developer stats for ${login}: ${error}`);
+    console.error(`Failed to fetch developer stats for ${login}:`, error);
+    // Return a record with null values instead of throwing
+    const record: DeveloperStats = {
+      login: login,
+      joinDate,
+      firstCommitDate: null,
+      tenthCommitDate: null,
+      firstPRDate: null,
+      tenthPRDate: null,
+      timeToFirstCommit: null,
+      timeToFirstPR: null,
+      timeTo10thCommit: null,
+      timeTo10thPR: null,
+      initialReviewResponseTime: null,
+    };
+    stats.push(record);
+    return stats;
   }
 }
 
@@ -205,7 +231,7 @@ export async function storeDeveloperStats(user: GitHubUser, record: DeveloperSta
 }
 
 export function hasCompleteOnboardingMetrics(user: PortEntity) {
-  return (
+  return !!(
     user.properties?.first_commit &&
     user.properties?.tenth_commit &&
     user.properties?.first_pr &&

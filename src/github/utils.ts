@@ -5,12 +5,30 @@
 /**
  * Filters data for a specific time period based on created_at date
  */
-export function filterDataForTimePeriod<T extends { created_at: string }>(
+export function filterDataForTimePeriod<T extends { created_at?: string }>(
   data: T[],
   daysBack: number
 ): T[] {
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
-  return data.filter((item) => new Date(item.created_at) >= cutoffDate);
+  return data.filter((item) => {
+    if (!item.created_at) return false;
+    return new Date(item.created_at) >= cutoffDate;
+  });
+}
+
+/**
+ * Filters commits for a specific time period based on commit.author.date
+ */
+export function filterCommitsForTimePeriod<T extends { commit?: { author?: { date?: string } } }>(
+  data: T[],
+  daysBack: number
+): T[] {
+  const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+  return data.filter((item) => {
+    const dateValue = item.commit?.author?.date;
+    if (!dateValue) return false;
+    return new Date(dateValue) >= cutoffDate;
+  });
 }
 
 /**

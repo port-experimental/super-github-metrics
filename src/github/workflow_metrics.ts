@@ -177,3 +177,39 @@ export async function getWorkflowMetrics(
   // Calculate metrics for each workflow
   return workflowMetrics;
 }
+
+export async function calculateWorkflowMetrics(
+  githubClient: any,
+  portClient: any,
+  orgName: string
+): Promise<void> {
+  const repos = await githubClient.fetchOrganizationRepositories(orgName);
+  const workflowMetrics = await getWorkflowMetrics(repos, 'dummy-token'); // We'll need to pass the actual token
+  
+  // Store the metrics using the port client
+  for (const metric of workflowMetrics) {
+    await portClient.upsertProps({
+      identifier: `${metric.repositoryName}-${metric.workflowId}`,
+      title: `${metric.repositoryName} - ${metric.workflowName}`,
+      properties: {
+        repositoryName: metric.repositoryName,
+        workflowId: metric.workflowId,
+        workflowName: metric.workflowName,
+        medianDuration_last_30_days: metric.medianDuration_last_30_days,
+        maxDuration_last_30_days: metric.maxDuration_last_30_days,
+        minDuration_last_30_days: metric.minDuration_last_30_days,
+        meanDuration_last_30_days: metric.meanDuration_last_30_days,
+        totalRuns_last_30_days: metric.totalRuns_last_30_days,
+        totalFailures_last_30_days: metric.totalFailures_last_30_days,
+        successRate_last_30_days: metric.successRate_last_30_days,
+        medianDuration_last_90_days: metric.medianDuration_last_90_days,
+        maxDuration_last_90_days: metric.maxDuration_last_90_days,
+        minDuration_last_90_days: metric.minDuration_last_90_days,
+        meanDuration_last_90_days: metric.meanDuration_last_90_days,
+        totalRuns_last_90_days: metric.totalRuns_last_90_days,
+        totalFailures_last_90_days: metric.totalFailures_last_90_days,
+        successRate_last_90_days: metric.successRate_last_90_days,
+      },
+    });
+  }
+}

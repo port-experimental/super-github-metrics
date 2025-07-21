@@ -5,7 +5,7 @@ import type { Repository, Commit } from '../types/github';
 import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod } from './utils';
 import type { PullRequestBasic } from '../types/github';
 
-interface PRMetrics {
+export interface PRMetrics {
   repoId: string;
   repoName: string;
   pullRequestId: string;
@@ -39,7 +39,7 @@ interface PRMetrics {
   numberOfCommitsAfterPRIsOpened: number;
 }
 
-const getNumberOfChangesAfterPRIsOpened = async (
+export const getNumberOfChangesAfterPRIsOpened = async (
   githubClient: GitHubClient,
   owner: string,
   repo: string,
@@ -69,7 +69,7 @@ const getNumberOfChangesAfterPRIsOpened = async (
 /**
  * Fetches all PRs for a repository within the specified time period
  */
-async function fetchRepositoryPRs(
+export async function fetchRepositoryPRs(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,

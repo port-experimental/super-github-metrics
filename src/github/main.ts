@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import {
-  type AuditLogEntry,
-  createGitHubClient,
-  type GitHubClient,
-  type Repository,
-} from '../clients/github';
+import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { getEntities } from '../clients/port';
-import type { GitHubUser } from '../types/github';
+import type { GitHubUser, AuditLogEntry, Repository } from '../types/github';
 import type { PortEntity } from '../types/port';
 import {
   calculateAndStoreDeveloperStats,

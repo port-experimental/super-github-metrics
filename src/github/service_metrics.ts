@@ -1,6 +1,7 @@
 import _ from 'lodash';
-import { createGitHubClient, type GitHubClient, type PullRequestBasic } from '../clients/github';
+import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { updateEntity } from '../clients/port';
+import type { PullRequestBasic } from '../types/github';
 
 interface ServiceMetrics {
   repoId: string;

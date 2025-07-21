@@ -1,81 +1,18 @@
 import { Octokit } from '@octokit/rest';
-
-export interface Repository {
-  id: number;
-  name: string;
-  owner: {
-    login: string;
-  };
-  default_branch?: string;
-}
-
-export interface PullRequestBasic {
-  id: number;
-  number: number;
-  created_at: string;
-  closed_at?: string | null;
-  merged_at?: string | null;
-  user?: {
-    login: string;
-  } | null;
-}
-
-export interface PullRequest extends PullRequestBasic {
-  additions: number;
-  deletions: number;
-  changed_files: number;
-  comments: number;
-  review_comments: number;
-}
-
-export interface PullRequestReview {
-  id: number;
-  state: string;
-  submitted_at?: string;
-  user?: {
-    login: string;
-  } | null;
-}
-
-export interface Commit {
-  commit: {
-    author?: {
-      date?: string;
-    } | null;
-  };
-  stats?: {
-    total?: number;
-  };
-}
-
-export interface WorkflowRun {
-  id: number;
-  workflow_id: number;
-  name?: string | null;
-  conclusion?: string | null;
-  run_number: number;
-  run_started_at?: string | null;
-  updated_at?: string | null;
-  event: string;
-}
-
-export interface SearchResult<T> {
-  items: T[];
-}
-
-export interface AuditLogEntry {
-  user: string;
-  user_id: number;
-  created_at: string;
-  org_id: number;
-}
+import type {
+  AuditLogEntry,
+  Commit,
+  PullRequest,
+  PullRequestBasic,
+  PullRequestReview,
+  Repository,
+  WorkflowRun,
+} from '../types/github';
 
 export class GitHubClient {
   private octokit: Octokit;
-  private authToken: string;    
 
   constructor(authToken: string) {
-    this.authToken = authToken;
     this.octokit = new Octokit({ auth: authToken });
   }
 

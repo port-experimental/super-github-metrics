@@ -1,12 +1,7 @@
 import _ from 'lodash';
-import {
-  type Commit,
-  createGitHubClient,
-  type GitHubClient,
-  type Repository,
-} from '../clients/github';
+import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { upsertProps } from '../clients/port';
-
+import type { Repository, Commit } from '../types/github';
 interface PRMetrics {
   repoId: string;
   repoName: string;

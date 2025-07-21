@@ -81,11 +81,25 @@ export async function getDeveloperStats(
 
       // Search for first pull request
       const pulls = await githubClient.searchPullRequests(login, orgName);
-      allPulls.push(...pulls);
+      // Convert PullRequestBasic to GitHubPullRequest
+      const convertedPulls: GitHubPullRequest[] = pulls.map((pull) => ({
+        number: pull.number,
+        created_at: pull.created_at,
+        closed_at: pull.closed_at,
+        merged_at: pull.merged_at,
+        user: pull.user,
+      }));
+      allPulls.push(...convertedPulls);
 
       // Search for reviews
       const reviews = await githubClient.searchReviews(login, orgName);
-      allReviews.push(...reviews);
+      // Convert PullRequestReview to GitHubReview
+      const convertedReviews: GitHubReview[] = reviews.map((review) => ({
+        user: review.user,
+        submitted_at: review.submitted_at,
+        created_at: review.submitted_at, // Use submitted_at as fallback for created_at
+      }));
+      allReviews.push(...convertedReviews);
     }
 
     allCommits.sort(

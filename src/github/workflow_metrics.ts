@@ -1,6 +1,6 @@
-import { createGitHubClient, type Repository } from '../clients/github';
+import { createGitHubClient } from '../clients/github';
 import { upsertProps } from '../clients/port';
-import type { GitHubRepository } from '../types/github';
+import type { GitHubRepository, Repository } from '../types/github';
 
 interface RepositoryWorkflowMetrics {
   repositoryName: string;

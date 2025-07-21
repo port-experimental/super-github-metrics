@@ -2,6 +2,12 @@ import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { upsertProps } from '../clients/port';
 import type { Repository, Commit } from '../types/github';
+import { 
+  filterDataForTimePeriod, 
+  TIME_PERIODS, 
+  type TimePeriod 
+} from './utils';
+
 interface PRMetrics {
   repoId: string;
   repoName: string;
@@ -63,30 +69,88 @@ const getNumberOfChangesAfterPRIsOpened = async (
   };
 };
 
+/**
+ * Fetches all PRs for a repository within the specified time period
+ */
+async function fetchRepositoryPRs(
+  githubClient: GitHubClient,
+  owner: string,
+  repoName: string,
+  daysBack: number
+): Promise<any[]> {
+  const prs: any[] = [];
+  const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+  try {
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await githubClient.makeRequestWithRetry(() =>
+        githubClient['octokit'].pulls.list({
+          owner,
+          repo: repoName,
+          state: 'closed',
+          sort: 'created',
+          direction: 'desc',
+          per_page: 100,
+          page,
+        })
+      );
+
+      if (response.data.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      for (const pr of response.data) {
+        if (pr.created_at) {
+          const prDate = new Date(pr.created_at);
+          if (prDate >= cutoffDate) {
+            prs.push(pr);
+          } else {
+            // If we've reached PRs older than our cutoff, we can stop
+            hasMore = false;
+            break;
+          }
+        }
+      }
+
+      page++;
+    }
+  } catch (error) {
+    console.error(`Error fetching PRs for ${owner}/${repoName}:`, error);
+  }
+
+  return prs;
+}
+
 export async function calculateAndStorePRMetrics(
   repos: Repository[],
   authToken: string
 ): Promise<void> {
   const githubClient = createGitHubClient(authToken);
+  
   for (const [index, repo] of repos.entries()) {
     console.log(`Processing repo ${repo.name} (${index + 1}/${repos.length})`);
-    let page = 1;
-    let hasMore = true;
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    
+    // Fetch all PRs for the maximum time period (90 days) once
+    const maxPeriod = TIME_PERIODS.NINETY_DAYS;
+    console.log(`  Fetching PRs for ${maxPeriod} day period...`);
+    const allPRs = await fetchRepositoryPRs(githubClient, repo.owner.login, repo.name, maxPeriod);
+    console.log(`  Found ${allPRs.length} PRs in the last ${maxPeriod} days`);
 
-    while (hasMore) {
-      const prs = await githubClient.getPullRequests(repo.owner.login, repo.name, {
-        state: 'closed',
-        sort: 'created',
-        direction: 'desc',
-        per_page: 100,
-        page: page,
-      });
+    // Process each time period by filtering the already-fetched data
+    const timePeriods: TimePeriod[] = [TIME_PERIODS.ONE_DAY, TIME_PERIODS.SEVEN_DAYS, TIME_PERIODS.THIRTY_DAYS, TIME_PERIODS.NINETY_DAYS];
+    
+    for (const period of timePeriods) {
+      console.log(`  Processing ${period} day period...`);
+      
+      // Filter PRs for this time period
+      const periodPRs = filterDataForTimePeriod(allPRs, period);
+      console.log(`  Filtered to ${periodPRs.length} PRs for ${period} day period`);
 
-      // Filter PRs created in last 90 days
-      const recentPRs = prs.filter((pr) => new Date(pr.created_at) > ninetyDaysAgo);
-      console.log(`Found ${recentPRs.length} PRs in the last 90 days`);
-      for (const pr of recentPRs) {
+      for (const pr of periodPRs) {
         const prData = await githubClient.getPullRequest(repo.owner.login, repo.name, pr.number);
         const reviews = await githubClient.getPullRequestReviews(
           repo.owner.login,
@@ -180,10 +244,6 @@ export async function calculateAndStorePRMetrics(
           console.error(`Failed to update repo ${record.repoName}-${record.pullRequestId}:`, error);
         }
       }
-
-      // If we got less than 100 PRs or the oldest PR is older than 90 days, we're done
-      hasMore = recentPRs.length === 100;
-      page++;
     }
   }
 }

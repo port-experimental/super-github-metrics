@@ -16,7 +16,6 @@
     "fetch-templates": "bun run src/main.ts fetch-templates",
     "fetch-workspaces": "bun run src/main.ts fetch-workspaces",
     "create-workspace": "bun run src/main.ts create-workspace",
-    "migrate-to-timeseries": "bun run src/scripts/migrate_to_timeseries.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",

@@ -102,6 +102,93 @@ The Biome configuration is in `biome.json` and includes:
 - Recommended linting rules
 - Custom rules for code quality
 
+## Architecture
+
+### Port Client Architecture
+
+The Port client uses a class-based architecture with automatic token management:
+
+#### Key Features
+- **Automatic Token Management**: Validates and regenerates tokens automatically
+- **Singleton Pattern**: Ensures single client instance with shared token
+- **Error Handling**: Automatic retry on 401 errors with token regeneration
+- **Backward Compatibility**: Legacy function exports continue to work
+
+#### Usage Examples
+
+```typescript
+// Instance-based usage (recommended)
+const client = await PortClient.getInstance();
+const users = await client.getUsers();
+const entities = await client.getEntities('githubUser');
+
+// Static method usage (convenient)
+const users = await PortClient.getUsers();
+const entities = await PortClient.getEntities('githubUser');
+
+// Legacy function usage (backward compatible)
+const users = await getUsers();
+const entities = await getEntities('githubUser');
+```
+
+### GitHub Token Rotation
+
+The system supports automatic token rotation to handle GitHub API rate limits efficiently:
+
+#### Features
+- **Multiple Token Support**: Accepts comma-separated list of GitHub tokens
+- **Smart Rotation**: Automatically switches to next available token when rate limits are hit
+- **Token Reactivation**: Previously exhausted tokens become available again after reset time
+- **Backward Compatibility**: Single token configurations continue to work unchanged
+
+#### Configuration
+
+```bash
+# Single token (existing)
+X_GITHUB_TOKEN=ghp_your_token_here
+
+# Multiple tokens (new feature)
+X_GITHUB_TOKEN=ghp_token1,ghp_token2,ghp_token3
+```
+
+#### Benefits
+- **5x Capacity**: With 5 tokens, theoretical capacity increases 5x
+- **Continuous Operation**: No waiting for rate limit resets
+- **Fault Tolerance**: System continues operating even if some tokens fail
+- **Transparent Operation**: Users don't need to manage tokens manually
+
+### Error Handling Strategy
+
+The system implements a comprehensive error handling strategy:
+
+#### Error Types
+- **Fatal Errors**: Cause entire process to fail (missing env vars, auth failures, all repos failing)
+- **Non-Fatal Errors**: Logged but allow process to continue (individual repo/PR failures)
+
+#### Exit Codes
+- **0**: Success (all operations completed successfully or with acceptable partial failures)
+- **1**: Fatal error (process should be considered failed)
+
+#### Error Propagation
+- Individual repository failures are logged but don't fail the entire process
+- All repository failures are treated as fatal errors
+- Individual item failures (PRs, workflows) are logged but don't fail the repository
+
+### Performance Optimizations
+
+The system has been optimized to reduce GitHub API calls:
+
+#### Service Metrics Optimization
+- **Before**: 5 separate API calls per repository for different time periods
+- **After**: Single API call for maximum time period (90 days), then filter data
+- **Reduction**: ~80% fewer API calls
+
+#### Shared Utilities
+- `filterDataForTimePeriod()` - Filter data by created_at date
+- `filterDataForTimePeriodByField()` - Filter data by custom date field
+- `TIME_PERIODS` - Common time period constants
+- Consistent time period handling across all metrics
+
 ## Setup
 
 1. Clone repo
@@ -983,12 +1070,20 @@ You can also manually trigger the workflow through the GitHub Actions UI.
 
 To migrate from the old aggregated metrics to the new time-series approach:
 
+**Option 1: GitHub Actions Workflow (Recommended)**
+1. Create the `serviceMetrics` blueprint in Port (see blueprint template above)
+2. Go to your repository's **Actions** tab
+3. Select **migrate_to_timeseries** workflow
+4. Configure parameters and run the migration
+5. Update your dashboards to use the new time-series data
+
+**Option 2: Command Line**
 1. Create the `serviceMetrics` blueprint in Port (see blueprint template above)
 2. Run the migration script: `npm run migrate-to-timeseries`
 3. Update your dashboards to use the new time-series data
 4. Optionally clean up old aggregated metrics: `npm run migrate-to-timeseries cleanup`
 
-For detailed migration instructions, see [docs/timeseries_migration_guide.md](./docs/timeseries_migration_guide.md).
+For detailed migration instructions, see [docs/timeseries_migration_workflow.md](./docs/timeseries_migration_workflow.md).
 
 ### Coder Integrations
 
@@ -1034,4 +1129,84 @@ This feature is particularly useful for high-volume operations or when processin
 - `CODER_SESSION_TOKEN` - Coder session token
 - `CODER_API_BASE_URL` - Coder API base URL
 - `CODER_ORGANIZATION_ID` - Coder organization ID
+
+## Time-Series Migration Workflow
+
+### Overview
+
+The `migrate_to_timeseries` workflow is a one-time migration tool designed to transition from aggregated service metrics to time-series metrics. This enables better dashboard visualizations with line charts and trend analysis.
+
+### When to Use
+
+Use this workflow when you want to:
+
+1. **Migrate from aggregated metrics** to time-series metrics for better dashboard visualizations
+2. **Generate historical data** for a specific time period (daily, weekly, or monthly)
+3. **Clean up old aggregated metrics** after confirming the new time-series metrics are working correctly
+
+### Prerequisites
+
+Before running the migration workflow, ensure you have:
+
+1. **Created the `serviceMetrics` blueprint** in Port (see blueprint template in README.md)
+2. **Configured all required secrets** in your GitHub repository
+3. **Existing services** in your Port `service` blueprint (the migration will process all existing services)
+
+### Running the Migration
+
+#### Step 1: Access the Workflow
+
+1. Go to your GitHub repository
+2. Navigate to the **Actions** tab
+3. Select **migrate_to_timeseries** from the workflows list
+4. Click **Run workflow**
+
+#### Step 2: Configure Migration Parameters
+
+The workflow provides several input parameters:
+
+- **Period Type**: Time period type for migration (`daily`, `weekly`, `monthly`)
+- **Days Back**: Number of days to look back for migration (default: 90)
+- **Cleanup Old Metrics**: Whether to clean up old aggregated metrics after migration (default: false)
+
+#### Step 3: Execute Migration
+
+1. Fill in the desired parameters
+2. Click **Run workflow**
+3. Monitor the workflow execution in the Actions tab
+4. Check the logs for any errors or warnings
+
+### Migration Process
+
+The workflow performs the following steps:
+
+1. **Fetch Services**: Retrieves all existing services from your Port `service` blueprint
+2. **Convert Data**: Converts Port entities to GitHub repository format
+3. **Process Metrics**: Calculates time-series metrics for the specified period type
+4. **Store Data**: Creates new entities in the `serviceMetrics` blueprint
+5. **Cleanup (Optional)**: Removes old aggregated metrics if cleanup is enabled
+
+### Expected Output
+
+After successful migration, you should see:
+
+- **New entities** in your `serviceMetrics` blueprint
+- **Time-series data** for each service with the specified period type
+- **Historical metrics** going back the specified number of days
+- **Cleanup confirmation** if old metrics were removed
+
+### Post-Migration Steps
+
+1. **Update Dashboards**: Modify your Port dashboards to use the new `serviceMetrics` entities
+2. **Monitor Ongoing Metrics**: The `collect_timeseries_service_metrics` workflow will continue collecting new data
+3. **Clean Up (Optional)**: If you didn't enable cleanup during migration, you can run it separately
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **"No services found"**: Ensure you have services created in Port before running migration
+2. **"GitHub API rate limit exceeded"**: Ensure your `X_GITHUB_TOKEN` contains multiple tokens separated by commas
+3. **"Port API errors"**: Verify `PORT_CLIENT_ID` and `PORT_CLIENT_SECRET` are correct
+4. **"Migration takes too long"**: Reduce `days_back` parameter or run migration in smaller batches
 

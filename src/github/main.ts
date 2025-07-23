@@ -11,7 +11,7 @@ import {
 } from './onboarding_metrics';
 import { calculateAndStorePRMetrics } from './pr_metrics';
 import { calculateAndStoreServiceMetrics } from './service_metrics';
-import { calculateAndStoreTimeSeriesServiceMetrics } from './service_metrics_processor';
+import { calculateAndStoreTimeSeriesServiceMetrics } from './service_aggregated_metrics';
 import { calculateWorkflowMetrics } from './workflow_metrics';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {

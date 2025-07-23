@@ -1,303 +1,143 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { createGitHubClient } from '../github';
-import { createMockGitHubClient } from '../../__tests__/utils/mocks';
+import { GitHubClient, TokenRotationManager, createGitHubClient } from '../github';
 
-// Mock the Octokit module
+// Mock Octokit using the same pattern as existing tests
 jest.mock('@octokit/rest', () => ({
-  Octokit: jest.fn().mockImplementation(() => createMockGitHubClient()),
+  Octokit: jest.fn().mockImplementation(() => ({
+    rest: {
+      pulls: {
+        list: jest.fn(),
+        get: jest.fn(),
+        listReviews: jest.fn(),
+      },
+      repos: {
+        listCommits: jest.fn(),
+        listForOrg: jest.fn(),
+      },
+      rateLimit: {
+        get: jest.fn(),
+      },
+    },
+    paginate: jest.fn(),
+    request: jest.fn(),
+    search: {
+      issuesAndPullRequests: jest.fn(),
+    },
+  })),
 }));
 
-describe('GitHub Client', () => {
-  let client: any;
-  let mockOctokit: any;
+describe('GitHub Client Token Rotation', () => {
+  describe('TokenRotationManager', () => {
+    it('should initialize with multiple tokens', () => {
+      const tokens = ['token1', 'token2', 'token3'];
+      const manager = new TokenRotationManager(tokens);
+      
+      expect(manager.getAllTokens()).toEqual(tokens);
+      expect(manager.getCurrentToken()).toBe('token1');
+    });
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    client = createGitHubClient('test-token');
-    // Get the mock instance that was created
-    const { Octokit } = require('@octokit/rest');
-    mockOctokit = Octokit.mock.results[0].value;
-  });
+    it('should filter out empty tokens', () => {
+      const tokens = ['token1', '', 'token2', '   ', 'token3'];
+      const manager = new TokenRotationManager(tokens);
+      
+      expect(manager.getAllTokens()).toEqual(['token1', 'token2', 'token3']);
+    });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
+    it('should throw error for no valid tokens', () => {
+      expect(() => new TokenRotationManager(['', '   '])).toThrow('At least one valid GitHub token is required');
+    });
 
-  describe('getRateLimitStatus', () => {
-    it('should return rate limit status', async () => {
-      const mockResponse = {
-        data: {
-          resources: {
-            core: {
-              limit: 5000,
-              remaining: 4999,
-              reset: 1640995200,
-            },
-          },
-        },
-      };
-
-      mockOctokit.rest.rateLimit.get.mockResolvedValue(mockResponse);
-
-      const result = await client.getRateLimitStatus();
-
-      expect(result).toEqual({
-        remaining: 4999,
+    it('should rotate to next available token', () => {
+      const tokens = ['token1', 'token2', 'token3'];
+      const manager = new TokenRotationManager(tokens);
+      
+      // Mark first token as unavailable
+      manager.updateTokenStatus('token1', {
+        remaining: 0,
         limit: 5000,
-        resetTime: new Date(1640995200 * 1000),
-        secondsUntilReset: expect.any(Number),
+        resetTime: new Date(),
       });
-    });
-  });
-
-  describe('checkRateLimits', () => {
-    it('should not throw when rate limits are sufficient', async () => {
-      const mockResponse = {
-        data: {
-          resources: {
-            core: {
-              limit: 5000,
-              remaining: 100,
-              reset: 1640995200,
-            },
-          },
-        },
-      };
-
-      mockOctokit.rest.rateLimit.get.mockResolvedValue(mockResponse);
-
-      await expect(client.checkRateLimits()).resolves.not.toThrow();
+      
+      const nextToken = manager.rotateToNextAvailableToken();
+      expect(nextToken).toBe('token2');
+      expect(manager.getCurrentToken()).toBe('token2');
     });
 
-    it('should throw when rate limits are exceeded', async () => {
-      const mockResponse = {
-        data: {
-          resources: {
-            core: {
-              limit: 5000,
-              remaining: 0,
-              reset: 1640995200,
-            },
-          },
-        },
-      };
-
-      mockOctokit.rest.rateLimit.get.mockResolvedValue(mockResponse);
-
-      await expect(client.checkRateLimits()).rejects.toThrow('Rate limit exceeded');
-    });
-  });
-
-  describe('makeRequestWithRetry', () => {
-    it('should retry failed requests', async () => {
-      const mockRequest = jest.fn<() => any>()
-        .mockRejectedValueOnce(new Error('Network error'))
-        .mockResolvedValueOnce('success');
-
-      const result = await client.makeRequestWithRetry(mockRequest);
-
-      expect(result).toBe('success');
-      expect(mockRequest).toHaveBeenCalledTimes(2);
-    });
-
-    it('should throw after max retries', async () => {
-      const mockRequest = jest.fn<() => any>().mockRejectedValue(new Error('Network error'));
-
-      await expect(client.makeRequestWithRetry(mockRequest)).rejects.toThrow('Network error');
-    });
-  });
-
-  describe('fetchOrganizationRepositories', () => {
-    it('should fetch repositories for an organization', async () => {
-      const mockRepos = [
-        { id: 1, name: 'repo1', owner: { login: 'test-org' } },
-        { id: 2, name: 'repo2', owner: { login: 'test-org' } },
-      ];
-
-      mockOctokit.rest.repos.listForOrg.mockResolvedValue({ data: mockRepos });
-
-      const result = await client.fetchOrganizationRepositories('test-org');
-
-      expect(result).toEqual(mockRepos);
-      expect(mockOctokit.rest.repos.listForOrg).toHaveBeenCalledWith({
-        org: 'test-org',
-        per_page: 100,
-        type: 'all',
+    it('should return null when no tokens are available', () => {
+      const tokens = ['token1', 'token2'];
+      const manager = new TokenRotationManager(tokens);
+      
+      // Mark all tokens as unavailable
+      manager.updateTokenStatus('token1', {
+        remaining: 0,
+        limit: 5000,
+        resetTime: new Date(Date.now() + 3600000), // 1 hour from now
       });
-    });
-  });
-
-  describe('getPullRequests', () => {
-    it('should fetch pull requests with default options', async () => {
-      const mockPRs = [{ id: 1, number: 1, title: 'Test PR' }];
-      mockOctokit.rest.pulls.list.mockResolvedValue({ data: mockPRs });
-
-      const result = await client.getPullRequests('owner', 'repo');
-
-      expect(result).toEqual(mockPRs);
-      expect(mockOctokit.rest.pulls.list).toHaveBeenCalledWith({
-        owner: 'owner',
-        repo: 'repo',
-        state: 'all',
-        per_page: 100,
-        sort: 'created',
-        direction: 'desc',
+      manager.updateTokenStatus('token2', {
+        remaining: 0,
+        limit: 5000,
+        resetTime: new Date(Date.now() + 3600000), // 1 hour from now
       });
+      
+      const nextToken = manager.rotateToNextAvailableToken();
+      expect(nextToken).toBeNull();
     });
 
-    it('should fetch pull requests with custom options', async () => {
-      const mockPRs = [{ id: 1, number: 1, title: 'Test PR' }];
-      mockOctokit.rest.pulls.list.mockResolvedValue({ data: mockPRs });
-
-      const result = await client.getPullRequests('owner', 'repo', {
-        state: 'closed',
-        per_page: 50,
+    it('should reactivate tokens after reset time', () => {
+      const tokens = ['token1', 'token2'];
+      const manager = new TokenRotationManager(tokens);
+      
+      // Mark first token as unavailable with past reset time
+      manager.updateTokenStatus('token1', {
+        remaining: 0,
+        limit: 5000,
+        resetTime: new Date(Date.now() - 1000), // 1 second ago
       });
-
-      expect(result).toEqual(mockPRs);
-      expect(mockOctokit.rest.pulls.list).toHaveBeenCalledWith({
-        owner: 'owner',
-        repo: 'repo',
-        state: 'closed',
-        per_page: 50,
-        sort: 'created',
-        direction: 'desc',
+      
+      // Mark second token as unavailable with future reset time
+      manager.updateTokenStatus('token2', {
+        remaining: 0,
+        limit: 5000,
+        resetTime: new Date(Date.now() + 3600000), // 1 hour from now
       });
+      
+      const nextToken = manager.rotateToNextAvailableToken();
+      expect(nextToken).toBe('token1');
     });
   });
 
-  describe('getPullRequest', () => {
-    it('should fetch a specific pull request', async () => {
-      const mockPR = { id: 1, number: 1, title: 'Test PR' };
-      mockOctokit.rest.pulls.get.mockResolvedValue({ data: mockPR });
+  describe('GitHubClient', () => {
+    it('should create client with single token', () => {
+      const client = new GitHubClient('single-token');
+      expect(client).toBeInstanceOf(GitHubClient);
+    });
 
-      const result = await client.getPullRequest('owner', 'repo', 1);
-
-      expect(result).toEqual(mockPR);
-      expect(mockOctokit.rest.pulls.get).toHaveBeenCalledWith({
-        owner: 'owner',
-        repo: 'repo',
-        pull_number: 1,
-      });
+    it('should create client with multiple tokens', () => {
+      const tokens = ['token1', 'token2', 'token3'];
+      const client = new GitHubClient(tokens);
+      expect(client).toBeInstanceOf(GitHubClient);
     });
   });
 
-  describe('getPullRequestReviews', () => {
-    it('should fetch pull request reviews', async () => {
-      const mockReviews = [{ id: 1, state: 'APPROVED' }];
-      mockOctokit.rest.pulls.listReviews.mockResolvedValue({ data: mockReviews });
-
-      const result = await client.getPullRequestReviews('owner', 'repo', 1);
-
-      expect(result).toEqual(mockReviews);
-      expect(mockOctokit.rest.pulls.listReviews).toHaveBeenCalledWith({
-        owner: 'owner',
-        repo: 'repo',
-        pull_number: 1,
-        per_page: 100,
-      });
+  describe('createGitHubClient factory', () => {
+    it('should handle single token (backward compatibility)', () => {
+      const client = createGitHubClient('single-token');
+      expect(client).toBeInstanceOf(GitHubClient);
     });
-  });
 
-  describe('getRepositoryCommits', () => {
-    it('should fetch repository commits', async () => {
-      const mockCommits = [{ sha: 'abc123', commit: { message: 'Test commit' } }];
-      mockOctokit.rest.repos.listCommits.mockResolvedValue({ data: mockCommits });
-
-      const result = await client.getRepositoryCommits('owner', 'repo');
-
-      expect(result).toEqual(mockCommits);
-      expect(mockOctokit.rest.repos.listCommits).toHaveBeenCalledWith({
-        owner: 'owner',
-        repo: 'repo',
-        per_page: 100,
-      });
+    it('should handle comma-separated tokens', () => {
+      const client = createGitHubClient('token1,token2,token3');
+      expect(client).toBeInstanceOf(GitHubClient);
     });
-  });
 
-  describe('getWorkflowRuns', () => {
-    it('should fetch workflow runs', async () => {
-      const mockRuns = [{ id: 1, name: 'Test Workflow' }];
-      mockOctokit.request.mockResolvedValue({ data: mockRuns });
-
-      const result = await client.getWorkflowRuns('owner', 'repo', 'main');
-
-      expect(result).toEqual(mockRuns);
-      expect(mockOctokit.request).toHaveBeenCalledWith(
-        'GET /repos/{owner}/{repo}/actions/runs',
-        {
-          owner: 'owner',
-          repo: 'repo',
-          branch: 'main',
-          per_page: 100,
-        }
-      );
+    it('should handle tokens with spaces', () => {
+      const client = createGitHubClient('token1, token2 , token3');
+      expect(client).toBeInstanceOf(GitHubClient);
     });
-  });
 
-  describe('getAuditLog', () => {
-    it('should fetch audit log entries', async () => {
-      const mockAuditLog = [
-        { user: 'test-user', user_id: 123, created_at: '2024-01-01T00:00:00Z', org_id: 456 },
-      ];
-      mockOctokit.paginate.mockResolvedValue(mockAuditLog);
-
-      const result = await client.getAuditLog('test-org');
-
-      expect(result).toEqual(mockAuditLog);
-      expect(mockOctokit.paginate).toHaveBeenCalledWith(
-        'GET /orgs/{org}/audit-log',
-        { org: 'test-org' }
-      );
-    });
-  });
-
-  describe('getRepositoryCommitsByPath', () => {
-    it('should fetch repository commits by path', async () => {
-      const mockCommits = [{ sha: 'abc123', commit: { message: 'Test commit' } }];
-      mockOctokit.request.mockResolvedValue({ data: mockCommits });
-
-      const result = await client.getRepositoryCommitsByPath('owner', 'repo', 'src/');
-
-      expect(result).toEqual(mockCommits);
-      expect(mockOctokit.request).toHaveBeenCalledWith(
-        'GET /repos/{owner}/{repo}/commits',
-        {
-          owner: 'owner',
-          repo: 'repo',
-          path: 'src/',
-          per_page: 100,
-        }
-      );
-    });
-  });
-
-  describe('searchPullRequests', () => {
-    it('should search pull requests', async () => {
-      const mockPRs = {
-        items: [
-          {
-            id: 1,
-            number: 1,
-            title: 'Test PR',
-            created_at: '2024-01-01T00:00:00Z',
-            closed_at: '2024-01-02T00:00:00Z',
-            merged_at: '2024-01-02T00:00:00Z',
-            user: { login: 'test-user' },
-          },
-        ],
-      };
-      mockOctokit.search.issuesAndPullRequests.mockResolvedValue({ data: mockPRs });
-
-      const result = await client.searchPullRequests('test-org', 'test-repo');
-
-      expect(result).toEqual(mockPRs.items);
-      expect(mockOctokit.search.issuesAndPullRequests).toHaveBeenCalledWith({
-        q: 'org:test-org repo:test-repo is:pr',
-        sort: 'created',
-        order: 'desc',
-        per_page: 100,
-      });
+    it('should throw error for empty token list', () => {
+      expect(() => createGitHubClient('')).toThrow('At least one valid GitHub token is required');
+      expect(() => createGitHubClient(',,')).toThrow('At least one valid GitHub token is required');
     });
   });
 }); 

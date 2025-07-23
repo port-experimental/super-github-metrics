@@ -1008,10 +1008,25 @@ npm run coder-integration create-workspace --name "my-workspace" --template "tem
 ### GitHub Integrations
 - `PORT_CLIENT_ID` - Port client ID
 - `PORT_CLIENT_SECRET` - Port client secret
-- `X_GITHUB_TOKEN` - GitHub personal access token
+- `X_GITHUB_TOKEN` - GitHub personal access token(s). Can be a single token or a comma-separated list of multiple tokens for automatic rotation when rate limits are reached
 - `X_GITHUB_ENTERPRISE` - GitHub Enterprise name
 - `X_GITHUB_ORGS` - Comma-separated list of GitHub organizations
 - `FORCE_ONBOARDING_METRICS` - Set to 'true' to process all users regardless of existing onboarding metrics (optional, defaults to false)
+
+#### Token Rotation Feature
+
+The system now supports automatic token rotation to handle GitHub API rate limits more efficiently:
+
+- **Single Token**: `X_GITHUB_TOKEN=ghp_your_single_token_here`
+- **Multiple Tokens**: `X_GITHUB_TOKEN=ghp_token1,ghp_token2,ghp_token3`
+
+When multiple tokens are provided, the system will:
+1. Automatically rotate between tokens when rate limits are reached
+2. Switch back to previously exhausted tokens when they become available again
+3. Provide detailed logging of token rotation events
+4. Maintain backward compatibility with single token configurations
+
+This feature is particularly useful for high-volume operations or when processing large organizations with many repositories.
 
 ### Coder Integrations
 - `PORT_CLIENT_ID` - Port client ID

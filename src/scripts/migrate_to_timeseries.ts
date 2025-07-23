@@ -1,4 +1,4 @@
-import { calculateAndStoreTimeSeriesServiceMetrics } from '../github/service_metrics_processor';
+import { calculateAndStoreTimeSeriesServiceMetrics } from '../github/service_aggregated_metrics';
 import { PortClient } from '../clients/port';
 import type { Repository } from '../types/github';
 

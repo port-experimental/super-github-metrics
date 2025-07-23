@@ -168,3 +168,41 @@ export interface AuditLogEntry {
   created_at: string;
   org_id: number;
 }
+
+export interface TimeSeriesMetrics {
+  period: string;
+  periodType: 'daily' | 'weekly' | 'monthly';
+  totalPRs: number;
+  totalMergedPRs: number;
+  numberOfPRsReviewed: number;
+  numberOfPRsMergedWithoutReview: number;
+  percentageOfPRsReviewed: number;
+  percentageOfPRsMergedWithoutReview: number;
+  averageTimeToFirstReview: number;
+  prSuccessRate: number;
+  contributionStandardDeviation: number;
+}
+
+export interface ServiceMetricsEntity {
+  identifier: string;
+  title: string;
+  properties: {
+    period: string;
+    period_type: 'daily' | 'weekly' | 'monthly';
+    total_prs: number;
+    total_merged_prs: number;
+    number_of_prs_reviewed: number;
+    number_of_prs_merged_without_review: number;
+    percentage_of_prs_reviewed: number;
+    percentage_of_prs_merged_without_review: number;
+    average_time_to_first_review: number;
+    pr_success_rate: number;
+    contribution_standard_deviation: number;
+    calculated_at: string;
+    data_source: string;
+  };
+  relations: {
+    service: string; // Service entity identifier
+  };
+  [key: string]: unknown; // Index signature to match PortEntity interface
+} 

@@ -183,6 +183,12 @@ The system has been optimized to reduce GitHub API calls:
 - **After**: Single API call for maximum time period (90 days), then filter data
 - **Reduction**: ~80% fewer API calls
 
+#### Time Period Format
+- **ISO8601 Datetime**: All time periods use ISO8601 datetime format (YYYY-MM-DDT00:00:00.000Z)
+- **Daily**: Exact date at 12:00 AM (e.g., "2024-01-15T00:00:00.000Z")
+- **Weekly**: Start of week at 12:00 AM (e.g., "2024-01-15T00:00:00.000Z" for week starting Monday)
+- **Monthly**: First day of month at 12:00 AM (e.g., "2024-01-01T00:00:00.000Z")
+
 #### Shared Utilities
 - `filterDataForTimePeriod()` - Filter data by created_at date
 - `filterDataForTimePeriodByField()` - Filter data by custom date field
@@ -936,13 +942,19 @@ Want to see a catalog of all of your Coder.com development workspaces and availa
       "period": {
         "type": "string",
         "title": "Time Period",
-        "description": "The time period this metric represents (YYYYMMDD for daily, YYYYWW for weekly, YYYYMM for monthly)"
+        "description": "The time period this metric represents (ISO8601 datetime format: YYYY-MM-DDT00:00:00.000Z for daily, weekly start, and monthly start)",
+        "format": "date-time"
       },
       "period_type": {
         "type": "string",
         "title": "Period Type",
         "description": "The type of time period (daily, weekly, monthly)",
-        "enum": ["daily", "weekly", "monthly"]
+        "enum": ["daily", "weekly", "monthly"],
+        "enumColors": {
+          "daily": "blue",
+          "weekly": "yellow",
+          "monthly": "green"
+        }
       },
       "total_prs": {
         "type": "number",

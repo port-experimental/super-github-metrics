@@ -23,6 +23,7 @@ export const SERVICE_METRICS_BLUEPRINT = {
         type: 'string',
         title: 'Time Period',
         description: 'The time period this metric represents (YYYYMMDD for daily, YYYYWW for weekly, YYYYMM for monthly)',
+        format: 'date-time',
       },
       period_type: {
         type: 'string',
@@ -119,18 +120,24 @@ export function groupPRsByPeriod(
 
     switch (periodType) {
       case 'daily':
-        // Format: YYYYMMDD (e.g., "20240115")
-        periodKey = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
+        // Format: YYYY-MM-DDT00:00:00.000Z (ISO8601 datetime format at 12:00 AM)
+        const dailyDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        periodKey = dailyDate.toISOString();
         break;
       case 'weekly':
-        // Format: YYYYWW (e.g., "202403" for week 3 of 2024)
-        const year = date.getFullYear();
-        const week = Math.ceil((date.getTime() - new Date(year, 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
-        periodKey = `${year}${week.toString().padStart(2, '0')}`;
+        // Format: YYYY-MM-DDT00:00:00.000Z (start of the week in ISO8601 datetime format at 12:00 AM)
+        const dayOfWeek = date.getDay();
+        const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Monday as start of week
+        const startOfWeek = new Date(date);
+        startOfWeek.setDate(date.getDate() - daysToSubtract);
+        startOfWeek.setHours(0, 0, 0, 0);
+        periodKey = startOfWeek.toISOString();
         break;
       case 'monthly':
-        // Format: YYYYMM (e.g., "202401")
-        periodKey = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        // Format: YYYY-MM-DDT00:00:00.000Z (first day of month in ISO8601 datetime format at 12:00 AM)
+        const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        periodKey = startOfMonth.toISOString();
         break;
       default:
         continue;
@@ -181,7 +188,7 @@ export function createServiceMetricsEntity(
   // Format: {serviceName}{periodType}{period} (e.g., "my-service-d20240115")
   const serviceName = repo.name; // Use service name as-is
   const periodType = metrics.periodType.charAt(0); // 'd' for daily, 'w' for weekly, 'm' for monthly
-  const period = metrics.period; // Already in compact format (YYYYMMDD, YYYYWW, or YYYYMM)
+  const period = metrics.period.replace(/[-:T.Z]/g, '').slice(0, 8); // Extract YYYYMMDD from ISO8601 datetime
   
   // Ensure the identifier doesn't exceed 30 characters
   const maxServiceNameLength = 30 - periodType.length - period.length;

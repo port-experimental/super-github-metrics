@@ -166,7 +166,7 @@ export interface AuditLogEntry {
   user: string;
   user_id: number;
   created_at: string;
-  org_id: number;
+  org: string;
 }
 
 export interface TimeSeriesMetrics {

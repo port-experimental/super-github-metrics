@@ -364,17 +364,17 @@ export class GitHubClient {
       headers: {
         'X-GitHub-Api-Version': '2022-11-28',
       },
-    })) as Array<{ org_id: number; user: string; user_id: number; created_at: string }>;
+    })) as Array<{ org: string; user: string; user_id: number; '@timestamp': string }>;
 
-    data = data.filter((x) => x.org_id === 177709801);
+    data = data.filter((x) => ['fmgl-internal', 'fmgl', 'fmgl-specialised'].includes(x.org));
     console.log(`Fetched ${data.length} audit log events`);
     console.log(JSON.stringify(data));
 
     return data.map((x) => ({
       user: x.user,
       user_id: x.user_id,
-      created_at: x.created_at,
-      org_id: x.org_id,
+      created_at: x['@timestamp'],
+      org: x.org,
     }));
   }
 

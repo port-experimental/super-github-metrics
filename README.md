@@ -140,6 +140,27 @@ The system supports automatic token rotation to handle GitHub API rate limits ef
 - **Smart Rotation**: Automatically switches to next available token when rate limits are hit
 - **Token Reactivation**: Previously exhausted tokens become available again after reset time
 - **Backward Compatibility**: Single token configurations continue to work unchanged
+- **Intelligent Decision Making**: Only rotates tokens when beneficial (multiple tokens available)
+
+#### Token Rotation Logic
+
+The system intelligently determines when to rotate tokens based on the number of available tokens and their current status:
+
+**Single Token Scenario:**
+- When rate limit is exceeded: Waits for reset time instead of attempting rotation
+- When rate limit is low (≤5 requests): Adds conservative delay instead of rotation
+- When rate limit is getting low (≤20 requests): Adds small delay
+
+**Multiple Token Scenario:**
+- When rate limit is exceeded: Finds the best available token considering both remaining requests and reset times
+- When rate limit is low (≤5 requests): Only rotates if a significantly better token is available (20% improvement in score)
+- When rate limit is getting low (≤20 requests): Adds small delay
+
+**Token Scoring Algorithm:**
+- **Available Tokens**: Score = remaining requests
+- **Unavailable Tokens**: Score = limit / minutes until reset (higher score for tokens that reset sooner)
+- **Recently Reset Tokens**: Automatically marked as available with full limit score
+- **Rotation Threshold**: Only switches if new token has 20% better score than current token
 
 #### Configuration
 
@@ -153,9 +174,12 @@ X_GITHUB_TOKEN=ghp_token1,ghp_token2,ghp_token3
 
 #### Benefits
 - **5x Capacity**: With 5 tokens, theoretical capacity increases 5x
-- **Continuous Operation**: No waiting for rate limit resets
+- **Continuous Operation**: No waiting for rate limit resets when multiple tokens available
 - **Fault Tolerance**: System continues operating even if some tokens fail
 - **Transparent Operation**: Users don't need to manage tokens manually
+- **Efficient Resource Usage**: Only rotates when beneficial, avoids unnecessary switching
+- **Smart Time Management**: Considers both current availability and future reset times
+- **Optimal Token Selection**: Always chooses the token that will provide the best immediate or near-term availability
 
 ### Error Handling Strategy
 

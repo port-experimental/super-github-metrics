@@ -114,6 +114,52 @@ export class TokenRotationManager {
   }
 
   /**
+   * Find the best available token (one with most remaining requests or shortest reset time)
+   */
+  findBestAvailableToken(): string | null {
+    let bestToken: string | null = null;
+    let bestScore = -1;
+    const now = new Date();
+
+    // Check all tokens for the one with best score
+    for (const [token, status] of this.tokenStatus.entries()) {
+      let score = 0;
+      
+      if (status.isAvailable) {
+        // Available token: score based on remaining requests
+        score = status.remaining;
+      } else {
+        // Unavailable token: score based on time until reset
+        // The sooner it resets, the higher the score
+        const timeUntilReset = status.resetTime.getTime() - now.getTime();
+        if (timeUntilReset <= 0) {
+          // Token has reset, mark it as available
+          status.isAvailable = true;
+          status.remaining = status.limit;
+          score = status.limit; // Full score for newly reset token
+        } else {
+          // Token will reset soon: score inversely proportional to wait time
+          // Convert to minutes and invert (shorter wait = higher score)
+          const minutesUntilReset = Math.max(1, timeUntilReset / (1000 * 60));
+          score = Math.floor(status.limit / minutesUntilReset);
+        }
+      }
+
+      if (score > bestScore) {
+        bestToken = token;
+        bestScore = score;
+      }
+    }
+
+    // Update current token index if we found a better token
+    if (bestToken) {
+      this.currentTokenIndex = this.tokens.indexOf(bestToken);
+    }
+
+    return bestToken;
+  }
+
+  /**
    * Rotate to next available token
    */
   rotateToNextAvailableToken(): string | null {
@@ -205,35 +251,88 @@ export class GitHubClient {
       resetTime,
     });
 
+    // Get all token statuses to make informed rotation decisions
+    const allTokenStatus = this.tokenManager.getAllTokenStatus();
+    const totalTokens = allTokenStatus.size;
+
     if (remaining <= 0) {
       console.log(`Rate limit exceeded for current token. Attempting to rotate...`);
-      const nextToken = this.tokenManager.rotateToNextAvailableToken();
       
-      if (nextToken) {
+      if (totalTokens === 1) {
+        // Single token scenario - must wait for reset
+        console.log(`Single token configuration. Waiting ${secondsUntilReset} seconds until reset...`);
+        await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
+        console.log('Rate limit reset, continuing...');
+        return;
+      }
+
+      // Multiple tokens - try to find a better one
+      const nextToken = this.tokenManager.findBestAvailableToken();
+      if (nextToken && nextToken !== this.currentToken) {
         this.updateOctokitToken(nextToken);
         console.log('Successfully rotated to next available token');
       } else {
-        // Wait if we have no requests left and no other tokens available
+        // No better token available, wait for reset
         console.log(`No available tokens. Waiting ${secondsUntilReset} seconds until reset...`);
         await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
         console.log('Rate limit reset, continuing...');
       }
     } else if (remaining <= 5) {
-      // Try to rotate to a token with more remaining requests
-      console.log(`Rate limit low (${remaining} requests left) for current token. Attempting to rotate...`);
-      const nextToken = this.tokenManager.rotateToNextAvailableToken();
+      // Low rate limit - only rotate if we have multiple tokens and can find a better one
+      console.log(`Rate limit low (${remaining} requests left) for current token.`);
       
-      if (nextToken && nextToken !== this.currentToken) {
-        this.updateOctokitToken(nextToken);
-        console.log('Successfully rotated to token with more remaining requests');
+      if (totalTokens === 1) {
+        // Single token - just add a delay to be conservative
+        console.log(`Single token configuration. Adding delay to be conservative...`);
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
+        return;
+      }
+
+      // Multiple tokens - check if there's a significantly better token
+      const currentTokenStatus = allTokenStatus.get(this.currentToken);
+      let bestToken = this.currentToken;
+      let bestScore = remaining; // Current token's score
+      const now = new Date();
+
+      for (const [token, status] of allTokenStatus.entries()) {
+        let tokenScore = 0;
+        
+        if (status.isAvailable) {
+          // Available token: score based on remaining requests
+          tokenScore = status.remaining;
+        } else {
+          // Unavailable token: score based on time until reset
+          const timeUntilReset = status.resetTime.getTime() - now.getTime();
+          if (timeUntilReset <= 0) {
+            // Token has reset, mark it as available
+            status.isAvailable = true;
+            status.remaining = status.limit;
+            tokenScore = status.limit;
+          } else {
+            // Token will reset soon: score inversely proportional to wait time
+            const minutesUntilReset = Math.max(1, timeUntilReset / (1000 * 60));
+            tokenScore = Math.floor(status.limit / minutesUntilReset);
+          }
+        }
+
+        // Only switch if the token has significantly better score (20% improvement)
+        if (tokenScore > bestScore * 1.2) {
+          bestToken = token;
+          bestScore = tokenScore;
+        }
+      }
+
+      if (bestToken !== this.currentToken) {
+        console.log(`Found better token with score ${bestScore} (current: ${remaining}). Rotating...`);
+        this.tokenManager.rotateToNextAvailableToken(); // This will set the best token as current
+        this.updateOctokitToken(bestToken);
+        console.log('Successfully rotated to token with better availability');
       } else {
-        // Wait if we have 5 or fewer requests left and no better token available
-        console.log(`No better token available. Waiting ${secondsUntilReset} seconds until reset...`);
-        await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
-        console.log('Rate limit reset, continuing...');
+        // No significantly better token available
+        console.log(`No significantly better token available. Continuing with current token...`);
       }
     } else if (remaining <= 20) {
-      // Add small delay if we're getting low
+      // Getting low - add small delay
       console.log(`Rate limit getting low (${remaining} requests left). Adding small delay...`);
       await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
     }
@@ -268,12 +367,21 @@ export class GitHubClient {
             resetTime: new Date(),
           });
 
-          // Try to rotate to next available token
-          const nextToken = this.tokenManager.rotateToNextAvailableToken();
-          if (nextToken) {
-            this.updateOctokitToken(nextToken);
-            console.log('Successfully rotated to next available token, retrying...');
-            continue; // Retry the request with new token
+          // Check if we have multiple tokens
+          const allTokenStatus = this.tokenManager.getAllTokenStatus();
+          const totalTokens = allTokenStatus.size;
+
+          if (totalTokens === 1) {
+            // Single token scenario - must wait for reset
+            console.log(`Single token configuration. Waiting for rate limit reset...`);
+          } else {
+            // Multiple tokens - try to find a better one
+            const nextToken = this.tokenManager.findBestAvailableToken();
+            if (nextToken && nextToken !== this.currentToken) {
+              this.updateOctokitToken(nextToken);
+              console.log('Successfully rotated to next available token, retrying...');
+              continue; // Retry the request with new token
+            }
           }
 
           // Extract reset time from error headers if available

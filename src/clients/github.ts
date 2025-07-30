@@ -491,9 +491,24 @@ export class GitHubClient {
    */
   async searchCommits(author: string, orgName: string): Promise<Commit[]> {
     await this.addRequestDelay();
+    
+    // Validate input parameters
+    if (!author || !author.trim()) {
+      console.log('Author parameter is empty, skipping commit search');
+      return [];
+    }
+    
+    if (!orgName || !orgName.trim()) {
+      console.log('Organization parameter is empty, skipping commit search');
+      return [];
+    }
+    
+    // Construct search query with actual search text
+    const searchQuery = `${author} author:${author} org:${orgName} sort:committer-date-asc`;
+    
     const { data: commits } = await this.makeRequestWithRetry(() =>
       this.octokit.request('GET /search/commits ', {
-        q: `author:${author} org:${orgName} sort:committer-date-asc`,
+        q: searchQuery,
         advanced_search: true,
         per_page: 10,
         page: 1,
@@ -512,9 +527,24 @@ export class GitHubClient {
    */
   async searchPullRequests(author: string, orgName: string): Promise<PullRequestBasic[]> {
     await this.addRequestDelay();
+    
+    // Validate input parameters
+    if (!author || !author.trim()) {
+      console.log('Author parameter is empty, skipping pull request search');
+      return [];
+    }
+    
+    if (!orgName || !orgName.trim()) {
+      console.log('Organization parameter is empty, skipping pull request search');
+      return [];
+    }
+    
+    // Construct search query with actual search text
+    const searchQuery = `${author} author:${author} org:${orgName} is:pr`;
+    
     const { data: pulls } = await this.makeRequestWithRetry(() =>
       this.octokit.search.issuesAndPullRequests({
-        q: `author:${author} org:${orgName} is:pr`,
+        q: searchQuery,
         per_page: 100,
         sort: 'created',
         order: 'desc',

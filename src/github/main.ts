@@ -129,11 +129,12 @@ async function main() {
                 continue;
               }
 
-              const joinDate =
-                (user.properties?.join_date
-                  ? (user.properties.join_date as string)
-                  : joinRecords.find((record) => record.user === user.identifier)?.created_at) ||
-                new Date().toISOString();
+              const joinDate = joinRecords.find((record) => record.user === user.identifier)?.created_at;
+              if (!joinDate) {
+                console.error(`No join date found for ${user.identifier}`);
+                errorCount++;
+                continue;
+              }
               console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
 
               // Convert PortEntity to GitHubUser format

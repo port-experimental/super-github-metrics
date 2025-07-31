@@ -229,7 +229,7 @@ export async function storeServiceMetricsEntity(entity: ServiceMetricsEntity): P
     await createEntity(SERVICE_METRICS_BLUEPRINT.identifier, entity);
     console.log(`Successfully stored service metrics entity: ${entity.title}`);
   } catch (error) {
-    console.error(`Failed to store service metrics entity ${entity.title}:`, error);
+    console.error(`Failed to store service metrics entity ${entity.title}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     throw error;
   }
 }
@@ -306,7 +306,7 @@ export async function processRepositoryTimeSeriesMetrics(
 
     console.log(`  Successfully processed ${processedPeriods} ${periodType} periods for ${repo.name}`);
   } catch (error) {
-    console.error(`Failed to process time-series service metrics for repo ${repo.name}:`, error);
+    console.error(`Failed to process time-series service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     throw error;
   }
 }
@@ -328,7 +328,7 @@ export async function calculateAndStoreTimeSeriesServiceMetrics(
     try {
       await processRepositoryTimeSeriesMetrics(githubClient, repo, index, repos.length, periodType, daysBack);
     } catch (error) {
-      console.error(`Error processing repo ${repo.name}:`, error);
+      console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       failedRepos.push(repo.name);
       hasFatalError = true;
     }

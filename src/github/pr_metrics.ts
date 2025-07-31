@@ -115,7 +115,7 @@ export async function fetchRepositoryPRs(
     
     console.log(`Successfully fetched ${prs.length} PRs from ${owner}/${repoName}`);
   } catch (error: any) {
-    console.error(`Error fetching PRs for ${owner}/${repoName}:`, error.message || error);
+    console.error(`Error fetching PRs for ${owner}/${repoName}: ${error.message || 'Unknown error'}`);
     
     // If it's a 404 or 403, the repository might not exist or be accessible
     if (error.status === 404 || error.status === 403) {
@@ -259,13 +259,13 @@ export async function calculateAndStorePRMetrics(
               props
             );
           } catch (error) {
-            console.error(`Failed to update PR ${repo.name}-${pr.id}:`, error);
+            console.error(`Failed to update PR ${repo.name}-${pr.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
             // Continue with next PR instead of failing the entire repo
           }
         }
       }
     } catch (error) {
-      console.error(`Error processing repo ${repo.name}:`, error);
+      console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       failedRepos.push(repo.name);
       hasFatalError = true;
     }

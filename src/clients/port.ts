@@ -71,11 +71,11 @@ export class PortClient {
       this.tokenExpiryTime = Date.now() + response.data.expiresIn * 1000;
 
       console.log(`Token generated successfully. Expires in ${response.data.expiresIn} seconds`);
-    } catch (error) {
+    } catch (error: any) {
       if (axios.isAxiosError(error)) {
         console.error('OAuth token generation failed:', error.response?.data || error.message);
       } else {
-        console.error('An unexpected error occurred during token generation:', error);
+        console.error('An unexpected error occurred during token generation:', error.message || 'Unknown error');
       }
       throw new Error('Failed to generate OAuth token');
     }

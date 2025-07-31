@@ -132,7 +132,7 @@ export async function fetchRepositoryContributions(
       page++;
     }
   } catch (error) {
-    console.error(`Error fetching contributions for ${owner}/${repoName}:`, error);
+    console.error(`Error fetching contributions for ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
   return contributions;
@@ -194,7 +194,7 @@ export async function fetchRepositoryPRs(
     
     console.log(`Successfully fetched ${prs.length} PRs from ${owner}/${repoName}`);
   } catch (error: any) {
-    console.error(`Error fetching PRs for ${owner}/${repoName}:`, error.message || error);
+    console.error(`Error fetching PRs for ${owner}/${repoName}: ${error.message || 'Unknown error'}`);
     
     // If it's a 404 or 403, the repository might not exist or be accessible
     if (error.status === 404 || error.status === 403) {
@@ -251,7 +251,7 @@ export async function analyzePR(
       timeToFirstReview,
     };
   } catch (error) {
-    console.error(`Error analyzing PR ${pr.number} in ${owner}/${repoName}:`, error);
+    console.error(`Error analyzing PR ${pr.number} in ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     return {
       isReviewed: false,
       isMerged: false,
@@ -386,7 +386,7 @@ export async function storeServiceMetrics(record: ServiceMetrics): Promise<void>
     });
     console.log(`Successfully stored service metrics for ${record.repoName}`);
   } catch (error) {
-    console.error(`Failed to store service metrics for ${record.repoName}:`, error);
+    console.error(`Failed to store service metrics for ${record.repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     throw error;
   }
 }
@@ -497,7 +497,7 @@ export async function processRepositoryServiceMetrics(
     await storeServiceMetrics(record);
     logServiceMetricsSummary(record);
   } catch (error) {
-    console.error(`Failed to process service metrics for repo ${repo.name}:`, error);
+    console.error(`Failed to process service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     throw error;
   }
 }
@@ -517,7 +517,7 @@ export async function calculateAndStoreServiceMetrics(
     try {
       await processRepositoryServiceMetrics(githubClient, repo, index, repos.length);
     } catch (error) {
-      console.error(`Error processing repo ${repo.name}:`, error);
+      console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       failedRepos.push(repo.name);
       hasFatalError = true;
     }

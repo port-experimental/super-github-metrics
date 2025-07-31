@@ -107,7 +107,7 @@ export async function getDeveloperStats(
         }));
         allReviews.push(...convertedReviews);
       } catch (error) {
-        console.error(`Error fetching data for org ${orgName}:`, error);
+        console.error(`Error fetching data for org ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         // Continue with other orgs instead of failing completely
       }
     }
@@ -174,7 +174,6 @@ export async function getDeveloperStats(
     console.log(stats);
     return stats;
   } catch (error) {
-    console.error(`Failed to fetch developer stats for ${login}:`, error);
     // Return a record with null values instead of throwing
     const record: DeveloperStats = {
       login: login,
@@ -190,6 +189,7 @@ export async function getDeveloperStats(
       initialReviewResponseTime: null,
     };
     stats.push(record);
+    console.error(`Failed to fetch developer stats for ${login}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     return stats;
   }
 }
@@ -215,8 +215,7 @@ export async function storeDeveloperStats(user: GitHubUser, record: DeveloperSta
     .value();
 
   try {
-    console.log(`attempting to update ${user.identifier}`);
-    console.log(`Setting props: ${JSON.stringify(props)}`);
+    console.log(`Updating onboarding metrics for user ${user.identifier}`);
     await upsertEntity(
       'githubUser',
       user.identifier,
@@ -224,9 +223,9 @@ export async function storeDeveloperStats(user: GitHubUser, record: DeveloperSta
       props,
       user.relations || {}
     );
-    console.log(`Updated first commit and PR dates for user ${user.identifier}`);
+    console.log(`Successfully updated onboarding metrics for user ${user.identifier}`);
   } catch (error) {
-    console.error(`Failed to update user ${user.identifier}:`, error);
+    console.error(`Failed to update user ${user.identifier}: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 

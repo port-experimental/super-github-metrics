@@ -151,7 +151,7 @@ async function main() {
               if (user.identifier) {
                 usersWithErrors.push(user.identifier);
               }
-              console.error(`Error processing developer ${user.identifier}:`, error);
+              console.error(`Error processing developer ${user.identifier}: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
           }
 
@@ -178,7 +178,7 @@ async function main() {
             hasFatalError = true;
             throw error;
           }
-          console.error('Unexpected error in onboarding metrics:', error);
+          console.error(`Unexpected error in onboarding metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
           hasFatalError = true;
           throw new FatalError('Unexpected error in onboarding metrics', error as Error);
         }
@@ -205,7 +205,7 @@ async function main() {
                 await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
               });
             } catch (error) {
-              console.error(`Error processing organization ${orgName}:`, error);
+              console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
               hasFatalError = true;
             }
           }
@@ -217,7 +217,8 @@ async function main() {
           if (error instanceof FatalError) {
             throw error;
           }
-          console.error('Unexpected error in PR metrics:', error);
+          console.error(`Unexpected error in PR metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          hasFatalError = true;
           throw new FatalError('Unexpected error in PR metrics', error as Error);
         }
       });
@@ -238,7 +239,7 @@ async function main() {
             try {
               await calculateWorkflowMetrics(githubClient, portClient, orgName);
             } catch (error) {
-              console.error(`Error processing organization ${orgName}:`, error);
+              console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
               hasFatalError = true;
             }
           }
@@ -252,7 +253,8 @@ async function main() {
           if (error instanceof FatalError) {
             throw error;
           }
-          console.error('Unexpected error in workflow metrics:', error);
+          console.error(`Unexpected error in workflow metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          hasFatalError = true;
           throw new FatalError('Unexpected error in workflow metrics', error as Error);
         }
       });
@@ -274,7 +276,7 @@ async function main() {
                 await calculateAndStoreServiceMetrics(repos, AUTH_TOKEN);
               });
             } catch (error) {
-              console.error(`Error processing organization ${orgName}:`, error);
+              console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
               hasFatalError = true;
             }
           }
@@ -286,7 +288,8 @@ async function main() {
           if (error instanceof FatalError) {
             throw error;
           }
-          console.error('Unexpected error in service metrics:', error);
+          console.error(`Unexpected error in service metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          hasFatalError = true;
           throw new FatalError('Unexpected error in service metrics', error as Error);
         }
       });
@@ -315,7 +318,7 @@ async function main() {
                 await calculateAndStoreTimeSeriesServiceMetrics(repos, AUTH_TOKEN, periodType, daysBack);
               });
             } catch (error) {
-              console.error(`Error processing organization ${orgName}:`, error);
+              console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
               hasFatalError = true;
             }
           }
@@ -327,14 +330,14 @@ async function main() {
           if (error instanceof FatalError) {
             throw error;
           }
-          console.error('Unexpected error in time-series service metrics:', error);
+          console.error(`Unexpected error in time-series service metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
           throw new FatalError('Unexpected error in time-series service metrics', error as Error);
         }
       });
 
     await program.parseAsync();
   } catch (error) {
-    console.error('Fatal error:', error);
+    console.error(`Fatal error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     process.exit(1);
   }
 }

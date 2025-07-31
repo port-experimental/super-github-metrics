@@ -475,8 +475,13 @@ export class GitHubClient {
     })) as Array<{ org: string; user: string; user_id: number; '@timestamp': string }>;
 
     data = data.filter((x) => ['fmgl-internal', 'fmgl', 'fmgl-specialised'].includes(x.org));
-    console.log(`Fetched ${data.length} audit log events`);
-    console.log(JSON.stringify(data));
+    console.log(`Fetched ${data.length} audit log events for member additions`);
+    
+    // Log a summary instead of the full data
+    if (data.length > 0) {
+      const uniqueUsers = new Set(data.map(x => x.user));
+      console.log(`Found member additions for ${uniqueUsers.size} unique users`);
+    }
 
     return data.map((x) => ({
       user: x.user,
@@ -639,7 +644,7 @@ export class GitHubClient {
         console.error(`This could be due to insufficient permissions or rate limiting`);
         return [];
       } else {
-        console.error(`Error fetching pull requests for ${owner}/${repo}:`, error.message || error);
+        console.error(`Error fetching pull requests for ${owner}/${repo}: ${error.message || 'Unknown error'}`);
         throw error; // Re-throw other errors to be handled by the retry mechanism
       }
     }

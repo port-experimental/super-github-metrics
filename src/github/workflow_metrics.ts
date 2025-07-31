@@ -158,12 +158,12 @@ export async function getWorkflowMetrics(
               : 0,
           });
         } catch (error) {
-          console.error(`Failed to update workflow metrics for ${repository.name}:`, error);
+          console.error(`Failed to update workflow metrics for ${repository.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
           // Continue with next workflow instead of failing the entire repo
         }
       }
     } catch (error) {
-      console.error(`Error processing workflow metrics for repo ${repository.name}:`, error);
+      console.error(`Error processing workflow metrics for repo ${repository.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       failedRepos.push(repository.name);
       hasFatalError = true;
     }
@@ -315,7 +315,7 @@ export async function calculateWorkflowMetrics(
         });
       }
     } catch (error) {
-      console.error(`Error processing workflow metrics for repo ${repository.name}:`, error);
+      console.error(`Error processing workflow metrics for repo ${repository.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Continue with next repository instead of failing the entire process
     }
   }

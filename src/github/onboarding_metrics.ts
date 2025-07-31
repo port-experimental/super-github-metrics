@@ -77,16 +77,19 @@ export async function getDeveloperStats(
     const allPulls: GitHubPullRequest[] = [];
     const allReviews: GitHubReview[] = [];
 
-    for (const orgName of orgNames) {
+    // Create concurrent API calls for all organizations
+    // Note: This processes all organizations concurrently with 3 API calls per org (commits, PRs, reviews)
+    const orgDataPromises = orgNames.map(async (orgName) => {
       try {
-        // Search for first commit
-        const commits = await client.searchCommits(login, orgName);
-        console.log('Commits returned:', commits.length, commits[0]?.commit?.author?.date);
-        allCommits.push(...commits);
+        // Run all API calls for this org concurrently
+        const [commits, pulls, reviews] = await Promise.all([
+          client.searchCommits(login, orgName),
+          client.searchPullRequests(login, orgName),
+          client.searchReviews(login, orgName)
+        ]);
 
-        // Search for first pull request
-        const pulls = await client.searchPullRequests(login, orgName);
-        console.log('PRs returned:', pulls.length, pulls[0]?.created_at);
+        console.log(`Org ${orgName} - Commits: ${commits.length}, PRs: ${pulls.length}, Reviews: ${reviews.length}`);
+
         // Convert PullRequestBasic to GitHubPullRequest
         const convertedPulls: GitHubPullRequest[] = pulls.map((pull: any) => ({
           number: pull.number,
@@ -95,21 +98,39 @@ export async function getDeveloperStats(
           merged_at: pull.merged_at,
           user: pull.user,
         }));
-        allPulls.push(...convertedPulls);
 
-        // Search for reviews
-        const reviews = await client.searchReviews(login, orgName);
         // Convert PullRequestReview to GitHubReview
         const convertedReviews: GitHubReview[] = reviews.map((review: any) => ({
           user: review.user,
           submitted_at: review.submitted_at,
           created_at: review.submitted_at, // Use submitted_at as fallback for created_at
         }));
-        allReviews.push(...convertedReviews);
+
+        return {
+          commits,
+          pulls: convertedPulls,
+          reviews: convertedReviews,
+          orgName
+        };
       } catch (error) {
         console.error(`Error fetching data for org ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        // Continue with other orgs instead of failing completely
+        return {
+          commits: [],
+          pulls: [],
+          reviews: [],
+          orgName
+        };
       }
+    });
+
+    // Wait for all organizations to complete
+    const orgResults = await Promise.all(orgDataPromises);
+
+    // Aggregate results from all organizations
+    for (const result of orgResults) {
+      allCommits.push(...result.commits);
+      allPulls.push(...result.pulls);
+      allReviews.push(...result.reviews);
     }
 
     allCommits.sort(

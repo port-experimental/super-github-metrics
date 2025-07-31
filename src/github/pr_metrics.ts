@@ -2,7 +2,7 @@ import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { upsertProps } from '../clients/port';
 import type { Repository, Commit } from '../types/github';
-import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod } from './utils';
+import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, CONCURRENCY_LIMITS } from './utils';
 import type { PullRequestBasic } from '../types/github';
 
 export interface PRMetrics {
@@ -163,29 +163,25 @@ export async function calculateAndStorePRMetrics(
         const periodPRs = filterDataForTimePeriod(allPRs, period);
         console.log(`  Filtered to ${periodPRs.length} PRs for ${period} day period`);
 
-        for (const pr of periodPRs) {
+        // Process PRs concurrently within each time period
+        // Note: This uses CONCURRENCY_LIMITS.API_CALLS_PER_ITEM (3) concurrent API calls per PR
+        const prProcessingPromises = periodPRs.map(async (pr) => {
           try {
-            const prData = await githubClient.getPullRequest(
-              repo.owner.login,
-              repo.name,
-              pr.number
-            );
-            const reviews = await githubClient.getPullRequestReviews(
-              repo.owner.login,
-              repo.name,
-              pr.number
-            );
+            // Run all API calls for this PR concurrently
+            const [prData, reviews, changesAfterPR] = await Promise.all([
+              githubClient.getPullRequest(repo.owner.login, repo.name, pr.number),
+              githubClient.getPullRequestReviews(repo.owner.login, repo.name, pr.number),
+              getNumberOfChangesAfterPRIsOpened(
+                githubClient,
+                repo.owner.login,
+                repo.name,
+                pr.number,
+                new Date(pr.created_at)
+              )
+            ]);
 
             const prFirstApproval =
               reviews.find((review) => review.state === 'APPROVED')?.submitted_at || null;
-
-            const changesAfterPR = await getNumberOfChangesAfterPRIsOpened(
-              githubClient,
-              repo.owner.login,
-              repo.name,
-              pr.number,
-              new Date(pr.created_at)
-            );
 
             const record: PRMetrics = {
               repoId: repo.id.toString(),
@@ -258,11 +254,19 @@ export async function calculateAndStorePRMetrics(
               `${record.repoName}${record.pullRequestId}`,
               props
             );
+
+            return { success: true, prNumber: pr.number };
           } catch (error) {
             console.error(`Failed to update PR ${repo.name}-${pr.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            // Continue with next PR instead of failing the entire repo
+            return { success: false, prNumber: pr.number, error };
           }
-        }
+        });
+
+        // Wait for all PRs in this time period to complete
+        const results = await Promise.all(prProcessingPromises);
+        const successful = results.filter(r => r.success).length;
+        const failed = results.filter(r => !r.success).length;
+        console.log(`  Completed ${period} day period: ${successful} successful, ${failed} failed`);
       }
     } catch (error) {
       console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);

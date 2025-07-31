@@ -2,17 +2,19 @@
  * Shared utility functions for GitHub metrics optimization
  */
 
+import type { PullRequestBasic } from '../types/github';
+
 /**
- * Filters data for a specific time period based on created_at date
+ * Filters data for a specific time period
  */
-export function filterDataForTimePeriod<T extends { created_at?: string }>(
+export function filterDataForTimePeriod<T extends { created_at: string }>(
   data: T[],
-  daysBack: number
+  daysBack: TimePeriod
 ): T[] {
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
   return data.filter((item) => {
-    if (!item.created_at) return false;
-    return new Date(item.created_at) >= cutoffDate;
+    const itemDate = new Date(item.created_at);
+    return itemDate >= cutoffDate;
   });
 }
 
@@ -62,11 +64,27 @@ export const TIME_PERIODS = {
 
 export type TimePeriod = (typeof TIME_PERIODS)[keyof typeof TIME_PERIODS];
 
+// Global concurrency limits for GitHub API calls
+export const CONCURRENCY_LIMITS = {
+  // Repository processing limits
+  REPOSITORIES: 5, // Number of repositories to process concurrently
+  TIME_SERIES_REPOSITORIES: 3, // Lower limit for time-series due to more intensive processing
+  
+  // PR processing limits (within each time period)
+  PRS_PER_TIME_PERIOD: 10, // Number of PRs to process concurrently within a time period
+  
+  // Organization processing limits
+  ORGANIZATIONS: 3, // Number of organizations to process concurrently
+  
+  // API calls per item limits
+  API_CALLS_PER_ITEM: 3, // Number of concurrent API calls per PR/item (e.g., PR data, reviews, changes)
+} as const;
+
 /**
  * Gets the maximum time period from an array of time periods
  */
-export function getMaxTimePeriod(periods: TimePeriod[]): TimePeriod {
-  return Math.max(...periods) as TimePeriod;
+export function getMaxTimePeriod(timePeriods: TimePeriod[]): TimePeriod {
+  return Math.max(...timePeriods) as TimePeriod;
 }
 
 /**

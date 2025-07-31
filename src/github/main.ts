@@ -13,6 +13,7 @@ import { calculateAndStorePRMetrics } from './pr_metrics';
 import { calculateAndStoreServiceMetrics } from './service_metrics';
 import { calculateAndStoreTimeSeriesServiceMetrics } from './service_aggregated_metrics';
 import { calculateWorkflowMetrics } from './workflow_metrics';
+import { CONCURRENCY_LIMITS } from './utils';
 
 if (process.env.GITHUB_ACTIONS !== 'true') {
   require('dotenv').config();
@@ -200,18 +201,27 @@ async function main() {
           const githubClient = createGitHubClient(AUTH_TOKEN);
           await githubClient.checkRateLimits();
 
-          for (const orgName of GITHUB_ORGS) {
+          // Process organizations concurrently
+          const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
                 await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
               });
+              return { success: true, orgName };
             } catch (error) {
               console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              hasFatalError = true;
+              return { success: false, orgName, error };
             }
-          }
+          });
 
-          if (hasFatalError) {
+          const results = await Promise.all(orgPromises);
+          const successful = results.filter(r => r.success);
+          const failed = results.filter(r => !r.success);
+          
+          console.log(`PR metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`);
+
+          if (failed.length > 0) {
+            hasFatalError = true;
             throw new FatalError('Failed to process PR metrics for one or more organizations');
           }
         } catch (error) {
@@ -236,19 +246,26 @@ async function main() {
           await githubClient.checkRateLimits();
           const portClient = await PortClient.getInstance();
 
-          for (const orgName of GITHUB_ORGS) {
+          // Process organizations concurrently
+          const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await calculateWorkflowMetrics(githubClient, portClient, orgName);
+              return { success: true, orgName };
             } catch (error) {
               console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              hasFatalError = true;
+              return { success: false, orgName, error };
             }
-          }
+          });
 
-          if (hasFatalError) {
-            throw new FatalError(
-              'Failed to process workflow metrics for one or more organizations'
-            );
+          const results = await Promise.all(orgPromises);
+          const successful = results.filter(r => r.success);
+          const failed = results.filter(r => !r.success);
+          
+          console.log(`Workflow metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`);
+
+          if (failed.length > 0) {
+            hasFatalError = true;
+            throw new FatalError('Failed to process workflow metrics for one or more organizations');
           }
         } catch (error) {
           if (error instanceof FatalError) {
@@ -271,18 +288,27 @@ async function main() {
           const githubClient = createGitHubClient(AUTH_TOKEN);
           await githubClient.checkRateLimits();
 
-          for (const orgName of GITHUB_ORGS) {
+          // Process organizations concurrently
+          const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
                 await calculateAndStoreServiceMetrics(repos, AUTH_TOKEN);
               });
+              return { success: true, orgName };
             } catch (error) {
               console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              hasFatalError = true;
+              return { success: false, orgName, error };
             }
-          }
+          });
 
-          if (hasFatalError) {
+          const results = await Promise.all(orgPromises);
+          const successful = results.filter(r => r.success);
+          const failed = results.filter(r => !r.success);
+          
+          console.log(`Service metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`);
+
+          if (failed.length > 0) {
+            hasFatalError = true;
             throw new FatalError('Failed to process service metrics for one or more organizations');
           }
         } catch (error) {
@@ -313,18 +339,27 @@ async function main() {
 
           console.log(`Processing ${periodType} metrics for the last ${daysBack} days`);
 
-          for (const orgName of GITHUB_ORGS) {
+          // Process organizations concurrently
+          const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
                 await calculateAndStoreTimeSeriesServiceMetrics(repos, AUTH_TOKEN, periodType, daysBack);
               });
+              return { success: true, orgName };
             } catch (error) {
               console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              hasFatalError = true;
+              return { success: false, orgName, error };
             }
-          }
+          });
 
-          if (hasFatalError) {
+          const results = await Promise.all(orgPromises);
+          const successful = results.filter(r => r.success);
+          const failed = results.filter(r => !r.success);
+          
+          console.log(`Time-series service metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`);
+
+          if (failed.length > 0) {
+            hasFatalError = true;
             throw new FatalError('Failed to process time-series service metrics for one or more organizations');
           }
         } catch (error) {

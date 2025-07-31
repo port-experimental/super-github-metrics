@@ -2,7 +2,7 @@ import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { updateEntity } from '../clients/port';
 import type { PullRequestBasic, Repository } from '../types/github';
-import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, getMaxTimePeriod } from './utils';
+import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, getMaxTimePeriod, CONCURRENCY_LIMITS } from './utils';
 
 
 export const BLUEPRINT_NAME = 'service';
@@ -513,15 +513,37 @@ export async function calculateAndStoreServiceMetrics(
   let hasFatalError = false;
   const failedRepos: string[] = [];
 
-  for (const [index, repo] of repos.entries()) {
-    try {
-      await processRepositoryServiceMetrics(githubClient, repo, index, repos.length);
-    } catch (error) {
-      console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      failedRepos.push(repo.name);
-      hasFatalError = true;
-    }
+  // Process repositories concurrently with a reasonable concurrency limit
+  const concurrencyLimit = CONCURRENCY_LIMITS.REPOSITORIES; // Use the global constant
+  const results: Array<{ success: boolean; repoName: string; error?: any }> = [];
+
+  for (let i = 0; i < repos.length; i += concurrencyLimit) {
+    const batch = repos.slice(i, i + concurrencyLimit);
+    console.log(`Processing batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`);
+
+    const batchPromises = batch.map(async (repo, batchIndex) => {
+      const repoIndex = i + batchIndex;
+      try {
+        await processRepositoryServiceMetrics(githubClient, repo, repoIndex, repos.length);
+        return { success: true, repoName: repo.name };
+      } catch (error) {
+        console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return { success: false, repoName: repo.name, error };
+      }
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
   }
+
+  // Process results
+  const successful = results.filter(r => r.success);
+  const failed = results.filter(r => !r.success);
+  
+  failedRepos.push(...failed.map(r => r.repoName));
+  hasFatalError = failed.length > 0;
+
+  console.log(`Service metrics processing complete: ${successful.length} successful, ${failed.length} failed`);
 
   // If all repositories failed, that's a fatal error
   if (failedRepos.length === repos.length && repos.length > 0) {

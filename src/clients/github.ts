@@ -610,19 +610,39 @@ export class GitHubClient {
     } = {}
   ): Promise<PullRequestBasic[]> {
     await this.addRequestDelay();
-    const { data: prs } = await this.makeRequestWithRetry(() =>
-      this.octokit.rest.pulls.list({
-        owner,
-        repo,
-        state: options.state || 'closed',
-        sort: options.sort || 'created',
-        direction: options.direction || 'desc',
-        per_page: options.per_page || 100,
-        page: options.page || 1,
-      })
-    );
+    
+    try {
+      const { data: prs } = await this.makeRequestWithRetry(() =>
+        this.octokit.rest.pulls.list({
+          owner,
+          repo,
+          state: options.state || 'closed',
+          sort: options.sort || 'created',
+          direction: options.direction || 'desc',
+          per_page: options.per_page || 100,
+          page: options.page || 1,
+        })
+      );
 
-    return prs;
+      return prs;
+    } catch (error: any) {
+      if (error.status === 404) {
+        console.error(`Repository not found or no access: ${owner}/${repo}. Status: ${error.status}`);
+        console.error(`This could be due to:`);
+        console.error(`1. Repository doesn't exist`);
+        console.error(`2. GitHub token doesn't have access to this repository`);
+        console.error(`3. Repository name or owner is incorrect`);
+        console.error(`4. Repository is private and token lacks permissions`);
+        return [];
+      } else if (error.status === 403) {
+        console.error(`Access denied to repository: ${owner}/${repo}. Status: ${error.status}`);
+        console.error(`This could be due to insufficient permissions or rate limiting`);
+        return [];
+      } else {
+        console.error(`Error fetching pull requests for ${owner}/${repo}:`, error.message || error);
+        throw error; // Re-throw other errors to be handled by the retry mechanism
+      }
+    }
   }
 
   /**

@@ -151,6 +151,7 @@ export async function fetchRepositoryPRs(
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
 
   try {
+    console.log(`Fetching PRs for ${owner}/${repoName} (last ${daysBack} days)`);
     let page = 1;
     let hasMore = true;
 
@@ -190,8 +191,19 @@ export async function fetchRepositoryPRs(
 
       page++;
     }
-  } catch (error) {
-    console.error(`Error fetching PRs for ${owner}/${repoName}:`, error);
+    
+    console.log(`Successfully fetched ${prs.length} PRs from ${owner}/${repoName}`);
+  } catch (error: any) {
+    console.error(`Error fetching PRs for ${owner}/${repoName}:`, error.message || error);
+    
+    // If it's a 404 or 403, the repository might not exist or be accessible
+    if (error.status === 404 || error.status === 403) {
+      console.error(`Repository ${owner}/${repoName} is not accessible. Skipping...`);
+      return [];
+    }
+    
+    // For other errors, re-throw to be handled by the calling function
+    throw error;
   }
 
   return prs;

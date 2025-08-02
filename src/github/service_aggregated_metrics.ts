@@ -1,6 +1,6 @@
 import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
-import { createEntity } from '../clients/port';
+import { createEntity, createEntitiesInBatches } from '../clients/port';
 import type { PullRequestBasic, Repository, TimeSeriesMetrics, ServiceMetricsEntity } from '../types/github';
 import { 
   PRReviewData, 
@@ -237,6 +237,7 @@ export async function storeServiceMetricsEntity(entity: ServiceMetricsEntity): P
 
 /**
  * Processes time-series service metrics for a repository
+ * Returns the entities instead of storing them individually
  */
 export async function processRepositoryTimeSeriesMetrics(
   githubClient: GitHubClient,
@@ -245,8 +246,10 @@ export async function processRepositoryTimeSeriesMetrics(
   totalRepos: number,
   periodType: 'daily' | 'weekly' | 'monthly' = 'daily',
   daysBack: number = 90
-): Promise<void> {
+): Promise<ServiceMetricsEntity[]> {
   console.log(`Processing time-series service metrics for repo ${repo.name} (${repoIndex + 1}/${totalRepos})`);
+
+  const entities: ServiceMetricsEntity[] = [];
 
   try {
     // Fetch all PRs for the specified time period
@@ -298,16 +301,47 @@ export async function processRepositoryTimeSeriesMetrics(
         contributionStdDev
       );
 
-      // Create and store the entity
+      // Create the entity and add to collection
       const entity = createServiceMetricsEntity(repo, timeSeriesMetrics);
-      await storeServiceMetricsEntity(entity);
+      entities.push(entity);
 
       processedPeriods++;
     }
 
     console.log(`  Successfully processed ${processedPeriods} ${periodType} periods for ${repo.name}`);
+    return entities;
   } catch (error) {
     console.error(`Failed to process time-series service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw error;
+  }
+}
+
+/**
+ * Stores multiple service metrics entities in Port using bulk ingestion
+ */
+export async function storeServiceMetricsEntities(entities: ServiceMetricsEntity[]): Promise<void> {
+  if (entities.length === 0) {
+    console.log('No entities to store');
+    return;
+  }
+
+  try {
+    console.log(`Storing ${entities.length} service metrics entities using bulk ingestion...`);
+    const results = await createEntitiesInBatches(SERVICE_METRICS_BLUEPRINT.identifier, entities);
+    
+    // Aggregate results
+    const totalSuccessful = results.reduce((sum, result) => sum + result.entities.filter(r => r.created).length, 0);
+    const totalFailed = results.reduce((sum, result) => sum + result.entities.filter(r => !r.created).length, 0);
+    
+    console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
+    
+    if (totalFailed > 0) {
+      const allFailed = results.flatMap(result => result.entities.filter(r => !r.created));
+      const failedIdentifiers = allFailed.map(r => r.identifier);
+      console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
+    }
+  } catch (error) {
+    console.error(`Failed to store service metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
     throw error;
   }
 }
@@ -324,10 +358,11 @@ export async function calculateAndStoreTimeSeriesServiceMetrics(
   const githubClient = createGitHubClient(authToken);
   let hasFatalError = false;
   const failedRepos: string[] = [];
+  const allEntities: ServiceMetricsEntity[] = [];
 
   // Process repositories concurrently with a reasonable concurrency limit
   const concurrencyLimit = CONCURRENCY_LIMITS.TIME_SERIES_REPOSITORIES; // Lower limit for time-series due to more intensive processing
-  const results: Array<{ success: boolean; repoName: string; error?: any }> = [];
+  const results: Array<{ success: boolean; repoName: string; error?: any; entities?: ServiceMetricsEntity[] }> = [];
 
   for (let i = 0; i < repos.length; i += concurrencyLimit) {
     const batch = repos.slice(i, i + concurrencyLimit);
@@ -336,8 +371,8 @@ export async function calculateAndStoreTimeSeriesServiceMetrics(
     const batchPromises = batch.map(async (repo, batchIndex) => {
       const repoIndex = i + batchIndex;
       try {
-        await processRepositoryTimeSeriesMetrics(githubClient, repo, repoIndex, repos.length, periodType, daysBack);
-        return { success: true, repoName: repo.name };
+        const entities = await processRepositoryTimeSeriesMetrics(githubClient, repo, repoIndex, repos.length, periodType, daysBack);
+        return { success: true, repoName: repo.name, entities };
       } catch (error) {
         console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         return { success: false, repoName: repo.name, error };
@@ -348,14 +383,22 @@ export async function calculateAndStoreTimeSeriesServiceMetrics(
     results.push(...batchResults);
   }
 
-  // Process results
+  // Process results and collect all entities
   const successful = results.filter(r => r.success);
   const failed = results.filter(r => !r.success);
   
   failedRepos.push(...failed.map(r => r.repoName));
   hasFatalError = failed.length > 0;
 
+  // Collect all entities from successful repositories
+  successful.forEach(result => {
+    if (result.entities) {
+      allEntities.push(...result.entities);
+    }
+  });
+
   console.log(`Time-series metrics processing complete: ${successful.length} successful, ${failed.length} failed`);
+  console.log(`Total entities to ingest: ${allEntities.length}`);
 
   // If all repositories failed, that's a fatal error
   if (failedRepos.length === repos.length && repos.length > 0) {
@@ -373,4 +416,11 @@ export async function calculateAndStoreTimeSeriesServiceMetrics(
   if (hasFatalError && failedRepos.length === repos.length) {
     throw new Error('All repositories failed to process');
   }
-} 
+
+  // Store all entities in bulk if we have any
+  if (allEntities.length > 0) {
+    console.log(`Starting bulk ingestion of ${allEntities.length} entities...`);
+    await storeServiceMetricsEntities(allEntities);
+    console.log('Bulk ingestion completed successfully');
+  }
+}

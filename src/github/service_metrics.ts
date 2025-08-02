@@ -1,8 +1,9 @@
 import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
-import { updateEntity } from '../clients/port';
+import { createEntitiesInBatches } from '../clients/port';
 import type { PullRequestBasic, Repository } from '../types/github';
 import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, getMaxTimePeriod, CONCURRENCY_LIMITS } from './utils';
+import type { PortEntity } from '../types/port';
 
 
 export const BLUEPRINT_NAME = 'service';
@@ -372,21 +373,47 @@ export function createServiceMetricsRecord(
 /**
  * Stores service metrics in Port
  */
-export async function storeServiceMetrics(record: ServiceMetrics): Promise<void> {
-  try {
-    const props: Record<string, unknown> = _.chain(record)
-      .omit(['repoId', 'repoName'])
-      .mapKeys((_value, key) => _.snakeCase(key))
-      .value();
+export async function storeServiceMetrics(record: ServiceMetrics): Promise<PortEntity> {
+  const props: Record<string, unknown> = _.chain(record)
+    .omit(['repoId', 'repoName'])
+    .mapKeys((_value, key) => _.snakeCase(key))
+    .value();
 
-    await updateEntity(BLUEPRINT_NAME, {
-      identifier: record.repoName,
-      title: record.repoName,
-      properties: props,
-    });
-    console.log(`Successfully stored service metrics for ${record.repoName}`);
+  const entity: PortEntity = {
+    identifier: record.repoName,
+    title: record.repoName,
+    properties: props,
+  };
+
+  return entity;
+}
+
+/**
+ * Stores multiple service metrics entities in Port using bulk ingestion
+ */
+export async function storeServiceMetricsEntities(entities: PortEntity[]): Promise<void> {
+  if (entities.length === 0) {
+    console.log('No service metrics entities to store');
+    return;
+  }
+
+  try {
+    console.log(`Storing ${entities.length} service metrics entities using bulk ingestion...`);
+    const results = await createEntitiesInBatches(BLUEPRINT_NAME, entities);
+    
+    // Aggregate results
+    const totalSuccessful = results.reduce((sum, result) => sum + result.entities.filter(r => r.created).length, 0);
+    const totalFailed = results.reduce((sum, result) => sum + result.entities.filter(r => !r.created).length, 0);
+    
+    console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
+    
+    if (totalFailed > 0) {
+      const allFailed = results.flatMap(result => result.entities.filter(r => !r.created));
+      const failedIdentifiers = allFailed.map(r => r.identifier);
+      console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
+    }
   } catch (error) {
-    console.error(`Failed to store service metrics for ${record.repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(`Failed to store service metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
     throw error;
   }
 }
@@ -433,7 +460,7 @@ export async function processRepositoryServiceMetrics(
   repo: Repository,
   repoIndex: number,
   totalRepos: number
-): Promise<void> {
+): Promise<PortEntity> {
   console.log(`Processing service metrics for repo ${repo.name} (${repoIndex + 1}/${totalRepos})`);
 
   try {
@@ -494,8 +521,9 @@ export async function processRepositoryServiceMetrics(
     }
 
     const record = createServiceMetricsRecord(repo, allTimePeriodMetrics);
-    await storeServiceMetrics(record);
+    const entity = await storeServiceMetrics(record);
     logServiceMetricsSummary(record);
+    return entity;
   } catch (error) {
     console.error(`Failed to process service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     throw error;
@@ -512,10 +540,11 @@ export async function calculateAndStoreServiceMetrics(
   const githubClient = createGitHubClient(authToken);
   let hasFatalError = false;
   const failedRepos: string[] = [];
+  const allEntities: PortEntity[] = [];
 
   // Process repositories concurrently with a reasonable concurrency limit
   const concurrencyLimit = CONCURRENCY_LIMITS.REPOSITORIES; // Use the global constant
-  const results: Array<{ success: boolean; repoName: string; error?: any }> = [];
+  const results: Array<{ success: boolean; repoName: string; error?: any; entity?: PortEntity }> = [];
 
   for (let i = 0; i < repos.length; i += concurrencyLimit) {
     const batch = repos.slice(i, i + concurrencyLimit);
@@ -524,8 +553,8 @@ export async function calculateAndStoreServiceMetrics(
     const batchPromises = batch.map(async (repo, batchIndex) => {
       const repoIndex = i + batchIndex;
       try {
-        await processRepositoryServiceMetrics(githubClient, repo, repoIndex, repos.length);
-        return { success: true, repoName: repo.name };
+        const entity = await processRepositoryServiceMetrics(githubClient, repo, repoIndex, repos.length);
+        return { success: true, repoName: repo.name, entity };
       } catch (error) {
         console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         return { success: false, repoName: repo.name, error };
@@ -536,14 +565,22 @@ export async function calculateAndStoreServiceMetrics(
     results.push(...batchResults);
   }
 
-  // Process results
+  // Process results and collect all entities
   const successful = results.filter(r => r.success);
   const failed = results.filter(r => !r.success);
   
   failedRepos.push(...failed.map(r => r.repoName));
   hasFatalError = failed.length > 0;
 
+  // Collect all entities from successful repositories
+  successful.forEach(result => {
+    if (result.entity) {
+      allEntities.push(result.entity);
+    }
+  });
+
   console.log(`Service metrics processing complete: ${successful.length} successful, ${failed.length} failed`);
+  console.log(`Total entities to ingest: ${allEntities.length}`);
 
   // If all repositories failed, that's a fatal error
   if (failedRepos.length === repos.length && repos.length > 0) {
@@ -560,5 +597,12 @@ export async function calculateAndStoreServiceMetrics(
   // If there were any fatal errors and no successful processing, throw an error
   if (hasFatalError && failedRepos.length === repos.length) {
     throw new Error('All repositories failed to process');
+  }
+
+  // Store all entities in bulk if we have any
+  if (allEntities.length > 0) {
+    console.log(`Starting bulk ingestion of ${allEntities.length} service entities...`);
+    await storeServiceMetricsEntities(allEntities);
+    console.log('Bulk ingestion completed successfully');
   }
 }

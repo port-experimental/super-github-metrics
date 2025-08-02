@@ -1,5 +1,5 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { PortClient } from '../port';
+import { PortClient, createEntitiesInBatches } from '../port';
 
 // Mock axios with proper typing
 const mockAxios = {
@@ -283,6 +283,109 @@ describe('PortClient', () => {
 
       expect(result).toEqual({ success: true });
       expect(axios.post).toHaveBeenCalledTimes(2); // Initial + refresh
+    });
+  });
+
+  describe('bulk entities', () => {
+    it('should create multiple entities in bulk', async () => {
+      const mockOAuthResponse = {
+        accessToken: 'test-token',
+        expiresIn: 3600,
+      };
+
+      const mockBulkResponse = {
+        entities: [
+          { identifier: 'entity1', created: true, index: 0, additionalData: {} },
+          { identifier: 'entity2', created: true, index: 1, additionalData: {} },
+        ],
+        ok: true,
+        errors: [],
+      };
+
+      mockAxios.post
+        .mockResolvedValueOnce({ data: mockOAuthResponse }) // OAuth token
+        .mockResolvedValueOnce({ data: mockBulkResponse }); // Bulk create
+
+      const client = await PortClient.getInstance();
+      const entities = [
+        { identifier: 'entity1', title: 'Entity 1' },
+        { identifier: 'entity2', title: 'Entity 2' },
+      ];
+
+      const result = await client.createBulkEntities('test-blueprint', entities);
+
+      expect(result).toEqual(mockBulkResponse);
+      expect(axios.post).toHaveBeenCalledWith(
+        'https://api.getport.io/v1/blueprints/test-blueprint/entities/bulk?upsert=true&merge=true',
+        { entities },
+        expect.any(Object)
+      );
+    });
+
+    it('should throw error when trying to create more than 20 entities', async () => {
+      const mockOAuthResponse = {
+        accessToken: 'test-token',
+        expiresIn: 3600,
+      };
+
+      mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
+
+      const client = await PortClient.getInstance();
+      const entities = Array.from({ length: 21 }, (_, i) => ({ 
+        identifier: `entity${i}`, 
+        title: `Entity ${i}` 
+      }));
+
+      await expect(client.createBulkEntities('test-blueprint', entities))
+        .rejects.toThrow('Cannot create more than 20 entities in a single bulk request');
+    });
+  });
+
+  describe('createEntitiesInBatches', () => {
+    it('should process entities in batches of 20', async () => {
+      const mockOAuthResponse = {
+        accessToken: 'test-token',
+        expiresIn: 3600,
+      };
+
+      const mockBulkResponse1 = {
+        entities: Array.from({ length: 20 }, (_, i) => ({ 
+          identifier: `entity${i}`, 
+          created: true,
+          index: i,
+          additionalData: {}
+        })),
+        ok: true,
+        errors: [],
+      };
+
+      const mockBulkResponse2 = {
+        entities: Array.from({ length: 10 }, (_, i) => ({ 
+          identifier: `entity${i + 20}`, 
+          created: true,
+          index: i,
+          additionalData: {}
+        })),
+        ok: true,
+        errors: [],
+      };
+
+      mockAxios.post
+        .mockResolvedValueOnce({ data: mockOAuthResponse }) // OAuth token
+        .mockResolvedValueOnce({ data: mockBulkResponse1 }) // First batch
+        .mockResolvedValueOnce({ data: mockBulkResponse2 }); // Second batch
+
+      const entities = Array.from({ length: 30 }, (_, i) => ({ 
+        identifier: `entity${i}`, 
+        title: `Entity ${i}` 
+      }));
+
+      const results = await createEntitiesInBatches('test-blueprint', entities);
+
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual(mockBulkResponse1);
+      expect(results[1]).toEqual(mockBulkResponse2);
+      expect(axios.post).toHaveBeenCalledTimes(3); // OAuth + 2 batches
     });
   });
 }); 

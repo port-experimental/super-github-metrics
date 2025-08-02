@@ -36,3 +36,29 @@ export interface PortUpsertPayload {
   team?: string[];
   [key: string]: unknown;
 }
+
+// Bulk operations types
+export interface PortBulkEntitiesRequest {
+  entities: PortEntity[];
+}
+
+export interface PortBulkEntityResult {
+  created: boolean;
+  identifier: string;
+  index: number;
+  additionalData: Record<string, unknown>;
+}
+
+export interface PortBulkEntityFailedResult {
+  identifier: string;
+  index: number;
+  statusCode: number;
+  error: string;
+  message: string;
+}
+
+export interface PortBulkEntitiesResponse {
+  entities: PortBulkEntityResult[];
+  ok: boolean;
+  errors: PortBulkEntityFailedResult[];
+}

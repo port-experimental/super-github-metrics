@@ -1,9 +1,10 @@
 import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
-import { upsertProps } from '../clients/port';
+import { createEntitiesInBatches } from '../clients/port';
 import type { Repository, Commit } from '../types/github';
 import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, CONCURRENCY_LIMITS } from './utils';
 import type { PullRequestBasic } from '../types/github';
+import type { PortEntity } from '../types/port';
 
 export interface PRMetrics {
   repoId: string;
@@ -137,10 +138,11 @@ export async function calculateAndStorePRMetrics(
   const githubClient = createGitHubClient(authToken);
   let hasFatalError = false;
   const failedRepos: string[] = [];
+  const allEntities: PortEntity[] = [];
 
   // Process repositories concurrently with a reasonable concurrency limit
   const concurrencyLimit = CONCURRENCY_LIMITS.REPOSITORIES; // Use the global constant
-  const results: Array<{ success: boolean; repoName: string; error?: any }> = [];
+  const results: Array<{ success: boolean; repoName: string; error?: any; entities?: PortEntity[] }> = [];
 
   for (let i = 0; i < repos.length; i += concurrencyLimit) {
     const batch = repos.slice(i, i + concurrencyLimit);
@@ -164,6 +166,8 @@ export async function calculateAndStorePRMetrics(
           TIME_PERIODS.THIRTY_DAYS,
           TIME_PERIODS.NINETY_DAYS,
         ];
+
+        const repoEntities: PortEntity[] = [];
 
         // Process all time periods concurrently
         const timePeriodPromises = timePeriods.map(async (period) => {
@@ -259,13 +263,14 @@ export async function calculateAndStorePRMetrics(
                 .mapKeys((_value, key) => _.snakeCase(key))
                 .value();
 
-              await upsertProps(
-                'githubPullRequest',
-                `${record.repoName}${record.pullRequestId}`,
-                props
-              );
+              // Create entity for bulk ingestion
+              const entity: PortEntity = {
+                identifier: `${record.repoName}${record.pullRequestId}`,
+                title: `PR ${pr.number} - ${repo.name}`,
+                properties: props,
+              };
 
-              return { success: true, prNumber: pr.number };
+              return { success: true, prNumber: pr.number, entity };
             } catch (error) {
               console.error(`Failed to update PR ${repo.name}-${pr.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
               return { success: false, prNumber: pr.number, error };
@@ -276,13 +281,26 @@ export async function calculateAndStorePRMetrics(
           const results = await Promise.all(prProcessingPromises);
           const successful = results.filter(r => r.success).length;
           const failed = results.filter(r => !r.success).length;
+          
+          // Collect successful entities
+          const periodEntities = results
+            .filter(r => r.success && r.entity)
+            .map(r => r.entity as PortEntity);
+          
           console.log(`  Completed ${period} day period: ${successful} successful, ${failed} failed`);
           
-          return { period, successful, failed, total: periodPRs.length };
+          return { period, successful, failed, total: periodPRs.length, entities: periodEntities };
         });
 
         // Wait for all time periods to complete
         const timePeriodResults = await Promise.all(timePeriodPromises);
+        
+        // Collect all entities from this repository
+        timePeriodResults.forEach(result => {
+          if (result.entities) {
+            repoEntities.push(...result.entities);
+          }
+        });
         
         // Log summary for all time periods
         const totalSuccessful = timePeriodResults.reduce((sum, result) => sum + result.successful, 0);
@@ -290,7 +308,7 @@ export async function calculateAndStorePRMetrics(
         const totalPRs = timePeriodResults.reduce((sum, result) => sum + result.total, 0);
         
         console.log(`  Repository ${repo.name} complete: ${totalSuccessful} PRs successful, ${totalFailed} failed (${totalPRs} total)`);
-        return { success: true, repoName: repo.name };
+        return { success: true, repoName: repo.name, entities: repoEntities };
       } catch (error) {
         console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         return { success: false, repoName: repo.name, error };
@@ -301,14 +319,22 @@ export async function calculateAndStorePRMetrics(
     results.push(...batchResults);
   }
 
-  // Process results
+  // Process results and collect all entities
   const successful = results.filter(r => r.success);
   const failed = results.filter(r => !r.success);
   
   failedRepos.push(...failed.map(r => r.repoName));
   hasFatalError = failed.length > 0;
 
+  // Collect all entities from successful repositories
+  successful.forEach(result => {
+    if (result.entities) {
+      allEntities.push(...result.entities);
+    }
+  });
+
   console.log(`PR metrics processing complete: ${successful.length} repositories successful, ${failed.length} failed`);
+  console.log(`Total entities to ingest: ${allEntities.length}`);
 
   // If all repositories failed, that's a fatal error
   if (failedRepos.length === repos.length && repos.length > 0) {
@@ -325,5 +351,42 @@ export async function calculateAndStorePRMetrics(
   // If there were any fatal errors and no successful processing, throw an error
   if (hasFatalError && failedRepos.length === repos.length) {
     throw new Error('All repositories failed to process');
+  }
+
+  // Store all entities in bulk if we have any
+  if (allEntities.length > 0) {
+    console.log(`Starting bulk ingestion of ${allEntities.length} PR entities...`);
+    await storePRMetricsEntities(allEntities);
+    console.log('Bulk ingestion completed successfully');
+  }
+}
+
+/**
+ * Stores multiple PR metrics entities in Port using bulk ingestion
+ */
+export async function storePRMetricsEntities(entities: PortEntity[]): Promise<void> {
+  if (entities.length === 0) {
+    console.log('No PR metrics entities to store');
+    return;
+  }
+
+  try {
+    console.log(`Storing ${entities.length} PR metrics entities using bulk ingestion...`);
+    const results = await createEntitiesInBatches('githubPullRequest', entities);
+    
+    // Aggregate results
+    const totalSuccessful = results.reduce((sum, result) => sum + result.entities.filter(r => r.created).length, 0);
+    const totalFailed = results.reduce((sum, result) => sum + result.entities.filter(r => !r.created).length, 0);
+    
+    console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
+    
+    if (totalFailed > 0) {
+      const allFailed = results.flatMap(result => result.entities.filter(r => !r.created));
+      const failedIdentifiers = allFailed.map(r => r.identifier);
+      console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
+    }
+  } catch (error) {
+    console.error(`Failed to store PR metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw error;
   }
 }

@@ -1,6 +1,6 @@
 import _ from 'lodash';
 import { createGitHubClient } from '../clients/github';
-import { upsertEntity } from '../clients/port';
+import { createEntitiesInBatches } from '../clients/port';
 import type {
   GitHubCommit,
   GitHubPullRequest,
@@ -38,12 +38,12 @@ export async function calculateAndStoreDeveloperStats(
   user: GitHubUser,
   joinDate: string,
   githubClient?: any
-): Promise<void> {
+): Promise<PortEntity | null> {
   const stats = await getDeveloperStats(orgNames, authToken, user.identifier, joinDate, githubClient);
   const record = stats.find((rec) => rec.login === user.identifier);
   if (!record) {
     console.log(`No record found for ${user.identifier}, unprocessable, skipping...`);
-    return;
+    return null;
   }
   console.log(record);
   return await storeDeveloperStats(user, record);
@@ -215,7 +215,7 @@ export async function getDeveloperStats(
   }
 }
 
-export async function storeDeveloperStats(user: GitHubUser, record: DeveloperStats) {
+export async function storeDeveloperStats(user: GitHubUser, record: DeveloperStats): Promise<PortEntity> {
   const props: Record<string, unknown> = _.chain(record)
     .pick([
       'login',
@@ -235,18 +235,43 @@ export async function storeDeveloperStats(user: GitHubUser, record: DeveloperSta
     )
     .value();
 
+  const entity: PortEntity = {
+    identifier: user.identifier,
+    title: user.title || user.identifier,
+    properties: props,
+    relations: user.relations || {},
+  };
+
+  return entity;
+}
+
+/**
+ * Stores multiple developer stats entities in Port using bulk ingestion
+ */
+export async function storeDeveloperStatsEntities(entities: PortEntity[]): Promise<void> {
+  if (entities.length === 0) {
+    console.log('No developer stats entities to store');
+    return;
+  }
+
   try {
-    console.log(`Updating onboarding metrics for user ${user.identifier}`);
-    await upsertEntity(
-      'githubUser',
-      user.identifier,
-      user.title || '',
-      props,
-      user.relations || {}
-    );
-    console.log(`Successfully updated onboarding metrics for user ${user.identifier}`);
+    console.log(`Storing ${entities.length} developer stats entities using bulk ingestion...`);
+    const results = await createEntitiesInBatches('githubUser', entities);
+    
+    // Aggregate results
+    const totalSuccessful = results.reduce((sum, result) => sum + result.entities.filter(r => r.created).length, 0);
+    const totalFailed = results.reduce((sum, result) => sum + result.entities.filter(r => !r.created).length, 0);
+    
+    console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
+    
+    if (totalFailed > 0) {
+      const allFailed = results.flatMap(result => result.entities.filter(r => !r.created));
+      const failedIdentifiers = allFailed.map(r => r.identifier);
+      console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
+    }
   } catch (error) {
-    console.error(`Failed to update user ${user.identifier}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(`Failed to store developer stats entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw error;
   }
 }
 

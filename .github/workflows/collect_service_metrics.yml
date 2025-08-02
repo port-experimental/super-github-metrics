@@ -2,7 +2,7 @@ name: collect_service_metrics
 on:
     workflow_dispatch:
     schedule:
-      - cron: '0 0 * * *'
+      - cron: '0 6 * * *'
 jobs:
     service:
       name: service_metrics

@@ -2,7 +2,7 @@ name: collect_pr_metrics
 on:
     workflow_dispatch:
     schedule:
-      - cron: '0 0 * * *'
+      - cron: '0 3 * * *'
 jobs:
     pr:
       name: pr_metrics

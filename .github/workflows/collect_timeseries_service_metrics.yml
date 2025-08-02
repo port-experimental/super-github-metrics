@@ -2,7 +2,7 @@ name: collect_timeseries_service_metrics
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 9 * * *'
 
 jobs:
   timeseries-metrics:

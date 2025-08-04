@@ -6,15 +6,18 @@ const config: Config.InitialOptions = {
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.ts', '**/?(*.)+(spec|test).ts'],
   transform: {
-    '^.+\\.ts$': ['ts-jest', {
-      tsconfig: {
-        strict: false,
-        noImplicitAny: false,
-        esModuleInterop: true,
-        allowSyntheticDefaultImports: true,
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          strict: false,
+          noImplicitAny: false,
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
+        },
+        useESM: false,
       },
-      useESM: false,
-    }],
+    ],
   },
   collectCoverageFrom: [
     'src/**/*.ts',
@@ -44,4 +47,4 @@ const config: Config.InitialOptions = {
   testPathIgnorePatterns: ['/node_modules/'],
 };
 
-export default config; 
+export default config;

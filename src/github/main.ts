@@ -48,12 +48,20 @@ async function processOrganizationRepositories(
 
 async function main() {
   try {
-    const AUTH_TOKEN = process.env.X_GITHUB_TOKEN;
+    const GITHUB_APP_ID = process.env.X_GITHUB_APP_ID;
+    const GITHUB_APP_PRIVATE_KEY = process.env.X_GITHUB_APP_PRIVATE_KEY;
+    const GITHUB_APP_INSTALLATION_ID = process.env.X_GITHUB_APP_INSTALLATION_ID;
     const ENTERPRISE_NAME = process.env.X_GITHUB_ENTERPRISE;
     const GITHUB_ORGS = process.env.X_GITHUB_ORGS?.split(',');
 
-    if (!AUTH_TOKEN) {
-      throw new FatalError('X_GITHUB_TOKEN environment variable is required');
+    if (!GITHUB_APP_ID) {
+      throw new FatalError('X_GITHUB_APP_ID environment variable is required');
+    }
+    if (!GITHUB_APP_PRIVATE_KEY) {
+      throw new FatalError('X_GITHUB_APP_PRIVATE_KEY environment variable is required');
+    }
+    if (!GITHUB_APP_INSTALLATION_ID) {
+      throw new FatalError('X_GITHUB_APP_INSTALLATION_ID environment variable is required');
     }
     if (!ENTERPRISE_NAME) {
       throw new FatalError('X_GITHUB_ENTERPRISE environment variable is required');
@@ -76,7 +84,11 @@ async function main() {
 
         try {
           console.log('Calculating onboarding metrics...');
-          const githubClient = createGitHubClient(AUTH_TOKEN);
+          const githubClient = createGitHubClient({
+            appId: GITHUB_APP_ID,
+            privateKey: GITHUB_APP_PRIVATE_KEY,
+            installationId: GITHUB_APP_INSTALLATION_ID,
+          });
           await githubClient.checkRateLimits();
           const githubUsers = await getEntities('githubUser');
           console.log(`Found ${githubUsers.entities.length} github users in Port`);
@@ -98,19 +110,19 @@ async function main() {
 
           // Check if we should force processing all users regardless of existing metrics
           const forceProcessing = process.env.FORCE_ONBOARDING_METRICS === 'true';
-          
+
           let usersToProcess: PortEntity[];
           if (forceProcessing) {
-            console.log('FORCE_ONBOARDING_METRICS is enabled - processing all users regardless of existing metrics');
+            console.log(
+              'FORCE_ONBOARDING_METRICS is enabled - processing all users regardless of existing metrics'
+            );
             usersToProcess = githubUsers.entities;
           } else {
             // Only go over users without complete onboarding metrics in Port
             usersToProcess = githubUsers.entities.filter(
               (user: PortEntity) => !hasCompleteOnboardingMetrics(user)
             );
-            console.log(
-              `Found ${usersToProcess.length} users without complete onboarding metrics`
-            );
+            console.log(`Found ${usersToProcess.length} users without complete onboarding metrics`);
           }
 
           // For each user, get the onboarding metrics
@@ -119,9 +131,7 @@ async function main() {
           const usersWithErrors: string[] = [];
 
           for (const [index, user] of usersToProcess.entries()) {
-            console.log(
-              `Processing developer ${index + 1} of ${usersToProcess.length}`
-            );
+            console.log(`Processing developer ${index + 1} of ${usersToProcess.length}`);
             try {
               // Ensure user has required properties
               if (!user.identifier) {
@@ -130,7 +140,9 @@ async function main() {
                 continue;
               }
 
-              const joinDate = joinRecords.find((record) => record.user === user.identifier)?.created_at;
+              const joinDate = joinRecords.find(
+                (record) => record.user === user.identifier
+              )?.created_at;
               if (!joinDate) {
                 console.error(`No join date found for ${user.identifier}`);
                 errorCount++;
@@ -146,14 +158,25 @@ async function main() {
                 relations: user.relations || undefined,
               };
 
-              await calculateAndStoreDeveloperStats(GITHUB_ORGS, AUTH_TOKEN, githubUser, joinDate);
+              await calculateAndStoreDeveloperStats(
+                GITHUB_ORGS,
+                {
+                  appId: GITHUB_APP_ID,
+                  privateKey: GITHUB_APP_PRIVATE_KEY,
+                  installationId: GITHUB_APP_INSTALLATION_ID,
+                },
+                githubUser,
+                joinDate
+              );
               processedCount++;
             } catch (error) {
               errorCount++;
               if (user.identifier) {
                 usersWithErrors.push(user.identifier);
               }
-              console.error(`Error processing developer ${user.identifier}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              console.error(
+                `Error processing developer ${user.identifier}: ${error instanceof Error ? error.message : 'Unknown error'}`
+              );
             }
           }
 
@@ -180,7 +203,9 @@ async function main() {
             hasFatalError = true;
             throw error;
           }
-          console.error(`Unexpected error in onboarding metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.error(
+            `Unexpected error in onboarding metrics: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
           hasFatalError = true;
           throw new FatalError('Unexpected error in onboarding metrics', error as Error);
         }
@@ -198,27 +223,39 @@ async function main() {
 
         try {
           console.log('Calculating PR metrics...');
-          const githubClient = createGitHubClient(AUTH_TOKEN);
+          const githubClient = createGitHubClient({
+            appId: GITHUB_APP_ID,
+            privateKey: GITHUB_APP_PRIVATE_KEY,
+            installationId: GITHUB_APP_INSTALLATION_ID,
+          });
           await githubClient.checkRateLimits();
 
           // Process organizations concurrently
           const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-                await calculateAndStorePRMetrics(repos, AUTH_TOKEN);
+                await calculateAndStorePRMetrics(repos, {
+                  appId: GITHUB_APP_ID,
+                  privateKey: GITHUB_APP_PRIVATE_KEY,
+                  installationId: GITHUB_APP_INSTALLATION_ID,
+                });
               });
               return { success: true, orgName };
             } catch (error) {
-              console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              console.error(
+                `Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+              );
               return { success: false, orgName, error };
             }
           });
 
           const results = await Promise.all(orgPromises);
-          const successful = results.filter(r => r.success);
-          const failed = results.filter(r => !r.success);
-          
-          console.log(`PR metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`);
+          const successful = results.filter((r) => r.success);
+          const failed = results.filter((r) => !r.success);
+
+          console.log(
+            `PR metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`
+          );
 
           if (failed.length > 0) {
             hasFatalError = true;
@@ -228,7 +265,9 @@ async function main() {
           if (error instanceof FatalError) {
             throw error;
           }
-          console.error(`Unexpected error in PR metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.error(
+            `Unexpected error in PR metrics: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
           hasFatalError = true;
           throw new FatalError('Unexpected error in PR metrics', error as Error);
         }
@@ -242,7 +281,11 @@ async function main() {
 
         try {
           console.log('Calculating Workflows metrics...');
-          const githubClient = createGitHubClient(AUTH_TOKEN);
+          const githubClient = createGitHubClient({
+            appId: GITHUB_APP_ID,
+            privateKey: GITHUB_APP_PRIVATE_KEY,
+            installationId: GITHUB_APP_INSTALLATION_ID,
+          });
           await githubClient.checkRateLimits();
           const portClient = await PortClient.getInstance();
 
@@ -252,26 +295,34 @@ async function main() {
               await calculateWorkflowMetrics(githubClient, portClient, orgName);
               return { success: true, orgName };
             } catch (error) {
-              console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              console.error(
+                `Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+              );
               return { success: false, orgName, error };
             }
           });
 
           const results = await Promise.all(orgPromises);
-          const successful = results.filter(r => r.success);
-          const failed = results.filter(r => !r.success);
-          
-          console.log(`Workflow metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`);
+          const successful = results.filter((r) => r.success);
+          const failed = results.filter((r) => !r.success);
+
+          console.log(
+            `Workflow metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`
+          );
 
           if (failed.length > 0) {
             hasFatalError = true;
-            throw new FatalError('Failed to process workflow metrics for one or more organizations');
+            throw new FatalError(
+              'Failed to process workflow metrics for one or more organizations'
+            );
           }
         } catch (error) {
           if (error instanceof FatalError) {
             throw error;
           }
-          console.error(`Unexpected error in workflow metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.error(
+            `Unexpected error in workflow metrics: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
           hasFatalError = true;
           throw new FatalError('Unexpected error in workflow metrics', error as Error);
         }
@@ -285,27 +336,39 @@ async function main() {
 
         try {
           console.log('Calculating Service metrics...');
-          const githubClient = createGitHubClient(AUTH_TOKEN);
+          const githubClient = createGitHubClient({
+            appId: GITHUB_APP_ID,
+            privateKey: GITHUB_APP_PRIVATE_KEY,
+            installationId: GITHUB_APP_INSTALLATION_ID,
+          });
           await githubClient.checkRateLimits();
 
           // Process organizations concurrently
           const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-                await calculateAndStoreServiceMetrics(repos, AUTH_TOKEN);
+                await calculateAndStoreServiceMetrics(repos, {
+                  appId: GITHUB_APP_ID,
+                  privateKey: GITHUB_APP_PRIVATE_KEY,
+                  installationId: GITHUB_APP_INSTALLATION_ID,
+                });
               });
               return { success: true, orgName };
             } catch (error) {
-              console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              console.error(
+                `Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+              );
               return { success: false, orgName, error };
             }
           });
 
           const results = await Promise.all(orgPromises);
-          const successful = results.filter(r => r.success);
-          const failed = results.filter(r => !r.success);
-          
-          console.log(`Service metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`);
+          const successful = results.filter((r) => r.success);
+          const failed = results.filter((r) => !r.success);
+
+          console.log(
+            `Service metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`
+          );
 
           if (failed.length > 0) {
             hasFatalError = true;
@@ -315,7 +378,9 @@ async function main() {
           if (error instanceof FatalError) {
             throw error;
           }
-          console.error(`Unexpected error in service metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.error(
+            `Unexpected error in service metrics: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
           hasFatalError = true;
           throw new FatalError('Unexpected error in service metrics', error as Error);
         }
@@ -331,7 +396,11 @@ async function main() {
 
         try {
           console.log('Calculating Time-Series Service metrics...');
-          const githubClient = createGitHubClient(AUTH_TOKEN);
+          const githubClient = createGitHubClient({
+            appId: GITHUB_APP_ID,
+            privateKey: GITHUB_APP_PRIVATE_KEY,
+            installationId: GITHUB_APP_INSTALLATION_ID,
+          });
           await githubClient.checkRateLimits();
 
           const periodType = options.periodType as 'daily' | 'weekly' | 'monthly';
@@ -343,30 +412,47 @@ async function main() {
           const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-                await calculateAndStoreTimeSeriesServiceMetrics(repos, AUTH_TOKEN, periodType, daysBack);
+                await calculateAndStoreTimeSeriesServiceMetrics(
+                  repos,
+                  {
+                    appId: GITHUB_APP_ID,
+                    privateKey: GITHUB_APP_PRIVATE_KEY,
+                    installationId: GITHUB_APP_INSTALLATION_ID,
+                  },
+                  periodType,
+                  daysBack
+                );
               });
               return { success: true, orgName };
             } catch (error) {
-              console.error(`Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              console.error(
+                `Error processing organization ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+              );
               return { success: false, orgName, error };
             }
           });
 
           const results = await Promise.all(orgPromises);
-          const successful = results.filter(r => r.success);
-          const failed = results.filter(r => !r.success);
-          
-          console.log(`Time-series service metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`);
+          const successful = results.filter((r) => r.success);
+          const failed = results.filter((r) => !r.success);
+
+          console.log(
+            `Time-series service metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`
+          );
 
           if (failed.length > 0) {
             hasFatalError = true;
-            throw new FatalError('Failed to process time-series service metrics for one or more organizations');
+            throw new FatalError(
+              'Failed to process time-series service metrics for one or more organizations'
+            );
           }
         } catch (error) {
           if (error instanceof FatalError) {
             throw error;
           }
-          console.error(`Unexpected error in time-series service metrics: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.error(
+            `Unexpected error in time-series service metrics: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
           throw new FatalError('Unexpected error in time-series service metrics', error as Error);
         }
       });

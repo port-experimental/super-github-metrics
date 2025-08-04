@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import { createAppAuth } from '@octokit/auth-app';
 import type {
   AuditLogEntry,
   Commit,
@@ -10,199 +11,103 @@ import type {
 } from '../types/github';
 
 /**
- * Manages multiple GitHub tokens and rotates between them based on rate limits
+ * GitHub App authentication configuration
  */
-export class TokenRotationManager {
-  private tokens: string[];
-  private currentTokenIndex: number = 0;
-  private tokenStatus: Map<string, {
-    remaining: number;
-    limit: number;
-    resetTime: Date;
-    isAvailable: boolean;
-  }> = new Map();
+interface GitHubAppConfig {
+  appId: string;
+  privateKey: string;
+  installationId: string;
+}
 
-  constructor(tokens: string[]) {
-    this.tokens = tokens.filter(token => token.trim().length > 0);
-    if (this.tokens.length === 0) {
-      throw new Error('At least one valid GitHub token is required');
+/**
+ * Manages GitHub App authentication and token generation
+ */
+export class GitHubAppAuthManager {
+  private appId: string;
+  private privateKey: string;
+  private installationId: string;
+  private currentToken: string | null = null;
+  private tokenExpiry: Date | null = null;
+
+  constructor(config: GitHubAppConfig) {
+    this.appId = config.appId;
+    this.privateKey = config.privateKey;
+    this.installationId = config.installationId;
+  }
+
+  /**
+   * Get a valid installation access token
+   */
+  async getInstallationToken(): Promise<string> {
+    // Check if current token is still valid (with 5 minute buffer)
+    if (
+      this.currentToken &&
+      this.tokenExpiry &&
+      this.tokenExpiry.getTime() > Date.now() + 5 * 60 * 1000
+    ) {
+      return this.currentToken;
     }
-    
-    // Initialize token status
-    this.tokens.forEach(token => {
-      this.tokenStatus.set(token, {
-        remaining: 5000, // Default limit, will be updated on first check
-        limit: 5000,
-        resetTime: new Date(),
-        isAvailable: true,
-      });
+
+    // Generate new token
+    const auth = createAppAuth({
+      appId: this.appId,
+      privateKey: this.privateKey,
     });
-  }
 
-  /**
-   * Get the current available token
-   */
-  getCurrentToken(): string {
-    return this.tokens[this.currentTokenIndex];
-  }
+    const { token } = await auth({
+      type: 'installation',
+      installationId: this.installationId,
+    });
 
-  /**
-   * Get all tokens
-   */
-  getAllTokens(): string[] {
-    return this.tokens;
-  }
-
-  /**
-   * Update rate limit status for a specific token
-   */
-  updateTokenStatus(token: string, status: {
-    remaining: number;
-    limit: number;
-    resetTime: Date;
-  }): void {
-    const currentStatus = this.tokenStatus.get(token);
-    if (currentStatus) {
-      currentStatus.remaining = status.remaining;
-      currentStatus.limit = status.limit;
-      currentStatus.resetTime = status.resetTime;
-      currentStatus.isAvailable = status.remaining > 0;
-    }
-  }
-
-  /**
-   * Check if current token is available
-   */
-  isCurrentTokenAvailable(): boolean {
-    const currentToken = this.getCurrentToken();
-    const status = this.tokenStatus.get(currentToken);
-    return status?.isAvailable ?? false;
-  }
-
-  /**
-   * Find next available token
-   */
-  findNextAvailableToken(): string | null {
-    // Check all tokens starting from current position
-    for (let i = 0; i < this.tokens.length; i++) {
-      const tokenIndex = (this.currentTokenIndex + i) % this.tokens.length;
-      const token = this.tokens[tokenIndex];
-      const status = this.tokenStatus.get(token);
-      
-      if (status?.isAvailable) {
-        this.currentTokenIndex = tokenIndex;
-        return token;
-      }
-    }
-    
-    // If no tokens are available, check if any have reset
-    const now = new Date();
-    for (let i = 0; i < this.tokens.length; i++) {
-      const tokenIndex = (this.currentTokenIndex + i) % this.tokens.length;
-      const token = this.tokens[tokenIndex];
-      const status = this.tokenStatus.get(token);
-      
-      if (status && status.resetTime <= now) {
-        status.isAvailable = true;
-        status.remaining = status.limit;
-        this.currentTokenIndex = tokenIndex;
-        return token;
-      }
-    }
-    
-    return null;
-  }
-
-  /**
-   * Find the best available token (one with most remaining requests or shortest reset time)
-   */
-  findBestAvailableToken(): string | null {
-    let bestToken: string | null = null;
-    let bestScore = -1;
-    const now = new Date();
-
-    // Check all tokens for the one with best score
-    for (const [token, status] of this.tokenStatus.entries()) {
-      let score = 0;
-      
-      if (status.isAvailable) {
-        // Available token: score based on remaining requests
-        score = status.remaining;
-      } else {
-        // Unavailable token: score based on time until reset
-        // The sooner it resets, the higher the score
-        const timeUntilReset = status.resetTime.getTime() - now.getTime();
-        if (timeUntilReset <= 0) {
-          // Token has reset, mark it as available
-          status.isAvailable = true;
-          status.remaining = status.limit;
-          score = status.limit; // Full score for newly reset token
-        } else {
-          // Token will reset soon: score inversely proportional to wait time
-          // Convert to minutes and invert (shorter wait = higher score)
-          const minutesUntilReset = Math.max(1, timeUntilReset / (1000 * 60));
-          score = Math.floor(status.limit / minutesUntilReset);
-        }
-      }
-
-      if (score > bestScore) {
-        bestToken = token;
-        bestScore = score;
-      }
+    if (!token) {
+      throw new Error('Failed to generate installation access token');
     }
 
-    // Update current token index if we found a better token
-    if (bestToken) {
-      this.currentTokenIndex = this.tokens.indexOf(bestToken);
-    }
+    this.currentToken = token;
+    // GitHub App tokens typically expire in 1 hour
+    this.tokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
 
-    return bestToken;
+    console.log('Generated new GitHub App installation access token');
+    return token;
   }
 
   /**
-   * Rotate to next available token
+   * Check if current token is valid
    */
-  rotateToNextAvailableToken(): string | null {
-    const availableToken = this.findNextAvailableToken();
-    if (availableToken) {
-      console.log(`Switched to token ${this.currentTokenIndex + 1} of ${this.tokens.length}`);
-    } else {
-      console.log('No available tokens found, waiting for rate limit reset...');
-    }
-    return availableToken;
-  }
-
-  /**
-   * Get status of all tokens
-   */
-  getAllTokenStatus(): Map<string, {
-    remaining: number;
-    limit: number;
-    resetTime: Date;
-    isAvailable: boolean;
-  }> {
-    return new Map(this.tokenStatus);
+  isTokenValid(): boolean {
+    return !!(
+      this.currentToken &&
+      this.tokenExpiry &&
+      this.tokenExpiry.getTime() > Date.now() + 5 * 60 * 1000
+    );
   }
 }
 
 export class GitHubClient {
   private octokit: Octokit;
-  private tokenManager: TokenRotationManager;
-  private currentToken: string;
+  private authManager: GitHubAppAuthManager;
 
-  constructor(tokens: string | string[]) {
-    const tokenArray = Array.isArray(tokens) ? tokens : [tokens];
-    this.tokenManager = new TokenRotationManager(tokenArray);
-    this.currentToken = this.tokenManager.getCurrentToken();
-    this.octokit = new Octokit({ auth: this.currentToken });
+  constructor(config: GitHubAppConfig) {
+    this.authManager = new GitHubAppAuthManager(config);
+    // Initialize with a placeholder token, will be updated on first request
+    this.octokit = new Octokit({ auth: 'placeholder' });
   }
 
   /**
    * Update the Octokit instance with a new token
    */
-  private updateOctokitToken(token: string): void {
-    this.currentToken = token;
+  private async updateOctokitToken(): Promise<void> {
+    const token = await this.authManager.getInstallationToken();
     this.octokit = new Octokit({ auth: token });
+  }
+
+  /**
+   * Ensure we have a valid token before making requests
+   */
+  private async ensureValidToken(): Promise<void> {
+    if (!this.authManager.isTokenValid()) {
+      await this.updateOctokitToken();
+    }
   }
 
   /**
@@ -214,18 +119,12 @@ export class GitHubClient {
     resetTime: Date;
     secondsUntilReset: number;
   }> {
+    await this.ensureValidToken();
     const resp = await this.octokit.rateLimit.get();
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
     const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
     const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
     const secondsUntilReset = Math.floor((resetTime.getTime() - Date.now()) / 1000);
-
-    // Update token status
-    this.tokenManager.updateTokenStatus(this.currentToken, {
-      remaining,
-      limit,
-      resetTime,
-    });
 
     return {
       remaining,
@@ -236,101 +135,25 @@ export class GitHubClient {
   }
 
   /**
-   * Check rate limits and rotate tokens if necessary
+   * Check rate limits and handle token refresh if needed
    */
   async checkRateLimits(): Promise<void> {
+    await this.ensureValidToken();
     const resp = await this.octokit.rateLimit.get();
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
     const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
     const secondsUntilReset = Math.floor((resetTime.getTime() - Date.now()) / 1000);
 
-    // Update token status
-    this.tokenManager.updateTokenStatus(this.currentToken, {
-      remaining,
-      limit: Number.parseInt(resp.headers['x-ratelimit-limit'] || '0'),
-      resetTime,
-    });
-
-    // Get all token statuses to make informed rotation decisions
-    const allTokenStatus = this.tokenManager.getAllTokenStatus();
-    const totalTokens = allTokenStatus.size;
-
     if (remaining <= 0) {
-      console.log(`Rate limit exceeded for current token. Attempting to rotate...`);
-      
-      if (totalTokens === 1) {
-        // Single token scenario - must wait for reset
-        console.log(`Single token configuration. Waiting ${secondsUntilReset} seconds until reset...`);
-        await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
-        console.log('Rate limit reset, continuing...');
-        return;
-      }
-
-      // Multiple tokens - try to find a better one
-      const nextToken = this.tokenManager.findBestAvailableToken();
-      if (nextToken && nextToken !== this.currentToken) {
-        this.updateOctokitToken(nextToken);
-        console.log('Successfully rotated to next available token');
-      } else {
-        // No better token available, wait for reset
-        console.log(`No available tokens. Waiting ${secondsUntilReset} seconds until reset...`);
-        await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
-        console.log('Rate limit reset, continuing...');
-      }
+      console.log(`Rate limit exceeded. Waiting ${secondsUntilReset} seconds until reset...`);
+      await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
+      console.log('Rate limit reset, continuing...');
     } else if (remaining <= 5) {
-      // Low rate limit - only rotate if we have multiple tokens and can find a better one
-      console.log(`Rate limit low (${remaining} requests left) for current token.`);
-      
-      if (totalTokens === 1) {
-        // Single token - just add a delay to be conservative
-        console.log(`Single token configuration. Adding delay to be conservative...`);
-        await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
-        return;
-      }
-
-      // Multiple tokens - check if there's a significantly better token
-      const currentTokenStatus = allTokenStatus.get(this.currentToken);
-      let bestToken = this.currentToken;
-      let bestScore = remaining; // Current token's score
-      const now = new Date();
-
-      for (const [token, status] of allTokenStatus.entries()) {
-        let tokenScore = 0;
-        
-        if (status.isAvailable) {
-          // Available token: score based on remaining requests
-          tokenScore = status.remaining;
-        } else {
-          // Unavailable token: score based on time until reset
-          const timeUntilReset = status.resetTime.getTime() - now.getTime();
-          if (timeUntilReset <= 0) {
-            // Token has reset, mark it as available
-            status.isAvailable = true;
-            status.remaining = status.limit;
-            tokenScore = status.limit;
-          } else {
-            // Token will reset soon: score inversely proportional to wait time
-            const minutesUntilReset = Math.max(1, timeUntilReset / (1000 * 60));
-            tokenScore = Math.floor(status.limit / minutesUntilReset);
-          }
-        }
-
-        // Only switch if the token has significantly better score (20% improvement)
-        if (tokenScore > bestScore * 1.2) {
-          bestToken = token;
-          bestScore = tokenScore;
-        }
-      }
-
-      if (bestToken !== this.currentToken) {
-        console.log(`Found better token with score ${bestScore} (current: ${remaining}). Rotating...`);
-        this.tokenManager.rotateToNextAvailableToken(); // This will set the best token as current
-        this.updateOctokitToken(bestToken);
-        console.log('Successfully rotated to token with better availability');
-      } else {
-        // No significantly better token available
-        console.log(`No significantly better token available. Continuing with current token...`);
-      }
+      // Low rate limit - add delay to be conservative
+      console.log(
+        `Rate limit low (${remaining} requests left). Adding delay to be conservative...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
     } else if (remaining <= 20) {
       // Getting low - add small delay
       console.log(`Rate limit getting low (${remaining} requests left). Adding small delay...`);
@@ -346,43 +169,21 @@ export class GitHubClient {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
+        // Ensure we have a valid token before making request
+        await this.ensureValidToken();
         // Check rate limits before making request
         await this.checkRateLimits();
         return await requestFn();
       } catch (error: unknown) {
         lastError = error as Error;
 
-        // For rate limit errors, try to rotate tokens
+        // For rate limit errors, wait for reset
         const errorWithStatus = error as {
           status?: number;
           response?: { headers?: Record<string, string> };
         };
         if (errorWithStatus.status === 403 || errorWithStatus.status === 429) {
-          console.log(`Rate limit error (${errorWithStatus.status}) - attempting token rotation...`);
-
-          // Mark current token as unavailable
-          this.tokenManager.updateTokenStatus(this.currentToken, {
-            remaining: 0,
-            limit: 5000,
-            resetTime: new Date(),
-          });
-
-          // Check if we have multiple tokens
-          const allTokenStatus = this.tokenManager.getAllTokenStatus();
-          const totalTokens = allTokenStatus.size;
-
-          if (totalTokens === 1) {
-            // Single token scenario - must wait for reset
-            console.log(`Single token configuration. Waiting for rate limit reset...`);
-          } else {
-            // Multiple tokens - try to find a better one
-            const nextToken = this.tokenManager.findBestAvailableToken();
-            if (nextToken && nextToken !== this.currentToken) {
-              this.updateOctokitToken(nextToken);
-              console.log('Successfully rotated to next available token, retrying...');
-              continue; // Retry the request with new token
-            }
-          }
+          console.log(`Rate limit error (${errorWithStatus.status}) - waiting for reset...`);
 
           // Extract reset time from error headers if available
           let resetTime = errorWithStatus.response?.headers?.['x-ratelimit-reset'];
@@ -398,7 +199,7 @@ export class GitHubClient {
             const resetDate = new Date(Number.parseInt(resetTime) * 1000);
             const secondsUntilReset = Math.floor((resetDate.getTime() - Date.now()) / 1000);
             if (secondsUntilReset > 0) {
-              console.log(`All tokens exhausted. Waiting ${secondsUntilReset} seconds for rate limit reset...`);
+              console.log(`Waiting ${secondsUntilReset} seconds for rate limit reset...`);
               await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
               console.log('Rate limit reset, retrying...');
               continue; // Retry the request
@@ -476,10 +277,10 @@ export class GitHubClient {
 
     data = data.filter((x) => ['fmgl-internal', 'fmgl', 'fmgl-specialised'].includes(x.org));
     console.log(`Fetched ${data.length} audit log events for member additions`);
-    
+
     // Log a summary instead of the full data
     if (data.length > 0) {
-      const uniqueUsers = new Set(data.map(x => x.user));
+      const uniqueUsers = new Set(data.map((x) => x.user));
       console.log(`Found member additions for ${uniqueUsers.size} unique users`);
     }
 
@@ -496,21 +297,21 @@ export class GitHubClient {
    */
   async searchCommits(author: string, orgName: string): Promise<Commit[]> {
     await this.addRequestDelay();
-    
+
     // Validate input parameters
     if (!author || !author.trim()) {
       console.log('Author parameter is empty, skipping commit search');
       return [];
     }
-    
+
     if (!orgName || !orgName.trim()) {
       console.log('Organization parameter is empty, skipping commit search');
       return [];
     }
-    
+
     // Construct search query with actual search text
     const searchQuery = `${author} author:${author} org:${orgName} sort:committer-date-asc`;
-    
+
     const { data: commits } = await this.makeRequestWithRetry(() =>
       this.octokit.request('GET /search/commits ', {
         q: searchQuery,
@@ -532,21 +333,21 @@ export class GitHubClient {
    */
   async searchPullRequests(author: string, orgName: string): Promise<PullRequestBasic[]> {
     await this.addRequestDelay();
-    
+
     // Validate input parameters
     if (!author || !author.trim()) {
       console.log('Author parameter is empty, skipping pull request search');
       return [];
     }
-    
+
     if (!orgName || !orgName.trim()) {
       console.log('Organization parameter is empty, skipping pull request search');
       return [];
     }
-    
+
     // Construct search query with actual search text
     const searchQuery = `${author} author:${author} org:${orgName} is:pr`;
-    
+
     const { data: pulls } = await this.makeRequestWithRetry(() =>
       this.octokit.search.issuesAndPullRequests({
         q: searchQuery,
@@ -615,7 +416,7 @@ export class GitHubClient {
     } = {}
   ): Promise<PullRequestBasic[]> {
     await this.addRequestDelay();
-    
+
     try {
       const { data: prs } = await this.makeRequestWithRetry(() =>
         this.octokit.rest.pulls.list({
@@ -632,19 +433,23 @@ export class GitHubClient {
       return prs;
     } catch (error: any) {
       if (error.status === 404) {
-        console.error(`Repository not found or no access: ${owner}/${repo}. Status: ${error.status}`);
+        console.error(
+          `Repository not found or no access: ${owner}/${repo}. Status: ${error.status}`
+        );
         console.error(`This could be due to:`);
         console.error(`1. Repository doesn't exist`);
-        console.error(`2. GitHub token doesn't have access to this repository`);
+        console.error(`2. GitHub App doesn't have access to this repository`);
         console.error(`3. Repository name or owner is incorrect`);
-        console.error(`4. Repository is private and token lacks permissions`);
+        console.error(`4. Repository is private and app lacks permissions`);
         return [];
       } else if (error.status === 403) {
         console.error(`Access denied to repository: ${owner}/${repo}. Status: ${error.status}`);
         console.error(`This could be due to insufficient permissions or rate limiting`);
         return [];
       } else {
-        console.error(`Error fetching pull requests for ${owner}/${repo}: ${error.message || 'Unknown error'}`);
+        console.error(
+          `Error fetching pull requests for ${owner}/${repo}: ${error.message || 'Unknown error'}`
+        );
         throw error; // Re-throw other errors to be handled by the retry mechanism
       }
     }
@@ -783,20 +588,9 @@ export class GitHubClient {
 }
 
 /**
- * Factory function to create a GitHub client instance
- * Supports both single token (backward compatibility) and multiple tokens (comma-separated)
+ * Factory function to create a GitHub client instance using GitHub App authentication
  */
-export function createGitHubClient(authToken: string): GitHubClient {
-  // Check if the token contains commas (multiple tokens)
-  if (authToken.includes(',')) {
-    const tokens = authToken.split(',').map(token => token.trim()).filter(token => token.length > 0);
-    if (tokens.length === 0) {
-      throw new Error('At least one valid GitHub token is required');
-    }
-    console.log(`Initializing GitHub client with ${tokens.length} tokens for rotation`);
-    return new GitHubClient(tokens);
-  } else {
-    // Single token (backward compatibility)
-    return new GitHubClient([authToken]);
-  }
+export function createGitHubClient(config: GitHubAppConfig): GitHubClient {
+  console.log('Initializing GitHub client with GitHub App authentication');
+  return new GitHubClient(config);
 }

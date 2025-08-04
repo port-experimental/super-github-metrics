@@ -49,7 +49,7 @@ describe('Port Client Integration', () => {
       expect(tokenInfo.hasToken).toBe(true);
       expect(tokenInfo.isExpired).toBe(false);
       expect(tokenInfo.expiresAt).toBeInstanceOf(Date);
-      
+
       // Check that expiry time is set correctly (within 5 seconds tolerance)
       const expectedExpiry = Date.now() + 3600 * 1000;
       const actualExpiry = tokenInfo.expiresAt?.getTime();
@@ -59,7 +59,7 @@ describe('Port Client Integration', () => {
 
     it('should handle bearer token from environment', async () => {
       process.env.PORT_BEARER_TOKEN = 'bearer-token-123';
-      
+
       const client = await PortClient.getInstance();
       const tokenInfo = client.getTokenInfo();
 
@@ -84,10 +84,10 @@ describe('Port Client Integration', () => {
         .mockResolvedValueOnce({ data: mockOAuthResponse2 });
 
       const client = await PortClient.getInstance();
-      
+
       // Mock token as expired
       (client as any).tokenExpiryTime = Date.now() - 1000;
-      
+
       await (client as any).ensureValidToken();
 
       expect(mockAxios.post).toHaveBeenCalledTimes(2);
@@ -243,7 +243,7 @@ describe('Port Client Integration', () => {
 
       const client = await PortClient.getInstance();
       const properties = { name: 'test', value: 123 };
-      
+
       await client.upsertProps('github_user', 'test-user', properties);
 
       expect(mockAxios.patch).toHaveBeenCalledWith(
@@ -277,7 +277,7 @@ describe('Port Client Integration', () => {
         title: 'Test User',
         properties: { name: 'test' },
       };
-      
+
       await client.createEntity('github_user', entity);
 
       expect(mockAxios.post).toHaveBeenCalledWith(
@@ -310,7 +310,7 @@ describe('Port Client Integration', () => {
         title: 'Test User',
         properties: { name: 'test' },
       };
-      
+
       await client.updateEntity('github_user', entity);
 
       expect(mockAxios.patch).toHaveBeenCalledWith(
@@ -334,7 +334,7 @@ describe('Port Client Integration', () => {
       mockAxios.delete.mockResolvedValueOnce({});
 
       const client = await PortClient.getInstance();
-      
+
       await client.deleteAllEntities('github_user');
 
       expect(mockAxios.delete).toHaveBeenCalledWith(
@@ -437,4 +437,4 @@ describe('Port Client Integration', () => {
       await expect(client.get('/entities')).rejects.toThrow();
     });
   });
-}); 
+});

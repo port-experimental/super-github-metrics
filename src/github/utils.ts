@@ -2,8 +2,6 @@
  * Shared utility functions for GitHub metrics optimization
  */
 
-import type { PullRequestBasic } from '../types/github';
-
 /**
  * Filters data for a specific time period
  */
@@ -69,13 +67,13 @@ export const CONCURRENCY_LIMITS = {
   // Repository processing limits
   REPOSITORIES: 5, // Number of repositories to process concurrently
   TIME_SERIES_REPOSITORIES: 3, // Lower limit for time-series due to more intensive processing
-  
+
   // PR processing limits (within each time period)
   PRS_PER_TIME_PERIOD: 10, // Number of PRs to process concurrently within a time period
-  
+
   // Organization processing limits
   ORGANIZATIONS: 3, // Number of organizations to process concurrently
-  
+
   // API calls per item limits
   API_CALLS_PER_ITEM: 3, // Number of concurrent API calls per PR/item (e.g., PR data, reviews, changes)
 } as const;

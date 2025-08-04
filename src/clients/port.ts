@@ -77,7 +77,10 @@ export class PortClient {
       if (axios.isAxiosError(error)) {
         console.error('OAuth token generation failed:', error.response?.data || error.message);
       } else {
-        console.error('An unexpected error occurred during token generation:', error.message || 'Unknown error');
+        console.error(
+          'An unexpected error occurred during token generation:',
+          error.message || 'Unknown error'
+        );
       }
       throw new Error('Failed to generate OAuth token');
     }
@@ -331,7 +334,10 @@ export class PortClient {
    * Create multiple entities in bulk with upsert support
    * Maximum 20 entities per request as per Port API limits
    */
-  async createBulkEntities(blueprint: string, entities: PortEntity[]): Promise<PortBulkEntitiesResponse> {
+  async createBulkEntities(
+    blueprint: string,
+    entities: PortEntity[]
+  ): Promise<PortBulkEntitiesResponse> {
     if (entities.length > 20) {
       throw new Error('Cannot create more than 20 entities in a single bulk request');
     }
@@ -346,7 +352,10 @@ export class PortClient {
   /**
    * Create multiple entities in bulk with upsert support (static method)
    */
-  static async createBulkEntities(blueprint: string, entities: PortEntity[]): Promise<PortBulkEntitiesResponse> {
+  static async createBulkEntities(
+    blueprint: string,
+    entities: PortEntity[]
+  ): Promise<PortBulkEntitiesResponse> {
     const client = await PortClient.getInstance();
     return client.createBulkEntities(blueprint, entities);
   }
@@ -440,7 +449,10 @@ export async function createEntity(blueprint: string, entity: PortEntity): Promi
   return PortClient.createEntity(blueprint, entity);
 }
 
-export async function createBulkEntities(blueprint: string, entities: PortEntity[]): Promise<PortBulkEntitiesResponse> {
+export async function createBulkEntities(
+  blueprint: string,
+  entities: PortEntity[]
+): Promise<PortBulkEntitiesResponse> {
   return PortClient.createBulkEntities(blueprint, entities);
 }
 
@@ -448,33 +460,42 @@ export async function createBulkEntities(blueprint: string, entities: PortEntity
  * Create multiple entities in batches using bulk ingestion
  * Automatically handles batching into chunks of 20 entities
  */
-export async function createEntitiesInBatches(blueprint: string, entities: PortEntity[]): Promise<PortBulkEntitiesResponse[]> {
+export async function createEntitiesInBatches(
+  blueprint: string,
+  entities: PortEntity[]
+): Promise<PortBulkEntitiesResponse[]> {
   const batchSize = 20;
   const results: PortBulkEntitiesResponse[] = [];
-  
+
   for (let i = 0; i < entities.length; i += batchSize) {
     const batch = entities.slice(i, i + batchSize);
-    console.log(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(entities.length / batchSize)} (${batch.length} entities)`);
-    
+    console.log(
+      `Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(entities.length / batchSize)} (${batch.length} entities)`
+    );
+
     try {
       const result = await createBulkEntities(blueprint, batch);
       results.push(result);
-      
+
       // Log results
-      const successful = result.entities.filter(r => r.created).length;
-      const failed = result.entities.filter(r => !r.created).length;
+      const successful = result.entities.filter((r) => r.created).length;
+      const failed = result.entities.filter((r) => !r.created).length;
       console.log(`Batch completed: ${successful} successful, ${failed} failed`);
-      
+
       if (failed > 0) {
-        const failedIdentifiers = result.entities.filter(r => !r.created).map(r => r.identifier);
+        const failedIdentifiers = result.entities
+          .filter((r) => !r.created)
+          .map((r) => r.identifier);
         console.warn(`Failed entities in batch: ${failedIdentifiers.join(', ')}`);
       }
     } catch (error) {
-      console.error(`Failed to process batch ${Math.floor(i / batchSize) + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(
+        `Failed to process batch ${Math.floor(i / batchSize) + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
       throw error;
     }
   }
-  
+
   return results;
 }
 

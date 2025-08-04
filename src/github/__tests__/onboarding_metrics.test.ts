@@ -1,13 +1,16 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { calculateAndStoreDeveloperStats, hasCompleteOnboardingMetrics } from '../onboarding_metrics';
-import { 
-  createMockGitHubClient, 
-  createMockPortClient, 
-  mockGitHubUser, 
+import {
+  calculateAndStoreDeveloperStats,
+  hasCompleteOnboardingMetrics,
+} from '../onboarding_metrics';
+import {
+  createMockGitHubClient,
+  createMockPortClient,
+  mockGitHubUser,
   mockPortEntity,
   mockCommit,
   mockPullRequestBasic,
-  mockPullRequestReview
+  mockPullRequestReview,
 } from '../../__tests__/utils/mocks';
 
 // Mock the clients
@@ -136,10 +139,12 @@ describe('Onboarding Metrics', () => {
           author: { login: 'test-user' },
         },
         // Add more commits to reach 10
-        ...Array(8).fill(null).map((_, i) => ({
-          commit: { author: { date: `2024-01-${String(i + 4).padStart(2, '0')}T00:00:00Z` } },
-          author: { login: 'test-user' },
-        })),
+        ...Array(8)
+          .fill(null)
+          .map((_, i) => ({
+            commit: { author: { date: `2024-01-${String(i + 4).padStart(2, '0')}T00:00:00Z` } },
+            author: { login: 'test-user' },
+          })),
       ]);
 
       (mockGitHubClient.searchPullRequests as any).mockResolvedValue([
@@ -152,20 +157,28 @@ describe('Onboarding Metrics', () => {
           user: { login: 'test-user' },
         },
         // Add more PRs to reach 10
-        ...Array(9).fill(null).map((_, i) => ({
-          id: i + 2,
-          number: i + 2,
-          created_at: `2024-01-${String(i + 6).padStart(2, '0')}T00:00:00Z`,
-          closed_at: `2024-01-${String(i + 7).padStart(2, '0')}T00:00:00Z`,
-          merged_at: `2024-01-${String(i + 7).padStart(2, '0')}T00:00:00Z`,
-          user: { login: 'test-user' },
-        })),
+        ...Array(9)
+          .fill(null)
+          .map((_, i) => ({
+            id: i + 2,
+            number: i + 2,
+            created_at: `2024-01-${String(i + 6).padStart(2, '0')}T00:00:00Z`,
+            closed_at: `2024-01-${String(i + 7).padStart(2, '0')}T00:00:00Z`,
+            merged_at: `2024-01-${String(i + 7).padStart(2, '0')}T00:00:00Z`,
+            user: { login: 'test-user' },
+          })),
       ]);
 
       const { upsertEntity } = require('../../clients/port');
       upsertEntity.mockResolvedValue({});
 
-      await calculateAndStoreDeveloperStats(testOrgs, testToken, mockGitHubUser, testJoinDate, mockGitHubClient);
+      await calculateAndStoreDeveloperStats(
+        testOrgs,
+        testToken,
+        mockGitHubUser,
+        testJoinDate,
+        mockGitHubClient
+      );
 
       // Verify that upsertEntity was called with the correct metrics
       expect(upsertEntity).toHaveBeenCalledWith(
@@ -204,7 +217,13 @@ describe('Onboarding Metrics', () => {
       const { upsertEntity } = require('../../clients/port');
       upsertEntity.mockResolvedValue({});
 
-      await calculateAndStoreDeveloperStats(testOrgs, testToken, mockGitHubUser, testJoinDate, mockGitHubClient);
+      await calculateAndStoreDeveloperStats(
+        testOrgs,
+        testToken,
+        mockGitHubUser,
+        testJoinDate,
+        mockGitHubClient
+      );
 
       expect(upsertEntity).toHaveBeenCalledWith(
         'githubUser',
@@ -242,7 +261,13 @@ describe('Onboarding Metrics', () => {
       const { upsertEntity } = require('../../clients/port');
       upsertEntity.mockResolvedValue({});
 
-      await calculateAndStoreDeveloperStats(testOrgs, testToken, mockGitHubUser, testJoinDate, mockGitHubClient);
+      await calculateAndStoreDeveloperStats(
+        testOrgs,
+        testToken,
+        mockGitHubUser,
+        testJoinDate,
+        mockGitHubClient
+      );
 
       expect(upsertEntity).toHaveBeenCalledWith(
         'githubUser',
@@ -271,7 +296,13 @@ describe('Onboarding Metrics', () => {
       const { upsertEntity } = require('../../clients/port');
       upsertEntity.mockResolvedValue({});
 
-      await calculateAndStoreDeveloperStats(testOrgs, testToken, mockGitHubUser, testJoinDate, mockGitHubClient);
+      await calculateAndStoreDeveloperStats(
+        testOrgs,
+        testToken,
+        mockGitHubUser,
+        testJoinDate,
+        mockGitHubClient
+      );
 
       expect(upsertEntity).toHaveBeenCalledWith(
         'githubUser',
@@ -300,7 +331,13 @@ describe('Onboarding Metrics', () => {
       const { upsertEntity } = require('../../clients/port');
       upsertEntity.mockResolvedValue({});
 
-      await calculateAndStoreDeveloperStats(testOrgs, testToken, mockGitHubUser, testJoinDate, mockGitHubClient);
+      await calculateAndStoreDeveloperStats(
+        testOrgs,
+        testToken,
+        mockGitHubUser,
+        testJoinDate,
+        mockGitHubClient
+      );
 
       expect(upsertEntity).toHaveBeenCalledWith(
         'githubUser',
@@ -329,7 +366,13 @@ describe('Onboarding Metrics', () => {
       const { upsertEntity } = require('../../clients/port');
       upsertEntity.mockResolvedValue({});
 
-      await calculateAndStoreDeveloperStats(testOrgs, testToken, mockGitHubUser, testJoinDate, mockGitHubClient);
+      await calculateAndStoreDeveloperStats(
+        testOrgs,
+        testToken,
+        mockGitHubUser,
+        testJoinDate,
+        mockGitHubClient
+      );
 
       // Should still call upsertEntity with null values for failed metrics
       expect(upsertEntity).toHaveBeenCalledWith(
@@ -368,7 +411,13 @@ describe('Onboarding Metrics', () => {
       const { upsertEntity } = require('../../clients/port');
       upsertEntity.mockResolvedValue({});
 
-      await calculateAndStoreDeveloperStats(testOrgs, testToken, mockGitHubUser, testJoinDate, mockGitHubClient);
+      await calculateAndStoreDeveloperStats(
+        testOrgs,
+        testToken,
+        mockGitHubUser,
+        testJoinDate,
+        mockGitHubClient
+      );
 
       expect(upsertEntity).toHaveBeenCalledWith(
         'githubUser',
@@ -406,7 +455,13 @@ describe('Onboarding Metrics', () => {
       const { upsertEntity } = require('../../clients/port');
       upsertEntity.mockResolvedValue({});
 
-      await calculateAndStoreDeveloperStats(testOrgs, testToken, mockGitHubUser, testJoinDate, mockGitHubClient);
+      await calculateAndStoreDeveloperStats(
+        testOrgs,
+        testToken,
+        mockGitHubUser,
+        testJoinDate,
+        mockGitHubClient
+      );
 
       expect(upsertEntity).toHaveBeenCalledWith(
         'githubUser',
@@ -429,4 +484,4 @@ describe('Onboarding Metrics', () => {
       );
     });
   });
-}); 
+});

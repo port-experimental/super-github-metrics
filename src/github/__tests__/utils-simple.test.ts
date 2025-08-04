@@ -66,4 +66,4 @@ describe('GitHub Utils - Simple Tests', () => {
       expect(maxPeriod).toBe(-Infinity);
     });
   });
-}); 
+});

@@ -21,11 +21,21 @@ jest.mock('../workflow_metrics');
 jest.mock('../onboarding_metrics');
 
 const mockCreateGitHubClient = createGitHubClient as jest.MockedFunction<typeof createGitHubClient>;
-const mockPortClientGetInstance = PortClient.getInstance as jest.MockedFunction<typeof PortClient.getInstance>;
-const mockCalculateServiceMetrics = calculateAndStoreServiceMetrics as jest.MockedFunction<typeof calculateAndStoreServiceMetrics>;
-const mockCalculatePRMetrics = calculateAndStorePRMetrics as jest.MockedFunction<typeof calculateAndStorePRMetrics>;
-const mockCalculateWorkflowMetrics = calculateWorkflowMetrics as jest.MockedFunction<typeof calculateWorkflowMetrics>;
-const mockCalculateOnboardingMetrics = calculateAndStoreDeveloperStats as jest.MockedFunction<typeof calculateAndStoreDeveloperStats>;
+const mockPortClientGetInstance = PortClient.getInstance as jest.MockedFunction<
+  typeof PortClient.getInstance
+>;
+const mockCalculateServiceMetrics = calculateAndStoreServiceMetrics as jest.MockedFunction<
+  typeof calculateAndStoreServiceMetrics
+>;
+const mockCalculatePRMetrics = calculateAndStorePRMetrics as jest.MockedFunction<
+  typeof calculateAndStorePRMetrics
+>;
+const mockCalculateWorkflowMetrics = calculateWorkflowMetrics as jest.MockedFunction<
+  typeof calculateWorkflowMetrics
+>;
+const mockCalculateOnboardingMetrics = calculateAndStoreDeveloperStats as jest.MockedFunction<
+  typeof calculateAndStoreDeveloperStats
+>;
 
 describe('GitHub CLI Main', () => {
   let mockGitHubClient: any;
@@ -33,7 +43,7 @@ describe('GitHub CLI Main', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Setup mock clients using the helper functions
     mockGitHubClient = createMockGitHubClient();
     mockPortClient = createMockPortClient();
@@ -66,7 +76,7 @@ describe('GitHub CLI Main', () => {
     it('should call service metrics calculation with correct parameters', async () => {
       // Import the main function dynamically to avoid module loading issues
       const { main } = await import('../main');
-      
+
       // Mock process.argv
       const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'service-metrics'];
@@ -84,7 +94,7 @@ describe('GitHub CLI Main', () => {
   describe('pr-metrics command', () => {
     it('should call PR metrics calculation with correct parameters', async () => {
       const { main } = await import('../main');
-      
+
       const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'pr-metrics'];
 
@@ -101,7 +111,7 @@ describe('GitHub CLI Main', () => {
   describe('workflow-metrics command', () => {
     it('should call workflow metrics calculation with correct parameters', async () => {
       const { main } = await import('../main');
-      
+
       const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'workflow-metrics'];
 
@@ -118,7 +128,7 @@ describe('GitHub CLI Main', () => {
   describe('onboarding-metrics command', () => {
     it('should call onboarding metrics calculation with correct parameters', async () => {
       const { main } = await import('../main');
-      
+
       const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'onboarding-metrics'];
 
@@ -135,9 +145,9 @@ describe('GitHub CLI Main', () => {
   describe('error handling', () => {
     it('should handle missing environment variables', async () => {
       delete process.env.X_GITHUB_TOKEN;
-      
+
       const { main } = await import('../main');
-      
+
       const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'service-metrics'];
 
@@ -151,7 +161,7 @@ describe('GitHub CLI Main', () => {
 
     it('should handle unknown commands', async () => {
       const { main } = await import('../main');
-      
+
       const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'unknown-command'];
 
@@ -163,4 +173,4 @@ describe('GitHub CLI Main', () => {
       process.argv = originalArgv;
     });
   });
-}); 
+});

@@ -1,5 +1,17 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { createMockGitHubClient, createMockPortClient, mockRepository, mockPullRequestBasic, mockPullRequest, mockPullRequestReview, mockCommit, mockWorkflowRun, mockAuditLogEntry, mockGitHubUser, mockPortEntity } from './utils/mocks';
+import {
+  createMockGitHubClient,
+  createMockPortClient,
+  mockRepository,
+  mockPullRequestBasic,
+  mockPullRequest,
+  mockPullRequestReview,
+  mockCommit,
+  mockWorkflowRun,
+  mockAuditLogEntry,
+  mockGitHubUser,
+  mockPortEntity,
+} from './utils/mocks';
 
 // Mock all external dependencies
 jest.mock('../clients/github', () => ({
@@ -26,7 +38,7 @@ describe('Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Set up environment variables
     process.env = {
       ...originalEnv,
@@ -72,10 +84,12 @@ describe('Integration Tests', () => {
           author: { login: 'test-user' },
         },
         // Add more commits to reach 10
-        ...Array(9).fill(null).map((_, i) => ({
-          commit: { author: { date: `2024-01-${String(i + 3).padStart(2, '0')}T00:00:00Z` } },
-          author: { login: 'test-user' },
-        })),
+        ...Array(9)
+          .fill(null)
+          .map((_, i) => ({
+            commit: { author: { date: `2024-01-${String(i + 3).padStart(2, '0')}T00:00:00Z` } },
+            author: { login: 'test-user' },
+          })),
       ]);
       mockGitHubClient.searchPullRequests.mockResolvedValue([
         {
@@ -87,14 +101,16 @@ describe('Integration Tests', () => {
           user: { login: 'test-user' },
         },
         // Add more PRs to reach 10
-        ...Array(9).fill(null).map((_, i) => ({
-          id: i + 2,
-          number: i + 2,
-          created_at: `2024-01-${String(i + 6).padStart(2, '0')}T00:00:00Z`,
-          closed_at: `2024-01-${String(i + 7).padStart(2, '0')}T00:00:00Z`,
-          merged_at: `2024-01-${String(i + 7).padStart(2, '0')}T00:00:00Z`,
-          user: { login: 'test-user' },
-        })),
+        ...Array(9)
+          .fill(null)
+          .map((_, i) => ({
+            id: i + 2,
+            number: i + 2,
+            created_at: `2024-01-${String(i + 6).padStart(2, '0')}T00:00:00Z`,
+            closed_at: `2024-01-${String(i + 7).padStart(2, '0')}T00:00:00Z`,
+            merged_at: `2024-01-${String(i + 7).padStart(2, '0')}T00:00:00Z`,
+            user: { login: 'test-user' },
+          })),
       ]);
 
       // Import and test the onboarding metrics function
@@ -231,12 +247,14 @@ describe('Integration Tests', () => {
       const { calculateAndStoreDeveloperStats } = require('../github/onboarding_metrics');
 
       // The function should handle the error gracefully
-      await expect(calculateAndStoreDeveloperStats(
-        ['test-org'],
-        'test-token',
-        mockGitHubUser,
-        '2024-01-01T00:00:00Z'
-      )).rejects.toThrow('Rate limit exceeded');
+      await expect(
+        calculateAndStoreDeveloperStats(
+          ['test-org'],
+          'test-token',
+          mockGitHubUser,
+          '2024-01-01T00:00:00Z'
+        )
+      ).rejects.toThrow('Rate limit exceeded');
     });
 
     it('should handle Port API errors gracefully', async () => {
@@ -257,12 +275,14 @@ describe('Integration Tests', () => {
       const { calculateAndStoreDeveloperStats } = require('../github/onboarding_metrics');
 
       // The function should handle the error gracefully
-      await expect(calculateAndStoreDeveloperStats(
-        ['test-org'],
-        'test-token',
-        mockGitHubUser,
-        '2024-01-01T00:00:00Z'
-      )).rejects.toThrow('Port API error');
+      await expect(
+        calculateAndStoreDeveloperStats(
+          ['test-org'],
+          'test-token',
+          mockGitHubUser,
+          '2024-01-01T00:00:00Z'
+        )
+      ).rejects.toThrow('Port API error');
     });
   });
 
@@ -307,4 +327,4 @@ describe('Integration Tests', () => {
       );
     });
   });
-}); 
+});

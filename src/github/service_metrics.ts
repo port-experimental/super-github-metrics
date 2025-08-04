@@ -1,10 +1,15 @@
 import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { createEntitiesInBatches } from '../clients/port';
-import type { PullRequestBasic, Repository } from '../types/github';
-import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, getMaxTimePeriod, CONCURRENCY_LIMITS } from './utils';
+import type { PullRequestBasic, Repository, GitHubAppConfig } from '../types/github';
+import {
+  filterDataForTimePeriod,
+  TIME_PERIODS,
+  type TimePeriod,
+  getMaxTimePeriod,
+  CONCURRENCY_LIMITS,
+} from './utils';
 import type { PortEntity } from '../types/port';
-
 
 export const BLUEPRINT_NAME = 'service';
 export interface ServiceMetrics {
@@ -133,7 +138,9 @@ export async function fetchRepositoryContributions(
       page++;
     }
   } catch (error) {
-    console.error(`Error fetching contributions for ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Error fetching contributions for ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
   }
 
   return contributions;
@@ -192,17 +199,19 @@ export async function fetchRepositoryPRs(
 
       page++;
     }
-    
+
     console.log(`Successfully fetched ${prs.length} PRs from ${owner}/${repoName}`);
   } catch (error: any) {
-    console.error(`Error fetching PRs for ${owner}/${repoName}: ${error.message || 'Unknown error'}`);
-    
+    console.error(
+      `Error fetching PRs for ${owner}/${repoName}: ${error.message || 'Unknown error'}`
+    );
+
     // If it's a 404 or 403, the repository might not exist or be accessible
     if (error.status === 404 || error.status === 403) {
       console.error(`Repository ${owner}/${repoName} is not accessible. Skipping...`);
       return [];
     }
-    
+
     // For other errors, re-throw to be handled by the calling function
     throw error;
   }
@@ -252,7 +261,9 @@ export async function analyzePR(
       timeToFirstReview,
     };
   } catch (error) {
-    console.error(`Error analyzing PR ${pr.number} in ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Error analyzing PR ${pr.number} in ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
     return {
       isReviewed: false,
       isMerged: false,
@@ -400,20 +411,28 @@ export async function storeServiceMetricsEntities(entities: PortEntity[]): Promi
   try {
     console.log(`Storing ${entities.length} service metrics entities using bulk ingestion...`);
     const results = await createEntitiesInBatches(BLUEPRINT_NAME, entities);
-    
+
     // Aggregate results
-    const totalSuccessful = results.reduce((sum, result) => sum + result.entities.filter(r => r.created).length, 0);
-    const totalFailed = results.reduce((sum, result) => sum + result.entities.filter(r => !r.created).length, 0);
-    
+    const totalSuccessful = results.reduce(
+      (sum, result) => sum + result.entities.filter((r) => r.created).length,
+      0
+    );
+    const totalFailed = results.reduce(
+      (sum, result) => sum + result.entities.filter((r) => !r.created).length,
+      0
+    );
+
     console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
-    
+
     if (totalFailed > 0) {
-      const allFailed = results.flatMap(result => result.entities.filter(r => !r.created));
-      const failedIdentifiers = allFailed.map(r => r.identifier);
+      const allFailed = results.flatMap((result) => result.entities.filter((r) => !r.created));
+      const failedIdentifiers = allFailed.map((r) => r.identifier);
       console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
     }
   } catch (error) {
-    console.error(`Failed to store service metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Failed to store service metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
     throw error;
   }
 }
@@ -525,7 +544,9 @@ export async function processRepositoryServiceMetrics(
     logServiceMetricsSummary(record);
     return entity;
   } catch (error) {
-    console.error(`Failed to process service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Failed to process service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
     throw error;
   }
 }
@@ -535,28 +556,38 @@ export async function processRepositoryServiceMetrics(
  */
 export async function calculateAndStoreServiceMetrics(
   repos: Repository[],
-  authToken: string
+  config: GitHubAppConfig
 ): Promise<void> {
-  const githubClient = createGitHubClient(authToken);
+  const githubClient = createGitHubClient(config);
   let hasFatalError = false;
   const failedRepos: string[] = [];
   const allEntities: PortEntity[] = [];
 
   // Process repositories concurrently with a reasonable concurrency limit
   const concurrencyLimit = CONCURRENCY_LIMITS.REPOSITORIES; // Use the global constant
-  const results: Array<{ success: boolean; repoName: string; error?: any; entity?: PortEntity }> = [];
+  const results: Array<{ success: boolean; repoName: string; error?: any; entity?: PortEntity }> =
+    [];
 
   for (let i = 0; i < repos.length; i += concurrencyLimit) {
     const batch = repos.slice(i, i + concurrencyLimit);
-    console.log(`Processing batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`);
+    console.log(
+      `Processing batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`
+    );
 
     const batchPromises = batch.map(async (repo, batchIndex) => {
       const repoIndex = i + batchIndex;
       try {
-        const entity = await processRepositoryServiceMetrics(githubClient, repo, repoIndex, repos.length);
+        const entity = await processRepositoryServiceMetrics(
+          githubClient,
+          repo,
+          repoIndex,
+          repos.length
+        );
         return { success: true, repoName: repo.name, entity };
       } catch (error) {
-        console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error(
+          `Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
         return { success: false, repoName: repo.name, error };
       }
     });
@@ -566,20 +597,22 @@ export async function calculateAndStoreServiceMetrics(
   }
 
   // Process results and collect all entities
-  const successful = results.filter(r => r.success);
-  const failed = results.filter(r => !r.success);
-  
-  failedRepos.push(...failed.map(r => r.repoName));
+  const successful = results.filter((r) => r.success);
+  const failed = results.filter((r) => !r.success);
+
+  failedRepos.push(...failed.map((r) => r.repoName));
   hasFatalError = failed.length > 0;
 
   // Collect all entities from successful repositories
-  successful.forEach(result => {
+  successful.forEach((result) => {
     if (result.entity) {
       allEntities.push(result.entity);
     }
   });
 
-  console.log(`Service metrics processing complete: ${successful.length} successful, ${failed.length} failed`);
+  console.log(
+    `Service metrics processing complete: ${successful.length} successful, ${failed.length} failed`
+  );
   console.log(`Total entities to ingest: ${allEntities.length}`);
 
   // If all repositories failed, that's a fatal error

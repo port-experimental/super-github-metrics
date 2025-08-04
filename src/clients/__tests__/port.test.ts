@@ -69,13 +69,10 @@ describe('PortClient', () => {
 
       expect(tokenInfo.hasToken).toBe(true);
       expect(tokenInfo.isExpired).toBe(false);
-      expect(axios.post).toHaveBeenCalledWith(
-        'https://api.getport.io/v1/auth/access_token',
-        {
-          clientId: 'test-client-id',
-          clientSecret: 'test-client-secret',
-        }
-      );
+      expect(axios.post).toHaveBeenCalledWith('https://api.getport.io/v1/auth/access_token', {
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+      });
     });
 
     it('should regenerate token when expired', async () => {
@@ -87,10 +84,10 @@ describe('PortClient', () => {
       mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
 
       const client = await PortClient.getInstance();
-      
+
       // Mock token as expired
       (client as any).tokenExpiryTime = Date.now() - 1000;
-      
+
       await (client as any).ensureValidToken();
 
       expect(axios.post).toHaveBeenCalledTimes(2); // Initial + regeneration
@@ -107,10 +104,10 @@ describe('PortClient', () => {
         .mockResolvedValueOnce({ data: mockOAuthResponse });
 
       const client = await PortClient.getInstance();
-      
+
       // Mock token as expired
       (client as any).tokenExpiryTime = Date.now() - 1000;
-      
+
       await (client as any).ensureValidToken();
 
       expect(axios.post).toHaveBeenCalledTimes(2);
@@ -141,11 +138,15 @@ describe('PortClient', () => {
       const result = await client.post('/test-endpoint', { test: 'data' });
 
       expect(result).toEqual(mockResponse.data);
-      expect(axios.post).toHaveBeenCalledWith('/test-endpoint', { test: 'data' }, {
-        headers: expect.objectContaining({
-          Authorization: expect.stringContaining('Bearer'),
-        }),
-      });
+      expect(axios.post).toHaveBeenCalledWith(
+        '/test-endpoint',
+        { test: 'data' },
+        {
+          headers: expect.objectContaining({
+            Authorization: expect.stringContaining('Bearer'),
+          }),
+        }
+      );
     });
 
     it('should make authenticated PATCH request', async () => {
@@ -156,11 +157,15 @@ describe('PortClient', () => {
       const result = await client.patch('/test-endpoint', { test: 'data' });
 
       expect(result).toEqual(mockResponse.data);
-      expect(axios.patch).toHaveBeenCalledWith('/test-endpoint', { test: 'data' }, {
-        headers: expect.objectContaining({
-          Authorization: 'Bearer test-token',
-        }),
-      });
+      expect(axios.patch).toHaveBeenCalledWith(
+        '/test-endpoint',
+        { test: 'data' },
+        {
+          headers: expect.objectContaining({
+            Authorization: 'Bearer test-token',
+          }),
+        }
+      );
     });
 
     it('should make authenticated DELETE request', async () => {
@@ -213,14 +218,21 @@ describe('PortClient', () => {
       mockAxios.post.mockResolvedValueOnce(mockResponse);
 
       const client = await PortClient.getInstance();
-      const result = await client.createEntity('testBlueprint', { identifier: 'test', title: 'Test' });
+      const result = await client.createEntity('testBlueprint', {
+        identifier: 'test',
+        title: 'Test',
+      });
 
       expect(result).toEqual({ success: true });
-      expect(axios.post).toHaveBeenCalledWith('/blueprints/testBlueprint/entities', { identifier: 'test', title: 'Test' }, {
-        headers: expect.objectContaining({
-          Authorization: expect.stringContaining('Bearer'),
-        }),
-      });
+      expect(axios.post).toHaveBeenCalledWith(
+        '/blueprints/testBlueprint/entities',
+        { identifier: 'test', title: 'Test' },
+        {
+          headers: expect.objectContaining({
+            Authorization: expect.stringContaining('Bearer'),
+          }),
+        }
+      );
     });
 
     it('should update entity', async () => {
@@ -228,14 +240,21 @@ describe('PortClient', () => {
       mockAxios.patch.mockResolvedValueOnce(mockResponse);
 
       const client = await PortClient.getInstance();
-      const result = await client.updateEntity('testBlueprint', { identifier: 'test', title: 'Updated' });
+      const result = await client.updateEntity('testBlueprint', {
+        identifier: 'test',
+        title: 'Updated',
+      });
 
       expect(result).toEqual({ success: true });
-      expect(axios.patch).toHaveBeenCalledWith('/blueprints/testBlueprint/entities', { identifier: 'test', title: 'Updated' }, {
-        headers: expect.objectContaining({
-          Authorization: expect.stringContaining('Bearer'),
-        }),
-      });
+      expect(axios.patch).toHaveBeenCalledWith(
+        '/blueprints/testBlueprint/entities',
+        { identifier: 'test', title: 'Updated' },
+        {
+          headers: expect.objectContaining({
+            Authorization: expect.stringContaining('Bearer'),
+          }),
+        }
+      );
     });
   });
 
@@ -245,14 +264,20 @@ describe('PortClient', () => {
       mockAxios.patch.mockResolvedValueOnce(mockResponse);
 
       const client = await PortClient.getInstance();
-      const result = await client.upsertProps('testBlueprint', 'test-entity', { property: 'value' });
+      const result = await client.upsertProps('testBlueprint', 'test-entity', {
+        property: 'value',
+      });
 
       expect(result).toEqual({ success: true });
-      expect(axios.patch).toHaveBeenCalledWith('/blueprints/testBlueprint/entities/test-entity', { properties: { property: 'value' } }, {
-        headers: expect.objectContaining({
-          Authorization: expect.stringContaining('Bearer'),
-        }),
-      });
+      expect(axios.patch).toHaveBeenCalledWith(
+        '/blueprints/testBlueprint/entities/test-entity',
+        { properties: { property: 'value' } },
+        {
+          headers: expect.objectContaining({
+            Authorization: expect.stringContaining('Bearer'),
+          }),
+        }
+      );
     });
   });
 
@@ -261,7 +286,7 @@ describe('PortClient', () => {
       mockAxios.get.mockRejectedValueOnce(new Error('Network error'));
 
       const client = await PortClient.getInstance();
-      
+
       await expect(client.get('/test-endpoint')).rejects.toThrow('Network error');
     });
 
@@ -275,10 +300,10 @@ describe('PortClient', () => {
       mockAxios.get.mockResolvedValueOnce({ data: { success: true } });
 
       const client = await PortClient.getInstance();
-      
+
       // Mock token as expired
       (client as any).tokenExpiryTime = Date.now() - 1000;
-      
+
       const result = await client.get('/test-endpoint');
 
       expect(result).toEqual({ success: true });
@@ -331,13 +356,14 @@ describe('PortClient', () => {
       mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
 
       const client = await PortClient.getInstance();
-      const entities = Array.from({ length: 21 }, (_, i) => ({ 
-        identifier: `entity${i}`, 
-        title: `Entity ${i}` 
+      const entities = Array.from({ length: 21 }, (_, i) => ({
+        identifier: `entity${i}`,
+        title: `Entity ${i}`,
       }));
 
-      await expect(client.createBulkEntities('test-blueprint', entities))
-        .rejects.toThrow('Cannot create more than 20 entities in a single bulk request');
+      await expect(client.createBulkEntities('test-blueprint', entities)).rejects.toThrow(
+        'Cannot create more than 20 entities in a single bulk request'
+      );
     });
   });
 
@@ -349,22 +375,22 @@ describe('PortClient', () => {
       };
 
       const mockBulkResponse1 = {
-        entities: Array.from({ length: 20 }, (_, i) => ({ 
-          identifier: `entity${i}`, 
+        entities: Array.from({ length: 20 }, (_, i) => ({
+          identifier: `entity${i}`,
           created: true,
           index: i,
-          additionalData: {}
+          additionalData: {},
         })),
         ok: true,
         errors: [],
       };
 
       const mockBulkResponse2 = {
-        entities: Array.from({ length: 10 }, (_, i) => ({ 
-          identifier: `entity${i + 20}`, 
+        entities: Array.from({ length: 10 }, (_, i) => ({
+          identifier: `entity${i + 20}`,
           created: true,
           index: i,
-          additionalData: {}
+          additionalData: {},
         })),
         ok: true,
         errors: [],
@@ -375,9 +401,9 @@ describe('PortClient', () => {
         .mockResolvedValueOnce({ data: mockBulkResponse1 }) // First batch
         .mockResolvedValueOnce({ data: mockBulkResponse2 }); // Second batch
 
-      const entities = Array.from({ length: 30 }, (_, i) => ({ 
-        identifier: `entity${i}`, 
-        title: `Entity ${i}` 
+      const entities = Array.from({ length: 30 }, (_, i) => ({
+        identifier: `entity${i}`,
+        title: `Entity ${i}`,
       }));
 
       const results = await createEntitiesInBatches('test-blueprint', entities);
@@ -388,4 +414,4 @@ describe('PortClient', () => {
       expect(axios.post).toHaveBeenCalledTimes(3); // OAuth + 2 batches
     });
   });
-}); 
+});

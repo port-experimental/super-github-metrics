@@ -1,16 +1,22 @@
 import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { createEntity, createEntitiesInBatches } from '../clients/port';
-import type { PullRequestBasic, Repository, TimeSeriesMetrics, ServiceMetricsEntity } from '../types/github';
-import { 
-  PRReviewData, 
-  calculateRepositoryReviewMetrics, 
-  calculateFinalMetrics, 
-  fetchRepositoryContributions, 
-  calculateContributionStandardDeviation,
-  fetchRepositoryPRs
-} from './service_metrics';
+import type {
+  Repository,
+  PullRequestBasic,
+  TimeSeriesMetrics,
+  ServiceMetricsEntity,
+  GitHubAppConfig,
+} from '../types/github';
 import { CONCURRENCY_LIMITS } from './utils';
+import {
+  type PRReviewData,
+  calculateRepositoryReviewMetrics,
+  calculateFinalMetrics,
+  fetchRepositoryContributions,
+  calculateContributionStandardDeviation,
+  fetchRepositoryPRs,
+} from './service_metrics';
 
 export const SERVICE_METRICS_BLUEPRINT = {
   identifier: 'serviceMetrics',
@@ -23,7 +29,8 @@ export const SERVICE_METRICS_BLUEPRINT = {
       period: {
         type: 'string',
         title: 'Time Period',
-        description: 'The time period this metric represents (YYYYMMDD for daily, YYYYWW for weekly, YYYYMM for monthly)',
+        description:
+          'The time period this metric represents (YYYYMMDD for daily, YYYYWW for weekly, YYYYMM for monthly)',
         format: 'date-time',
       },
       period_type: {
@@ -120,12 +127,13 @@ export function groupPRsByPeriod(
     let periodKey: string;
 
     switch (periodType) {
-      case 'daily':
+      case 'daily': {
         // Format: YYYY-MM-DDT00:00:00.000Z (ISO8601 datetime format at 12:00 AM)
         const dailyDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
         periodKey = dailyDate.toISOString();
         break;
-      case 'weekly':
+      }
+      case 'weekly': {
         // Format: YYYY-MM-DDT00:00:00.000Z (start of the week in ISO8601 datetime format at 12:00 AM)
         const dayOfWeek = date.getDay();
         const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Monday as start of week
@@ -134,12 +142,14 @@ export function groupPRsByPeriod(
         startOfWeek.setHours(0, 0, 0, 0);
         periodKey = startOfWeek.toISOString();
         break;
-      case 'monthly':
+      }
+      case 'monthly': {
         // Format: YYYY-MM-DDT00:00:00.000Z (first day of month in ISO8601 datetime format at 12:00 AM)
         const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
         startOfMonth.setHours(0, 0, 0, 0);
         periodKey = startOfMonth.toISOString();
         break;
+      }
       default:
         continue;
     }
@@ -190,11 +200,14 @@ export function createServiceMetricsEntity(
   const serviceName = repo.name; // Use service name as-is
   const periodType = metrics.periodType.charAt(0); // 'd' for daily, 'w' for weekly, 'm' for monthly
   const period = metrics.period.replace(/[-:T.Z]/g, '').slice(0, 8); // Extract YYYYMMDD from ISO8601 datetime
-  
+
   // Ensure the identifier doesn't exceed 30 characters
   const maxServiceNameLength = 30 - periodType.length - period.length;
-  const truncatedServiceName = serviceName.length > maxServiceNameLength ? serviceName.slice(0, maxServiceNameLength) : serviceName;
-  
+  const truncatedServiceName =
+    serviceName.length > maxServiceNameLength
+      ? serviceName.slice(0, maxServiceNameLength)
+      : serviceName;
+
   const identifier = `${truncatedServiceName}${periodType}${period}`;
   const title = `${repo.name} - ${metrics.period}`;
 
@@ -230,7 +243,9 @@ export async function storeServiceMetricsEntity(entity: ServiceMetricsEntity): P
     await createEntity(SERVICE_METRICS_BLUEPRINT.identifier, entity);
     console.log(`Successfully stored service metrics entity: ${entity.title}`);
   } catch (error) {
-    console.error(`Failed to store service metrics entity ${entity.title}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Failed to store service metrics entity ${entity.title}: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
     throw error;
   }
 }
@@ -247,7 +262,9 @@ export async function processRepositoryTimeSeriesMetrics(
   periodType: 'daily' | 'weekly' | 'monthly' = 'daily',
   daysBack: number = 90
 ): Promise<ServiceMetricsEntity[]> {
-  console.log(`Processing time-series service metrics for repo ${repo.name} (${repoIndex + 1}/${totalRepos})`);
+  console.log(
+    `Processing time-series service metrics for repo ${repo.name} (${repoIndex + 1}/${totalRepos})`
+  );
 
   const entities: ServiceMetricsEntity[] = [];
 
@@ -308,10 +325,14 @@ export async function processRepositoryTimeSeriesMetrics(
       processedPeriods++;
     }
 
-    console.log(`  Successfully processed ${processedPeriods} ${periodType} periods for ${repo.name}`);
+    console.log(
+      `  Successfully processed ${processedPeriods} ${periodType} periods for ${repo.name}`
+    );
     return entities;
   } catch (error) {
-    console.error(`Failed to process time-series service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Failed to process time-series service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
     throw error;
   }
 }
@@ -328,20 +349,28 @@ export async function storeServiceMetricsEntities(entities: ServiceMetricsEntity
   try {
     console.log(`Storing ${entities.length} service metrics entities using bulk ingestion...`);
     const results = await createEntitiesInBatches(SERVICE_METRICS_BLUEPRINT.identifier, entities);
-    
+
     // Aggregate results
-    const totalSuccessful = results.reduce((sum, result) => sum + result.entities.filter(r => r.created).length, 0);
-    const totalFailed = results.reduce((sum, result) => sum + result.entities.filter(r => !r.created).length, 0);
-    
+    const totalSuccessful = results.reduce(
+      (sum, result) => sum + result.entities.filter((r) => r.created).length,
+      0
+    );
+    const totalFailed = results.reduce(
+      (sum, result) => sum + result.entities.filter((r) => !r.created).length,
+      0
+    );
+
     console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
-    
+
     if (totalFailed > 0) {
-      const allFailed = results.flatMap(result => result.entities.filter(r => !r.created));
-      const failedIdentifiers = allFailed.map(r => r.identifier);
+      const allFailed = results.flatMap((result) => result.entities.filter((r) => !r.created));
+      const failedIdentifiers = allFailed.map((r) => r.identifier);
       console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
     }
   } catch (error) {
-    console.error(`Failed to store service metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Failed to store service metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
     throw error;
   }
 }
@@ -351,30 +380,46 @@ export async function storeServiceMetricsEntities(entities: ServiceMetricsEntity
  */
 export async function calculateAndStoreTimeSeriesServiceMetrics(
   repos: Repository[],
-  authToken: string,
+  config: GitHubAppConfig,
   periodType: 'daily' | 'weekly' | 'monthly' = 'daily',
   daysBack: number = 90
 ): Promise<void> {
-  const githubClient = createGitHubClient(authToken);
+  const githubClient = createGitHubClient(config);
   let hasFatalError = false;
   const failedRepos: string[] = [];
   const allEntities: ServiceMetricsEntity[] = [];
 
   // Process repositories concurrently with a reasonable concurrency limit
   const concurrencyLimit = CONCURRENCY_LIMITS.TIME_SERIES_REPOSITORIES; // Lower limit for time-series due to more intensive processing
-  const results: Array<{ success: boolean; repoName: string; error?: any; entities?: ServiceMetricsEntity[] }> = [];
+  const results: Array<{
+    success: boolean;
+    repoName: string;
+    error?: any;
+    entities?: ServiceMetricsEntity[];
+  }> = [];
 
   for (let i = 0; i < repos.length; i += concurrencyLimit) {
     const batch = repos.slice(i, i + concurrencyLimit);
-    console.log(`Processing time-series batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`);
+    console.log(
+      `Processing time-series batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`
+    );
 
     const batchPromises = batch.map(async (repo, batchIndex) => {
       const repoIndex = i + batchIndex;
       try {
-        const entities = await processRepositoryTimeSeriesMetrics(githubClient, repo, repoIndex, repos.length, periodType, daysBack);
+        const entities = await processRepositoryTimeSeriesMetrics(
+          githubClient,
+          repo,
+          repoIndex,
+          repos.length,
+          periodType,
+          daysBack
+        );
         return { success: true, repoName: repo.name, entities };
       } catch (error) {
-        console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error(
+          `Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
         return { success: false, repoName: repo.name, error };
       }
     });
@@ -384,20 +429,22 @@ export async function calculateAndStoreTimeSeriesServiceMetrics(
   }
 
   // Process results and collect all entities
-  const successful = results.filter(r => r.success);
-  const failed = results.filter(r => !r.success);
-  
-  failedRepos.push(...failed.map(r => r.repoName));
+  const successful = results.filter((r) => r.success);
+  const failed = results.filter((r) => !r.success);
+
+  failedRepos.push(...failed.map((r) => r.repoName));
   hasFatalError = failed.length > 0;
 
   // Collect all entities from successful repositories
-  successful.forEach(result => {
+  successful.forEach((result) => {
     if (result.entities) {
       allEntities.push(...result.entities);
     }
   });
 
-  console.log(`Time-series metrics processing complete: ${successful.length} successful, ${failed.length} failed`);
+  console.log(
+    `Time-series metrics processing complete: ${successful.length} successful, ${failed.length} failed`
+  );
   console.log(`Total entities to ingest: ${allEntities.length}`);
 
   // If all repositories failed, that's a fatal error

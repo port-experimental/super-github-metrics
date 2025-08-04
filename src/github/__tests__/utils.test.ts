@@ -66,32 +66,29 @@ describe('GitHub Utils', () => {
       it('should filter PRs for 1 day period', () => {
         const result = filterDataForTimePeriod(mockPRs, TIME_PERIODS.ONE_DAY);
         expect(result).toHaveLength(2); // PRs created today and 1 day ago
-        expect(result.map(pr => pr.id)).toEqual([1, 2]);
+        expect(result.map((pr) => pr.id)).toEqual([1, 2]);
       });
 
       it('should filter PRs for 7 days period', () => {
         const result = filterDataForTimePeriod(mockPRs, TIME_PERIODS.SEVEN_DAYS);
         expect(result).toHaveLength(3); // PRs from today, 1 day ago, and 2 days ago (8 days ago is excluded)
-        expect(result.map(pr => pr.id)).toEqual([1, 2, 3]);
+        expect(result.map((pr) => pr.id)).toEqual([1, 2, 3]);
       });
 
       it('should filter PRs for 30 days period', () => {
         const result = filterDataForTimePeriod(mockPRs, TIME_PERIODS.THIRTY_DAYS);
         expect(result).toHaveLength(4);
-        expect(result.map(pr => pr.id)).toEqual([1, 2, 3, 4]);
+        expect(result.map((pr) => pr.id)).toEqual([1, 2, 3, 4]);
       });
 
       it('should filter PRs for 90 days period', () => {
         const result = filterDataForTimePeriod(mockPRs, TIME_PERIODS.NINETY_DAYS);
         expect(result).toHaveLength(5);
-        expect(result.map(pr => pr.id)).toEqual([1, 2, 3, 4, 5]);
+        expect(result.map((pr) => pr.id)).toEqual([1, 2, 3, 4, 5]);
       });
 
       it('should handle PRs without created_at', () => {
-        const prsWithMissingDate = [
-          { ...mockPRs[0], created_at: undefined },
-          mockPRs[1],
-        ];
+        const prsWithMissingDate = [{ ...mockPRs[0], created_at: undefined }, mockPRs[1]];
         const result = filterDataForTimePeriod(prsWithMissingDate, TIME_PERIODS.ONE_DAY);
         expect(result).toHaveLength(1);
         expect(result[0].id).toBe(2);
@@ -157,19 +154,19 @@ describe('GitHub Utils', () => {
       it('should filter commits for 1 day period', () => {
         const result = filterCommitsForTimePeriod(mockCommits, TIME_PERIODS.ONE_DAY);
         expect(result).toHaveLength(2); // Commits from today and 1 day ago
-        expect(result.map(c => c.author?.login)).toEqual(['user1', 'user2']);
+        expect(result.map((c) => c.author?.login)).toEqual(['user1', 'user2']);
       });
 
       it('should filter commits for 7 days period', () => {
         const result = filterCommitsForTimePeriod(mockCommits, TIME_PERIODS.SEVEN_DAYS);
         expect(result).toHaveLength(3); // Commits from today, 1 day ago, and 2 days ago (8 days ago is excluded)
-        expect(result.map(c => c.author?.login)).toEqual(['user1', 'user2', 'user3']);
+        expect(result.map((c) => c.author?.login)).toEqual(['user1', 'user2', 'user3']);
       });
 
       it('should filter commits for 30 days period', () => {
         const result = filterCommitsForTimePeriod(mockCommits, TIME_PERIODS.THIRTY_DAYS);
         expect(result).toHaveLength(4);
-        expect(result.map(c => c.author?.login)).toEqual(['user1', 'user2', 'user3', 'user4']);
+        expect(result.map((c) => c.author?.login)).toEqual(['user1', 'user2', 'user3', 'user4']);
       });
 
       it('should handle commits without date', () => {
@@ -198,4 +195,4 @@ describe('GitHub Utils', () => {
       expect(typeof TIME_PERIODS).toBe('object');
     });
   });
-}); 
+});

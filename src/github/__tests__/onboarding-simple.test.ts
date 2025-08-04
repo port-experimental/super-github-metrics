@@ -107,4 +107,4 @@ describe('Onboarding Metrics - Simple Tests', () => {
       expect(hasCompleteOnboardingMetrics(userWithValidMetrics)).toBe(true);
     });
   });
-}); 
+});

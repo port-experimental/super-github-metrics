@@ -60,7 +60,11 @@ describe('Workflow Metrics', () => {
 
       // Verify GitHub client calls
       expect(mockGitHubClient.fetchOrganizationRepositories).toHaveBeenCalledWith(orgName);
-      expect(mockGitHubClient.getWorkflowRuns).toHaveBeenCalledWith('test-org', 'test-repo', 'main');
+      expect(mockGitHubClient.getWorkflowRuns).toHaveBeenCalledWith(
+        'test-org',
+        'test-repo',
+        'main'
+      );
     });
 
     it('should handle empty repository list', async () => {
@@ -366,4 +370,4 @@ describe('Workflow Metrics', () => {
       );
     });
   });
-}); 
+});

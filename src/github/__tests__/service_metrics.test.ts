@@ -1,7 +1,13 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { calculateAndStoreServiceMetrics } from '../service_metrics';
 import { createMockGitHubClient, createMockPortClient } from '../../__tests__/utils/mocks';
-import type { Repository, Commit, PullRequestBasic, PullRequest, PullRequestReview } from '../../types/github';
+import type {
+  Repository,
+  Commit,
+  PullRequestBasic,
+  PullRequest,
+  PullRequestReview,
+} from '../../types/github';
 
 // Mock the clients
 jest.mock('../../clients/github', () => ({
@@ -22,11 +28,11 @@ describe('Service Metrics', () => {
     jest.clearAllMocks();
     mockGitHubClient = createMockGitHubClient();
     mockPortClient = createMockPortClient();
-    
+
     // Get the mocked functions
     mockCreateGitHubClient = require('../../clients/github').createGitHubClient;
     mockUpdateEntity = require('../../clients/port').updateEntity;
-    
+
     // Configure the mocks
     mockCreateGitHubClient.mockReturnValue(mockGitHubClient);
     mockUpdateEntity.mockResolvedValue({});
@@ -136,7 +142,9 @@ describe('Service Metrics', () => {
       const repos = [mockRepository];
       const authToken = 'test-token';
 
-      await expect(calculateAndStoreServiceMetrics(repos, authToken)).rejects.toThrow('Failed to process any repositories');
+      await expect(calculateAndStoreServiceMetrics(repos, authToken)).rejects.toThrow(
+        'Failed to process any repositories'
+      );
     });
 
     it('should calculate correct commit metrics', async () => {
@@ -179,10 +187,13 @@ describe('Service Metrics', () => {
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Verify that updateEntity was called for the service metrics
-      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
-        identifier: '123456',
-        title: 'test-repo',
-      }));
+      expect(mockUpdateEntity).toHaveBeenCalledWith(
+        'service',
+        expect.objectContaining({
+          identifier: '123456',
+          title: 'test-repo',
+        })
+      );
     });
 
     it('should calculate correct PR metrics', async () => {
@@ -254,10 +265,13 @@ describe('Service Metrics', () => {
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Verify that updateEntity was called for the service metrics
-      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
-        identifier: '123456',
-        title: 'test-repo',
-      }));
+      expect(mockUpdateEntity).toHaveBeenCalledWith(
+        'service',
+        expect.objectContaining({
+          identifier: '123456',
+          title: 'test-repo',
+        })
+      );
     });
 
     it('should handle commits without author information', async () => {
@@ -291,10 +305,13 @@ describe('Service Metrics', () => {
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Should only process commits with author information
-      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
-        identifier: '123456',
-        title: 'test-repo',
-      }));
+      expect(mockUpdateEntity).toHaveBeenCalledWith(
+        'service',
+        expect.objectContaining({
+          identifier: '123456',
+          title: 'test-repo',
+        })
+      );
     });
 
     it('should handle PRs without merge date', async () => {
@@ -329,10 +346,13 @@ describe('Service Metrics', () => {
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Should still process the PR but with different lifetime calculation
-      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
-        identifier: '123456',
-        title: 'test-repo',
-      }));
+      expect(mockUpdateEntity).toHaveBeenCalledWith(
+        'service',
+        expect.objectContaining({
+          identifier: '123456',
+          title: 'test-repo',
+        })
+      );
     });
 
     it('should handle multiple repositories', async () => {
@@ -385,14 +405,20 @@ describe('Service Metrics', () => {
       await calculateAndStoreServiceMetrics(repos, authToken);
 
       // Should aggregate metrics across repositories
-      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
-        identifier: '123456',
-        title: 'repo1',
-      }));
-      expect(mockUpdateEntity).toHaveBeenCalledWith('service', expect.objectContaining({
-        identifier: '789012',
-        title: 'repo2',
-      }));
+      expect(mockUpdateEntity).toHaveBeenCalledWith(
+        'service',
+        expect.objectContaining({
+          identifier: '123456',
+          title: 'repo1',
+        })
+      );
+      expect(mockUpdateEntity).toHaveBeenCalledWith(
+        'service',
+        expect.objectContaining({
+          identifier: '789012',
+          title: 'repo2',
+        })
+      );
     });
   });
-}); 
+});

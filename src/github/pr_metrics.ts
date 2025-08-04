@@ -1,10 +1,14 @@
 import _ from 'lodash';
 import { createGitHubClient, type GitHubClient } from '../clients/github';
 import { createEntitiesInBatches } from '../clients/port';
-import type { Repository, Commit } from '../types/github';
-import { filterDataForTimePeriod, TIME_PERIODS, type TimePeriod, CONCURRENCY_LIMITS } from './utils';
-import type { PullRequestBasic } from '../types/github';
+import type { Repository, PullRequestBasic, GitHubAppConfig } from '../types/github';
 import type { PortEntity } from '../types/port';
+import {
+  CONCURRENCY_LIMITS,
+  filterDataForTimePeriod,
+  TIME_PERIODS,
+  type TimePeriod,
+} from './utils';
 
 export interface PRMetrics {
   repoId: string;
@@ -50,103 +54,151 @@ export const getNumberOfChangesAfterPRIsOpened = async (
   numberOfLineChangesAfterPRIsOpened: number;
   numberOfCommitsAfterPRIsOpened: number;
 }> => {
-  const commits = await githubClient.getPullRequestCommits(owner, repo, prNumber);
-  const changesAfterPRIsOpened = commits.filter(
-    (commit: Commit) =>
-      commit.commit.author?.date &&
-      commit.stats?.total &&
-      new Date(commit.commit.author?.date) > prCreationDate
-  );
+  try {
+    const commits = await githubClient.getPullRequestCommits(owner, repo, prNumber);
+    const commitsAfterPR = commits.filter((commit) => {
+      const commitDate = new Date(commit.commit.author?.date || '');
+      return commitDate > prCreationDate;
+    });
 
-  return {
-    numberOfLineChangesAfterPRIsOpened: changesAfterPRIsOpened.reduce(
-      (acc: number, commit: Commit) => acc + (commit.stats?.total ?? 0),
-      0
-    ),
-    numberOfCommitsAfterPRIsOpened: changesAfterPRIsOpened.length,
-  };
+    const numberOfLineChangesAfterPRIsOpened = commitsAfterPR.reduce((total, commit) => {
+      return total + (commit.stats?.total || 0);
+    }, 0);
+
+    return {
+      numberOfLineChangesAfterPRIsOpened,
+      numberOfCommitsAfterPRIsOpened: commitsAfterPR.length,
+    };
+  } catch (error) {
+    console.error(`Error getting changes after PR ${prNumber} is opened:`, error);
+    return {
+      numberOfLineChangesAfterPRIsOpened: 0,
+      numberOfCommitsAfterPRIsOpened: 0,
+    };
+  }
 };
 
-/**
- * Fetches all PRs for a repository within the specified time period
- */
 export async function fetchRepositoryPRs(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
   daysBack: number
 ): Promise<PullRequestBasic[]> {
-  const prs: PullRequestBasic[] = [];
-  const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - daysBack);
 
-  try {
-    console.log(`Fetching PRs for ${owner}/${repoName} (last ${daysBack} days)`);
-    let page = 1;
-    let hasMore = true;
+  const allPRs: PullRequestBasic[] = [];
+  let page = 1;
+  let hasMore = true;
 
-    while (hasMore) {
-      const response = await githubClient.getPullRequests(owner, repoName, {
+  while (hasMore) {
+    try {
+      const prs = await githubClient.getPullRequests(owner, repoName, {
         state: 'closed',
         sort: 'created',
         direction: 'desc',
         per_page: 100,
-        page,
+        page: page,
       });
 
-      if (response.length === 0) {
+      // Filter PRs created after the cutoff date
+      const filteredPRs = prs.filter((pr) => {
+        const prDate = new Date(pr.created_at);
+        return prDate >= cutoffDate;
+      });
+
+      allPRs.push(...filteredPRs);
+
+      // If we got less than 100 PRs or all PRs are before the cutoff date, we've reached the end
+      if (prs.length < 100 || filteredPRs.length === 0) {
         hasMore = false;
-        break;
+      } else {
+        page++;
       }
-
-      for (const pr of response) {
-        if (pr.created_at) {
-          const prDate = new Date(pr.created_at);
-          if (prDate >= cutoffDate) {
-            prs.push(pr);
-          } else {
-            // If we've reached PRs older than our cutoff, we can stop
-            hasMore = false;
-            break;
-          }
-        }
-      }
-
-      page++;
+    } catch (error) {
+      console.error(`Error fetching PRs for ${owner}/${repoName} page ${page}:`, error);
+      hasMore = false;
     }
-    
-    console.log(`Successfully fetched ${prs.length} PRs from ${owner}/${repoName}`);
-  } catch (error: any) {
-    console.error(`Error fetching PRs for ${owner}/${repoName}: ${error.message || 'Unknown error'}`);
-    
-    // If it's a 404 or 403, the repository might not exist or be accessible
-    if (error.status === 404 || error.status === 403) {
-      console.error(`Repository ${owner}/${repoName} is not accessible. Skipping...`);
-      return [];
-    }
-    
-    // For other errors, re-throw to be handled by the calling function
-    throw error;
   }
 
-  return prs;
+  return allPRs;
+}
+
+interface AggregatedMetrics {
+  totalPRs: number;
+  totalMergedPRs: number;
+  numberOfPRsReviewed: number;
+  numberOfPRsMergedWithoutReview: number;
+  percentageOfPRsReviewed: number;
+  percentageOfPRsMergedWithoutReview: number;
+  averageTimeToFirstReview: number;
+  prSuccessRate: number;
+  contributionStandardDeviation: number;
+}
+
+function calculateAggregatedMetrics(prMetrics: PRMetrics[], period: number): AggregatedMetrics {
+  const totalPRs = prMetrics.length;
+  const totalMergedPRs = prMetrics.filter((pr) => pr.prSuccessRate === 100).length;
+  const numberOfPRsReviewed = prMetrics.filter((pr) => pr.reviewParticipation > 0).length;
+  const numberOfPRsMergedWithoutReview = totalMergedPRs - numberOfPRsReviewed;
+
+  const percentageOfPRsReviewed = totalPRs > 0 ? (numberOfPRsReviewed / totalPRs) * 100 : 0;
+  const percentageOfPRsMergedWithoutReview =
+    totalMergedPRs > 0 ? (numberOfPRsMergedWithoutReview / totalMergedPRs) * 100 : 0;
+
+  const validPickupTimes = prMetrics
+    .filter((pr) => pr.prPickupTime !== null)
+    .map((pr) => pr.prPickupTime!);
+  const averageTimeToFirstReview =
+    validPickupTimes.length > 0
+      ? validPickupTimes.reduce((sum, time) => sum + time, 0) / validPickupTimes.length
+      : 0;
+
+  const prSuccessRate = totalPRs > 0 ? (totalMergedPRs / totalPRs) * 100 : 0;
+
+  // Calculate standard deviation of contributions (PR sizes)
+  const prSizes = prMetrics.map((pr) => pr.prSize);
+  const meanSize = prSizes.reduce((sum, size) => sum + size, 0) / prSizes.length;
+  const variance =
+    prSizes.reduce((sum, size) => sum + (size - meanSize) ** 2, 0) / prSizes.length;
+  const contributionStandardDeviation = Math.sqrt(variance);
+
+  return {
+    totalPRs,
+    totalMergedPRs,
+    numberOfPRsReviewed,
+    numberOfPRsMergedWithoutReview,
+    percentageOfPRsReviewed,
+    percentageOfPRsMergedWithoutReview,
+    averageTimeToFirstReview,
+    prSuccessRate,
+    contributionStandardDeviation,
+  };
 }
 
 export async function calculateAndStorePRMetrics(
   repos: Repository[],
-  authToken: string
+  config: GitHubAppConfig
 ): Promise<void> {
-  const githubClient = createGitHubClient(authToken);
+  const githubClient = createGitHubClient(config);
   let hasFatalError = false;
   const failedRepos: string[] = [];
   const allEntities: PortEntity[] = [];
 
   // Process repositories concurrently with a reasonable concurrency limit
   const concurrencyLimit = CONCURRENCY_LIMITS.REPOSITORIES; // Use the global constant
-  const results: Array<{ success: boolean; repoName: string; error?: any; entities?: PortEntity[] }> = [];
+  const results: Array<{
+    success: boolean;
+    repoName: string;
+    error?: any;
+    entities?: PortEntity[];
+  }> = [];
 
   for (let i = 0; i < repos.length; i += concurrencyLimit) {
     const batch = repos.slice(i, i + concurrencyLimit);
-    console.log(`Processing PR metrics batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`);
+    console.log(
+      `Processing PR metrics batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`
+    );
 
     const batchPromises = batch.map(async (repo, batchIndex) => {
       const repoIndex = i + batchIndex;
@@ -156,7 +208,12 @@ export async function calculateAndStorePRMetrics(
         // Fetch all PRs for the maximum time period (90 days) once
         const maxPeriod = TIME_PERIODS.NINETY_DAYS;
         console.log(`  Fetching PRs for ${maxPeriod} day period...`);
-        const allPRs = await fetchRepositoryPRs(githubClient, repo.owner.login, repo.name, maxPeriod);
+        const allPRs = await fetchRepositoryPRs(
+          githubClient,
+          repo.owner.login,
+          repo.name,
+          maxPeriod
+        );
         console.log(`  Found ${allPRs.length} PRs in the last ${maxPeriod} days`);
 
         // Process each time period by filtering the already-fetched data
@@ -191,7 +248,7 @@ export async function calculateAndStorePRMetrics(
                   repo.name,
                   pr.number,
                   new Date(pr.created_at)
-                )
+                ),
               ]);
 
               const prFirstApproval =
@@ -227,137 +284,115 @@ export async function calculateAndStorePRMetrics(
                       (1000 * 60 * 60 * 24)
                     : null,
                 prMergeTime:
-                  prFirstApproval && pr.merged_at
+                  pr.merged_at && prFirstApproval
                     ? (new Date(pr.merged_at).getTime() - new Date(prFirstApproval).getTime()) /
                       (1000 * 60 * 60 * 24)
                     : null,
                 prMaturity:
-                  prData.additions + prData.deletions > 0
-                    ? Math.max(
-                        0,
-                        (prData.additions +
-                          prData.deletions -
-                          changesAfterPR.numberOfLineChangesAfterPRIsOpened) /
-                          (prData.additions + prData.deletions)
-                      )
-                    : 1.0,
-                prSuccessRate: pr.merged_at ? 1 : 0,
-                reviewParticipation: reviews.length > 0 ? reviews.length : 0,
+                  changesAfterPR.numberOfLineChangesAfterPRIsOpened /
+                  (prData.additions + prData.deletions),
+                prSuccessRate: pr.merged_at ? 100 : 0,
+                reviewParticipation: reviews.length,
                 comments: prData.comments,
                 reviewComments: prData.review_comments,
               };
 
-              const props: Record<string, unknown> = _.chain(record)
-                .pick([
-                  'prSize',
-                  'prLifetime',
-                  'prPickupTime',
-                  'prApproveTime',
-                  'prMergeTime',
-                  'prMaturity',
-                  'prSuccessRate',
-                  'reviewParticipation',
-                  'numberOfLineChangesAfterPRIsOpened',
-                  'numberOfCommitsAfterPRIsOpened',
-                ])
-                .mapKeys((_value, key) => _.snakeCase(key))
-                .value();
-
-              // Create entity for bulk ingestion
-              const entity: PortEntity = {
-                identifier: `${record.repoName}${record.pullRequestId}`,
-                title: `PR ${pr.number} - ${repo.name}`,
-                properties: props,
-              };
-
-              return { success: true, prNumber: pr.number, entity };
+              return record;
             } catch (error) {
-              console.error(`Failed to update PR ${repo.name}-${pr.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              return { success: false, prNumber: pr.number, error };
+              console.error(`Error processing PR ${pr.number} in ${repo.name}:`, error);
+              return null;
             }
           });
 
-          // Wait for all PRs in this time period to complete
-          const results = await Promise.all(prProcessingPromises);
-          const successful = results.filter(r => r.success).length;
-          const failed = results.filter(r => !r.success).length;
-          
-          // Collect successful entities
-          const periodEntities = results
-            .filter(r => r.success && r.entity)
-            .map(r => r.entity as PortEntity);
-          
-          console.log(`  Completed ${period} day period: ${successful} successful, ${failed} failed`);
-          
-          return { period, successful, failed, total: periodPRs.length, entities: periodEntities };
+          // Process PRs with concurrency limit
+          const prResults = await Promise.all(prProcessingPromises);
+          const validPRResults = prResults.filter((result) => result !== null) as PRMetrics[];
+
+          if (validPRResults.length === 0) {
+            console.log(`  No valid PR metrics for ${period} day period`);
+            return;
+          }
+
+          // Calculate aggregated metrics for this time period
+          const aggregatedMetrics = calculateAggregatedMetrics(validPRResults, period);
+
+          // Create Port entity for this time period
+          const entity: PortEntity = {
+            identifier: `${repo.name}-${period}-pr-metrics`,
+            title: `${repo.name} PR Metrics (${period} days)`,
+            properties: {
+              period: period.toString(),
+              period_type: 'daily',
+              total_prs: aggregatedMetrics.totalPRs,
+              total_merged_prs: aggregatedMetrics.totalMergedPRs,
+              number_of_prs_reviewed: aggregatedMetrics.numberOfPRsReviewed,
+              number_of_prs_merged_without_review: aggregatedMetrics.numberOfPRsMergedWithoutReview,
+              percentage_of_prs_reviewed: aggregatedMetrics.percentageOfPRsReviewed,
+              percentage_of_prs_merged_without_review:
+                aggregatedMetrics.percentageOfPRsMergedWithoutReview,
+              average_time_to_first_review: aggregatedMetrics.averageTimeToFirstReview,
+              pr_success_rate: aggregatedMetrics.prSuccessRate,
+              contribution_standard_deviation: aggregatedMetrics.contributionStandardDeviation,
+              calculated_at: new Date().toISOString(),
+              data_source: 'github',
+            },
+            relations: {
+              service: repo.name,
+            },
+          };
+
+          repoEntities.push(entity);
         });
 
-        // Wait for all time periods to complete
-        const timePeriodResults = await Promise.all(timePeriodPromises);
-        
-        // Collect all entities from this repository
-        timePeriodResults.forEach(result => {
-          if (result.entities) {
-            repoEntities.push(...result.entities);
-          }
-        });
-        
-        // Log summary for all time periods
-        const totalSuccessful = timePeriodResults.reduce((sum, result) => sum + result.successful, 0);
-        const totalFailed = timePeriodResults.reduce((sum, result) => sum + result.failed, 0);
-        const totalPRs = timePeriodResults.reduce((sum, result) => sum + result.total, 0);
-        
-        console.log(`  Repository ${repo.name} complete: ${totalSuccessful} PRs successful, ${totalFailed} failed (${totalPRs} total)`);
+        await Promise.all(timePeriodPromises);
+
         return { success: true, repoName: repo.name, entities: repoEntities };
       } catch (error) {
-        console.error(`Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error(`Error processing repo ${repo.name}:`, error);
         return { success: false, repoName: repo.name, error };
       }
     });
 
     const batchResults = await Promise.all(batchPromises);
     results.push(...batchResults);
-  }
 
-  // Process results and collect all entities
-  const successful = results.filter(r => r.success);
-  const failed = results.filter(r => !r.success);
-  
-  failedRepos.push(...failed.map(r => r.repoName));
-  hasFatalError = failed.length > 0;
-
-  // Collect all entities from successful repositories
-  successful.forEach(result => {
-    if (result.entities) {
-      allEntities.push(...result.entities);
+    // Add a small delay between batches to be conservative with rate limits
+    if (i + concurrencyLimit < repos.length) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-  });
-
-  console.log(`PR metrics processing complete: ${successful.length} repositories successful, ${failed.length} failed`);
-  console.log(`Total entities to ingest: ${allEntities.length}`);
-
-  // If all repositories failed, that's a fatal error
-  if (failedRepos.length === repos.length && repos.length > 0) {
-    throw new Error(`Failed to process any repositories. Failed repos: ${failedRepos.join(', ')}`);
   }
 
-  // If some repositories failed, log a warning but don't fail the entire process
-  if (failedRepos.length > 0) {
-    console.warn(
-      `Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`
-    );
+  // Process results
+  for (const result of results) {
+    if (result.success && result.entities) {
+      allEntities.push(...result.entities);
+    } else {
+      failedRepos.push(result.repoName);
+      hasFatalError = true;
+    }
   }
 
-  // If there were any fatal errors and no successful processing, throw an error
-  if (hasFatalError && failedRepos.length === repos.length) {
-    throw new Error('All repositories failed to process');
-  }
-
-  // Store all entities in bulk if we have any
+  // Store all entities in batches
   if (allEntities.length > 0) {
-    console.log(`Starting bulk ingestion of ${allEntities.length} PR entities...`);
+    console.log(`Storing ${allEntities.length} PR metrics entities...`);
     await storePRMetricsEntities(allEntities);
-    console.log('Bulk ingestion completed successfully');
+    console.log('Successfully stored PR metrics entities');
+  }
+
+  // Print summary
+  console.log('\n=== PR Metrics Processing Summary ===');
+  console.log(`Total repositories processed: ${results.length}`);
+  console.log(`Successful: ${results.filter((r) => r.success).length}`);
+  console.log(`Failed: ${failedRepos.length}`);
+  console.log(`Total entities created: ${allEntities.length}`);
+
+  if (failedRepos.length > 0) {
+    console.log('\nFailed repositories:');
+    failedRepos.forEach((repoName) => console.log(`- ${repoName}`));
+  }
+
+  if (hasFatalError) {
+    throw new Error('Failed to process PR metrics for one or more repositories');
   }
 }
 
@@ -373,20 +408,28 @@ export async function storePRMetricsEntities(entities: PortEntity[]): Promise<vo
   try {
     console.log(`Storing ${entities.length} PR metrics entities using bulk ingestion...`);
     const results = await createEntitiesInBatches('githubPullRequest', entities);
-    
+
     // Aggregate results
-    const totalSuccessful = results.reduce((sum, result) => sum + result.entities.filter(r => r.created).length, 0);
-    const totalFailed = results.reduce((sum, result) => sum + result.entities.filter(r => !r.created).length, 0);
-    
+    const totalSuccessful = results.reduce(
+      (sum, result) => sum + result.entities.filter((r) => r.created).length,
+      0
+    );
+    const totalFailed = results.reduce(
+      (sum, result) => sum + result.entities.filter((r) => !r.created).length,
+      0
+    );
+
     console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
-    
+
     if (totalFailed > 0) {
-      const allFailed = results.flatMap(result => result.entities.filter(r => !r.created));
-      const failedIdentifiers = allFailed.map(r => r.identifier);
+      const allFailed = results.flatMap((result) => result.entities.filter((r) => !r.created));
+      const failedIdentifiers = allFailed.map((r) => r.identifier);
       console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
     }
   } catch (error) {
-    console.error(`Failed to store PR metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Failed to store PR metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
     throw error;
   }
 }

@@ -1,6 +1,13 @@
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { calculateAndStorePRMetrics } from '../pr_metrics';
-import { createMockGitHubClient, createMockPortClient, mockRepository, mockPullRequestBasic, mockPullRequest, mockCommit } from '../../__tests__/utils/mocks';
+import {
+  createMockGitHubClient,
+  createMockPortClient,
+  mockRepository,
+  mockPullRequestBasic,
+  mockPullRequest,
+  mockCommit,
+} from '../../__tests__/utils/mocks';
 import type { PullRequest, PullRequestReview, Commit, PullRequestBasic } from '../../types/github';
 
 // Mock the GitHub client
@@ -19,15 +26,15 @@ describe('PR Metrics', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Create mock clients
     mockGitHubClient = createMockGitHubClient();
     mockPortClient = createMockPortClient();
-    
+
     // Setup the mocks
     const { createGitHubClient } = require('../../clients/github');
     const { upsertProps } = require('../../clients/port');
-    
+
     createGitHubClient.mockReturnValue(mockGitHubClient);
     upsertProps.mockResolvedValue(undefined);
   });
@@ -44,9 +51,7 @@ describe('PR Metrics', () => {
       };
 
       // Mock to return PRs on first call, empty array on subsequent calls (pagination)
-      mockGitHubClient.getPullRequests
-        .mockResolvedValueOnce([recentPR])
-        .mockResolvedValueOnce([]);
+      mockGitHubClient.getPullRequests.mockResolvedValueOnce([recentPR]).mockResolvedValueOnce([]);
       mockGitHubClient.getPullRequest.mockResolvedValue(mockPullRequest);
       mockGitHubClient.getPullRequestReviews.mockResolvedValue([]);
       mockGitHubClient.getPullRequestCommits.mockResolvedValue([mockCommit]);
@@ -66,8 +71,16 @@ describe('PR Metrics', () => {
       });
 
       expect(mockGitHubClient.getPullRequest).toHaveBeenCalledWith('test-owner', 'test-repo', 1);
-      expect(mockGitHubClient.getPullRequestReviews).toHaveBeenCalledWith('test-owner', 'test-repo', 1);
-      expect(mockGitHubClient.getPullRequestCommits).toHaveBeenCalledWith('test-owner', 'test-repo', 1);
+      expect(mockGitHubClient.getPullRequestReviews).toHaveBeenCalledWith(
+        'test-owner',
+        'test-repo',
+        1
+      );
+      expect(mockGitHubClient.getPullRequestCommits).toHaveBeenCalledWith(
+        'test-owner',
+        'test-repo',
+        1
+      );
     });
 
     it('should handle empty PR list', async () => {
@@ -122,7 +135,9 @@ describe('PR Metrics', () => {
       const authToken = 'test-token';
 
       // The function should throw an error when all repositories fail
-      await expect(calculateAndStorePRMetrics(repos, authToken)).rejects.toThrow('Failed to process any repositories. Failed repos: test-repo');
+      await expect(calculateAndStorePRMetrics(repos, authToken)).rejects.toThrow(
+        'Failed to process any repositories. Failed repos: test-repo'
+      );
     });
 
     it('should calculate correct metrics for PR with all data', async () => {
@@ -183,9 +198,7 @@ describe('PR Metrics', () => {
       };
 
       // Mock to return PRs on first call, empty array on subsequent calls (pagination)
-      mockGitHubClient.getPullRequests
-        .mockResolvedValueOnce([recentPR])
-        .mockResolvedValueOnce([]);
+      mockGitHubClient.getPullRequests.mockResolvedValueOnce([recentPR]).mockResolvedValueOnce([]);
       mockGitHubClient.getPullRequest.mockResolvedValue(testPR);
       mockGitHubClient.getPullRequestReviews.mockResolvedValue(testReviews);
       mockGitHubClient.getPullRequestCommits.mockResolvedValue(testCommits);
@@ -234,9 +247,7 @@ describe('PR Metrics', () => {
       };
 
       // Mock to return PRs on first call, empty array on subsequent calls (pagination)
-      mockGitHubClient.getPullRequests
-        .mockResolvedValueOnce([recentPR])
-        .mockResolvedValueOnce([]);
+      mockGitHubClient.getPullRequests.mockResolvedValueOnce([recentPR]).mockResolvedValueOnce([]);
       mockGitHubClient.getPullRequest.mockResolvedValue(minimalPR);
       mockGitHubClient.getPullRequestReviews.mockResolvedValue([]);
       mockGitHubClient.getPullRequestCommits.mockResolvedValue([]);
@@ -260,4 +271,4 @@ describe('PR Metrics', () => {
       );
     });
   });
-}); 
+});

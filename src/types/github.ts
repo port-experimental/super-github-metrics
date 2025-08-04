@@ -205,4 +205,10 @@ export interface ServiceMetricsEntity {
     service: string; // Service entity identifier
   };
   [key: string]: unknown; // Index signature to match PortEntity interface
-} 
+}
+
+export interface GitHubAppConfig {
+  appId: string;
+  privateKey: string;
+  installationId: string;
+}

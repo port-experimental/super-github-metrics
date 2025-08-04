@@ -7,6 +7,7 @@ import type {
   GitHubReview,
   GitHubUser,
   MemberJoinRecord,
+  GitHubAppConfig,
 } from '../types/github';
 import type { PortEntity } from '../types/port';
 
@@ -26,20 +27,20 @@ interface DeveloperStats {
 
 export async function getMemberAddDates(
   enterprise: string,
-  authToken: string
+  config: GitHubAppConfig
 ): Promise<MemberJoinRecord[]> {
-  const githubClient = createGitHubClient(authToken);
+  const githubClient = createGitHubClient(config);
   return await githubClient.getMemberAddDates(enterprise);
 }
 
 export async function calculateAndStoreDeveloperStats(
   orgNames: string[],
-  authToken: string,
+  config: GitHubAppConfig,
   user: GitHubUser,
   joinDate: string,
   githubClient?: any
 ): Promise<PortEntity | null> {
-  const stats = await getDeveloperStats(orgNames, authToken, user.identifier, joinDate, githubClient);
+  const stats = await getDeveloperStats(orgNames, config, user.identifier, joinDate, githubClient);
   const record = stats.find((rec) => rec.login === user.identifier);
   if (!record) {
     console.log(`No record found for ${user.identifier}, unprocessable, skipping...`);
@@ -51,12 +52,12 @@ export async function calculateAndStoreDeveloperStats(
 
 export async function getDeveloperStats(
   orgNames: string[],
-  authToken: string,
+  config: GitHubAppConfig,
   login: string,
   joinDate: string,
   githubClient?: any
 ): Promise<DeveloperStats[]> {
-  const client = githubClient || createGitHubClient(authToken);
+  const client = githubClient || createGitHubClient(config);
   console.log('Using client:', client === githubClient ? 'injected client' : 'created client');
   const stats: DeveloperStats[] = [];
 
@@ -85,10 +86,12 @@ export async function getDeveloperStats(
         const [commits, pulls, reviews] = await Promise.all([
           client.searchCommits(login, orgName),
           client.searchPullRequests(login, orgName),
-          client.searchReviews(login, orgName)
+          client.searchReviews(login, orgName),
         ]);
 
-        console.log(`Org ${orgName} - Commits: ${commits.length}, PRs: ${pulls.length}, Reviews: ${reviews.length}`);
+        console.log(
+          `Org ${orgName} - Commits: ${commits.length}, PRs: ${pulls.length}, Reviews: ${reviews.length}`
+        );
 
         // Convert PullRequestBasic to GitHubPullRequest
         const convertedPulls: GitHubPullRequest[] = pulls.map((pull: any) => ({
@@ -106,116 +109,142 @@ export async function getDeveloperStats(
           created_at: review.submitted_at, // Use submitted_at as fallback for created_at
         }));
 
-        return {
-          commits,
-          pulls: convertedPulls,
-          reviews: convertedReviews,
-          orgName
-        };
+        return { commits, pulls: convertedPulls, reviews: convertedReviews };
       } catch (error) {
-        console.error(`Error fetching data for org ${orgName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        return {
-          commits: [],
-          pulls: [],
-          reviews: [],
-          orgName
-        };
+        console.error(`Error fetching data for org ${orgName}:`, error);
+        return { commits: [], pulls: [], reviews: [] };
       }
     });
 
-    // Wait for all organizations to complete
-    const orgResults = await Promise.all(orgDataPromises);
+    // Wait for all organization data to be fetched
+    const orgDataResults = await Promise.all(orgDataPromises);
 
-    // Aggregate results from all organizations
-    for (const result of orgResults) {
-      allCommits.push(...result.commits);
-      allPulls.push(...result.pulls);
-      allReviews.push(...result.reviews);
-    }
+    // Aggregate all data from all organizations
+    orgDataResults.forEach(({ commits, pulls, reviews }) => {
+      allCommits.push(...commits);
+      allPulls.push(...pulls);
+      allReviews.push(...reviews);
+    });
 
-    allCommits.sort(
-      (a, b) =>
-        new Date(a.commit.author?.date || 0).getTime() -
-        new Date(b.commit.author?.date || 0).getTime()
+    console.log(
+      `Total data collected: ${allCommits.length} commits, ${allPulls.length} PRs, ${allReviews.length} reviews`
     );
-    if (allCommits.length > 0) {
-      firstCommitDate = allCommits.length > 0 ? allCommits[0].commit.author?.date || null : null;
-      tenthCommitDate = allCommits.length > 9 ? allCommits[9].commit.author?.date || null : null;
-    }
-    allPulls.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    if (allPulls.length > 0) {
-      firstPRDate = allPulls.length > 0 ? allPulls[0].created_at : null;
-      tenthPRDate = allPulls.length > 9 ? allPulls[9].created_at : null;
+
+    // Sort commits by date (oldest first)
+    const sortedCommits = allCommits.sort((a, b) => {
+      const dateA = a.commit.author?.date || '';
+      const dateB = b.commit.author?.date || '';
+      return new Date(dateA).getTime() - new Date(dateB).getTime();
+    });
+
+    // Sort PRs by date (oldest first)
+    const sortedPulls = allPulls.sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    // Sort reviews by date (oldest first)
+    const sortedReviews = allReviews.sort((a, b) => {
+      const dateA = a.submitted_at || a.created_at || '';
+      const dateB = b.submitted_at || b.created_at || '';
+      return new Date(dateA).getTime() - new Date(dateB).getTime();
+    });
+
+    // Find first and tenth commit dates
+    if (sortedCommits.length > 0) {
+      firstCommitDate = sortedCommits[0].commit.author?.date || null;
+      if (sortedCommits.length >= 10) {
+        tenthCommitDate = sortedCommits[9].commit.author?.date || null;
+      }
     }
 
-    const firstReviewDate =
-      allReviews.length > 0
-        ? allReviews.sort(
-            (a, b) =>
-              new Date(a.submitted_at || a.created_at || '').getTime() -
-              new Date(b.submitted_at || b.created_at || '').getTime()
-          )[0].submitted_at ||
-          allReviews[0].created_at ||
-          null
-        : null;
+    // Find first and tenth PR dates
+    if (sortedPulls.length > 0) {
+      firstPRDate = sortedPulls[0].created_at;
+      if (sortedPulls.length >= 10) {
+        tenthPRDate = sortedPulls[9].created_at;
+      }
+    }
+
+    // Calculate time differences
+    const joinDateObj = new Date(joinDate);
+    const timeToFirstCommit = firstCommitDate
+      ? new Date(firstCommitDate).getTime() - joinDateObj.getTime()
+      : null;
+    const timeToFirstPR = firstPRDate
+      ? new Date(firstPRDate).getTime() - joinDateObj.getTime()
+      : null;
+    const timeTo10thCommit = tenthCommitDate
+      ? new Date(tenthCommitDate).getTime() - joinDateObj.getTime()
+      : null;
+    const timeTo10thPR = tenthPRDate
+      ? new Date(tenthPRDate).getTime() - joinDateObj.getTime()
+      : null;
+
+    // Calculate initial review response time
+    let initialReviewResponseTime: number | null = null;
+    if (sortedPulls.length > 0 && sortedReviews.length > 0) {
+      const firstPR = sortedPulls[0];
+      // Find the first review for this PR (we'll need to match by PR number)
+      // Since we don't have pull_request_url in the review type, we'll use the first review
+      const firstReview = sortedReviews[0];
+      if (firstReview && firstReview.submitted_at) {
+        initialReviewResponseTime =
+          new Date(firstReview.submitted_at).getTime() - new Date(firstPR.created_at).getTime();
+      }
+    }
+
+    // Convert milliseconds to days
+    const timeToFirstCommitDays = timeToFirstCommit
+      ? Math.round(timeToFirstCommit / (1000 * 60 * 60 * 24))
+      : null;
+    const timeToFirstPRDays = timeToFirstPR
+      ? Math.round(timeToFirstPR / (1000 * 60 * 60 * 24))
+      : null;
+    const timeTo10thCommitDays = timeTo10thCommit
+      ? Math.round(timeTo10thCommit / (1000 * 60 * 60 * 24))
+      : null;
+    const timeTo10thPRDays = timeTo10thPR ? Math.round(timeTo10thPR / (1000 * 60 * 60 * 24)) : null;
+    const initialReviewResponseTimeDays = initialReviewResponseTime
+      ? Math.round(initialReviewResponseTime / (1000 * 60 * 60 * 24))
+      : null;
 
     const record: DeveloperStats = {
-      login: login,
+      login,
       joinDate,
       firstCommitDate,
       tenthCommitDate,
       firstPRDate,
       tenthPRDate,
-      timeToFirstCommit: null,
-      timeToFirstPR: null,
-      timeTo10thCommit: null,
-      timeTo10thPR: null,
-      initialReviewResponseTime: null,
+      timeToFirstCommit: timeToFirstCommitDays,
+      timeToFirstPR: timeToFirstPRDays,
+      timeTo10thCommit: timeTo10thCommitDays,
+      timeTo10thPR: timeTo10thPRDays,
+      initialReviewResponseTime: initialReviewResponseTimeDays,
     };
 
-    if (joinDate) {
-      record.timeToFirstCommit = firstCommitDate
-        ? (new Date(firstCommitDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60)
-        : null;
-      record.timeToFirstPR = firstPRDate
-        ? (new Date(firstPRDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60)
-        : null;
-      record.timeTo10thCommit = tenthCommitDate
-        ? (new Date(tenthCommitDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60)
-        : null;
-      record.timeTo10thPR = tenthPRDate
-        ? (new Date(tenthPRDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60)
-        : null;
-      record.initialReviewResponseTime = firstReviewDate
-        ? (new Date(firstReviewDate).getTime() - new Date(joinDate).getTime()) / (1000 * 60 * 60)
-        : null;
-    }
-
     stats.push(record);
-    console.log(stats);
-    return stats;
+
+    console.log(`Completed stats for ${login}:`, {
+      commits: sortedCommits.length,
+      prs: sortedPulls.length,
+      reviews: sortedReviews.length,
+      timeToFirstCommit: timeToFirstCommitDays,
+      timeToFirstPR: timeToFirstPRDays,
+      timeTo10thCommit: timeTo10thCommitDays,
+      timeTo10thPR: timeTo10thPRDays,
+      initialReviewResponseTime: initialReviewResponseTimeDays,
+    });
   } catch (error) {
-    // Return a record with null values instead of throwing
-    const record: DeveloperStats = {
-      login: login,
-      joinDate,
-      firstCommitDate: null,
-      tenthCommitDate: null,
-      firstPRDate: null,
-      tenthPRDate: null,
-      timeToFirstCommit: null,
-      timeToFirstPR: null,
-      timeTo10thCommit: null,
-      timeTo10thPR: null,
-      initialReviewResponseTime: null,
-    };
-    stats.push(record);
-    console.error(`Failed to fetch developer stats for ${login}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    return stats;
+    console.error(`Error getting stats for ${login}:`, error);
   }
+
+  return stats;
 }
 
-export async function storeDeveloperStats(user: GitHubUser, record: DeveloperStats): Promise<PortEntity> {
+export async function storeDeveloperStats(
+  user: GitHubUser,
+  record: DeveloperStats
+): Promise<PortEntity> {
   const props: Record<string, unknown> = _.chain(record)
     .pick([
       'login',
@@ -257,20 +286,28 @@ export async function storeDeveloperStatsEntities(entities: PortEntity[]): Promi
   try {
     console.log(`Storing ${entities.length} developer stats entities using bulk ingestion...`);
     const results = await createEntitiesInBatches('githubUser', entities);
-    
+
     // Aggregate results
-    const totalSuccessful = results.reduce((sum, result) => sum + result.entities.filter(r => r.created).length, 0);
-    const totalFailed = results.reduce((sum, result) => sum + result.entities.filter(r => !r.created).length, 0);
-    
+    const totalSuccessful = results.reduce(
+      (sum, result) => sum + result.entities.filter((r) => r.created).length,
+      0
+    );
+    const totalFailed = results.reduce(
+      (sum, result) => sum + result.entities.filter((r) => !r.created).length,
+      0
+    );
+
     console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
-    
+
     if (totalFailed > 0) {
-      const allFailed = results.flatMap(result => result.entities.filter(r => !r.created));
-      const failedIdentifiers = allFailed.map(r => r.identifier);
+      const allFailed = results.flatMap((result) => result.entities.filter((r) => !r.created));
+      const failedIdentifiers = allFailed.map((r) => r.identifier);
       console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
     }
   } catch (error) {
-    console.error(`Failed to store developer stats entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(
+      `Failed to store developer stats entities: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
     throw error;
   }
 }

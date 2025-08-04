@@ -1,8 +1,15 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { createGitHubClient } from '../../clients/github';
 import { getEntities } from '../../clients/port';
-import { calculateAndStoreDeveloperStats, hasCompleteOnboardingMetrics } from '../onboarding_metrics';
-import { createMockGitHubClient, createMockPortClient, mockPortEntity } from '../../__tests__/utils/mocks';
+import {
+  calculateAndStoreDeveloperStats,
+  hasCompleteOnboardingMetrics,
+} from '../onboarding_metrics';
+import {
+  createMockGitHubClient,
+  createMockPortClient,
+  mockPortEntity,
+} from '../../__tests__/utils/mocks';
 
 // Mock process.exit to prevent tests from actually exiting
 const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {
@@ -44,7 +51,7 @@ describe('GitHub CLI Main', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Set up environment variables
     process.env = {
       ...originalEnv,
@@ -113,7 +120,10 @@ describe('GitHub CLI Main', () => {
 
   describe('Module imports', () => {
     it('should import onboarding metrics module successfully', async () => {
-      const { calculateAndStoreDeveloperStats, hasCompleteOnboardingMetrics } = require('../onboarding_metrics');
+      const {
+        calculateAndStoreDeveloperStats,
+        hasCompleteOnboardingMetrics,
+      } = require('../onboarding_metrics');
       calculateAndStoreDeveloperStats.mockResolvedValue(undefined);
       hasCompleteOnboardingMetrics.mockResolvedValue(true);
 
@@ -147,7 +157,7 @@ describe('GitHub CLI Main', () => {
     it('should create GitHub client successfully', async () => {
       const { createGitHubClient } = require('../../clients/github');
       const client = createGitHubClient('test-token');
-      
+
       expect(client).toBeDefined();
       expect(createGitHubClient).toHaveBeenCalledWith('test-token');
     });
@@ -155,7 +165,7 @@ describe('GitHub CLI Main', () => {
     it('should get Port entities successfully', async () => {
       const { getEntities } = require('../../clients/port');
       const entities = await getEntities('test-blueprint');
-      
+
       expect(entities).toBeDefined();
       expect(getEntities).toHaveBeenCalledWith('test-blueprint');
     });
@@ -169,4 +179,4 @@ describe('GitHub CLI Main', () => {
       }).not.toThrow();
     });
   });
-}); 
+});

@@ -1,13 +1,13 @@
 import { jest } from '@jest/globals';
-import type { 
-  Repository, 
-  PullRequestBasic, 
-  PullRequest, 
-  PullRequestReview, 
-  Commit, 
+import type {
+  Repository,
+  PullRequestBasic,
+  PullRequest,
+  PullRequestReview,
+  Commit,
   WorkflowRun,
   AuditLogEntry,
-  GitHubUser
+  GitHubUser,
 } from '../../types/github';
 import type { PortEntity, PortEntitiesResponse, PortEntityResponse } from '../../types/port';
 import { createGitHubClient } from '../../clients/github';
@@ -148,7 +148,15 @@ export const mockPortEntityResponse: PortEntityResponse = {
 export const createMockGitHubClient = (): any => {
   const mockClient = {
     checkRateLimits: jest.fn<() => Promise<void>>(),
-    getRateLimitStatus: jest.fn<() => Promise<{ remaining: number; limit: number; resetTime: Date; secondsUntilReset: number }>>(),
+    getRateLimitStatus:
+      jest.fn<
+        () => Promise<{
+          remaining: number;
+          limit: number;
+          resetTime: Date;
+          secondsUntilReset: number;
+        }>
+      >(),
     fetchOrganizationRepositories: jest.fn<() => Promise<Repository[]>>(),
     getPullRequests: jest.fn<() => Promise<PullRequestBasic[]>>(),
     getPullRequest: jest.fn<() => Promise<PullRequest>>(),
@@ -228,4 +236,4 @@ export const createMockPortClient = (): any => {
     getInstance: jest.fn<() => Promise<typeof mockInstance>>().mockResolvedValue(mockInstance),
     ...mockInstance,
   };
-}; 
+};

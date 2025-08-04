@@ -227,7 +227,9 @@ The system has been optimized to reduce GitHub API calls:
 
         - X_GITHUB_ORGS
         - X_GITHUB_ENTERPRISE
-        - X_GITHUB_AUTH_TOKEN
+        - X_GITHUB_APP_ID
+        - X_GITHUB_APP_PRIVATE_KEY
+        - X_GITHUB_APP_INSTALLATION_ID
         - PORT_CLIENT_ID
         - PORT_CLIENT_SECRET
 1. Modify your `github_user` blueprint in port to include the properties `first_commit`, `tenth_commit`, `first_pr`, `tenth_pr` (see an example blueprint below)
@@ -1139,32 +1141,33 @@ npm run coder-integration create-workspace --name "my-workspace" --template "tem
 ### GitHub Integrations
 - `PORT_CLIENT_ID` - Port client ID
 - `PORT_CLIENT_SECRET` - Port client secret
-- `X_GITHUB_TOKEN` - GitHub personal access token(s). Can be a single token or a comma-separated list of multiple tokens for automatic rotation when rate limits are reached
+- `X_GITHUB_APP_ID` - GitHub App ID
+- `X_GITHUB_APP_PRIVATE_KEY` - GitHub App private key
+- `X_GITHUB_APP_INSTALLATION_ID` - GitHub App installation ID
 - `X_GITHUB_ENTERPRISE` - GitHub Enterprise name
 - `X_GITHUB_ORGS` - Comma-separated list of GitHub organizations
 - `FORCE_ONBOARDING_METRICS` - Set to 'true' to process all users regardless of existing onboarding metrics (optional, defaults to false)
 
-#### Token Rotation Feature
+#### GitHub App Authentication
 
-The system now supports automatic token rotation to handle GitHub API rate limits more efficiently:
+The system now uses GitHub App authentication instead of Personal Access Tokens (PATs) for improved security and rate limiting:
 
-- **Single Token**: `X_GITHUB_TOKEN=ghp_your_single_token_here`
-- **Multiple Tokens**: `X_GITHUB_TOKEN=ghp_token1,ghp_token2,ghp_token3`
+- **App ID**: `X_GITHUB_APP_ID` - The GitHub App ID from your app settings
+- **Private Key**: `X_GITHUB_APP_PRIVATE_KEY` - The private key from your GitHub App (PEM format)
+- **Installation ID**: `X_GITHUB_APP_INSTALLATION_ID` - The installation ID for your GitHub App
 
-When multiple tokens are provided, the system will:
-1. Automatically rotate between tokens when rate limits are reached
-2. Switch back to previously exhausted tokens when they become available again
-3. Provide detailed logging of token rotation events
-4. Maintain backward compatibility with single token configurations
+The GitHub App authentication provides:
+1. Automatic token generation and refresh
+2. Better rate limiting (higher limits than PATs)
+3. More granular permissions
+4. Improved security through short-lived tokens
+5. Automatic token rotation when rate limits are reached
 
-This feature is particularly useful for high-volume operations or when processing large organizations with many repositories.
-
-### Coder Integrations
-- `PORT_CLIENT_ID` - Port client ID
-- `PORT_CLIENT_SECRET` - Port client secret
-- `CODER_SESSION_TOKEN` - Coder session token
-- `CODER_API_BASE_URL` - Coder API base URL
-- `CODER_ORGANIZATION_ID` - Coder organization ID
+To set up GitHub App authentication:
+1. Create a GitHub App in your organization
+2. Install the app on the repositories you want to monitor
+3. Configure the required permissions (read access to repositories, pull requests, etc.)
+4. Add the App ID, private key, and installation ID as secrets in your GitHub repository
 
 ## Time-Series Migration Workflow
 
@@ -1242,7 +1245,8 @@ After successful migration, you should see:
 #### Common Issues
 
 1. **"No services found"**: Ensure you have services created in Port before running migration
-2. **"GitHub API rate limit exceeded"**: Ensure your `X_GITHUB_TOKEN` contains multiple tokens separated by commas
+2. **"GitHub API rate limit exceeded"**: Ensure your GitHub App has the correct permissions and is properly installed on the repositories
 3. **"Port API errors"**: Verify `PORT_CLIENT_ID` and `PORT_CLIENT_SECRET` are correct
 4. **"Migration takes too long"**: Reduce `days_back` parameter or run migration in smaller batches
+5. **"GitHub App authentication failed"**: Verify `X_GITHUB_APP_ID`, `X_GITHUB_APP_PRIVATE_KEY`, and `X_GITHUB_APP_INSTALLATION_ID` are correct
 

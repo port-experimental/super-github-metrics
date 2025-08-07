@@ -1148,6 +1148,11 @@ npm run coder-integration create-workspace --name "my-workspace" --template "tem
 - `X_GITHUB_ORGS` - Comma-separated list of GitHub organizations
 - `FORCE_ONBOARDING_METRICS` - Set to 'true' to process all users regardless of existing onboarding metrics (optional, defaults to false)
 
+#### Onboarding Metrics Performance Settings
+- `ONBOARDING_BATCH_SIZE` - Number of users to process concurrently (optional, defaults to 5)
+- `ONBOARDING_TIMEOUT_PER_USER` - Timeout per user in milliseconds (optional, defaults to 300000 = 5 minutes)
+- `ONBOARDING_PROCESS_TIMEOUT` - Total process timeout in milliseconds (optional, defaults to 2700000 = 45 minutes)
+
 #### GitHub App Authentication
 
 The system now uses GitHub App authentication instead of Personal Access Tokens (PATs) for improved security and rate limiting:

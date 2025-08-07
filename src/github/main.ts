@@ -591,6 +591,108 @@ async function main() {
         }
       });
 
+    program
+      .command('list-user-additions')
+      .description('List all user addition events from organization audit logs')
+      .action(async () => {
+        let hasFatalError = false;
+
+        try {
+          console.log('Fetching user addition events from organization audit logs...');
+          const githubClient = createGitHubClient({
+            appId: GITHUB_APP_ID,
+            privateKey: GITHUB_APP_PRIVATE_KEY,
+            installationId: GITHUB_APP_INSTALLATION_ID,
+          });
+          await githubClient.checkRateLimits();
+
+          console.log(`Organizations to query: ${GITHUB_ORGS.join(', ')}`);
+          console.log('='.repeat(80));
+
+          let totalEvents = 0;
+          const allEvents: AuditLogEntry[] = [];
+
+          for (const orgName of GITHUB_ORGS) {
+            try {
+              console.log(`\n📋 Fetching audit logs for organization: ${orgName}`);
+              const orgEvents = await githubClient.getMemberAddDates(orgName);
+              
+              console.log(`Found ${orgEvents.length} user addition events in ${orgName}`);
+              
+              if (orgEvents.length > 0) {
+                console.log(`\n👥 User addition events for ${orgName}:`);
+                console.log('-'.repeat(60));
+                
+                orgEvents.forEach((event, index) => {
+                  console.log(`${index + 1}. User: ${event.user}`);
+                  console.log(`   User ID: ${event.user_id}`);
+                  console.log(`   Added on: ${event.created_at}`);
+                  console.log(`   Organization: ${event.org}`);
+                  console.log('');
+                });
+              } else {
+                console.log(`   No user addition events found in ${orgName}`);
+              }
+
+              allEvents.push(...orgEvents);
+              totalEvents += orgEvents.length;
+
+            } catch (error) {
+              if (error instanceof Error && 'status' in error && error.status === 403) {
+                console.log(`❌ Insufficient permissions to query audit log for ${orgName}`);
+                console.log('   Make sure the GitHub App has "Administration" read permissions');
+              } else {
+                console.error(`❌ Error fetching audit logs for ${orgName}:`, error);
+              }
+            }
+          }
+
+          console.log('\n' + '='.repeat(80));
+          console.log('📊 SUMMARY');
+          console.log('='.repeat(80));
+          console.log(`Total organizations queried: ${GITHUB_ORGS.length}`);
+          console.log(`Total user addition events found: ${totalEvents}`);
+          
+          if (allEvents.length > 0) {
+            const uniqueUsers = new Set(allEvents.map(event => event.user));
+            console.log(`Unique users found: ${uniqueUsers.size}`);
+            
+            console.log('\n📅 Events by date:');
+            const eventsByDate = allEvents.reduce((acc, event) => {
+              const date = event.created_at.split('T')[0]; // Get just the date part
+              acc[date] = (acc[date] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>);
+            
+            Object.entries(eventsByDate)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .forEach(([date, count]) => {
+                console.log(`   ${date}: ${count} addition(s)`);
+              });
+
+            console.log('\n👤 All unique users:');
+            Array.from(uniqueUsers).sort().forEach((user, index) => {
+              console.log(`   ${index + 1}. ${user}`);
+            });
+          }
+
+        } catch (error) {
+          if (error instanceof FatalError) {
+            hasFatalError = true;
+            throw error;
+          }
+          console.error(
+            `Unexpected error listing user additions: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+          hasFatalError = true;
+          throw new FatalError('Unexpected error listing user additions', error as Error);
+        }
+
+        if (hasFatalError) {
+          process.exit(1);
+        }
+      });
+
     await program.parseAsync();
   } catch (error) {
     console.error(`Fatal error: ${error instanceof Error ? error.message : 'Unknown error'}`);

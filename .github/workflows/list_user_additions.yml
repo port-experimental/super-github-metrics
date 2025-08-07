@@ -1,0 +1,48 @@
+name: List User Additions
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug_output:
+        description: 'Enable debug output'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  list_user_additions:
+    runs-on: ubuntu-latest
+    name: List User Addition Events
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: List user addition events
+        run: bun run src/github/main.ts list-user-additions
+        env:
+          X_GITHUB_APP_ID: ${{ secrets.X_GITHUB_APP_ID }}
+          X_GITHUB_APP_PRIVATE_KEY: ${{ secrets.X_GITHUB_APP_PRIVATE_KEY }}
+          X_GITHUB_APP_INSTALLATION_ID: ${{ secrets.X_GITHUB_APP_INSTALLATION_ID }}
+          X_GITHUB_ENTERPRISE: ${{ secrets.X_GITHUB_ENTERPRISE }}
+          X_GITHUB_ORGS: ${{ secrets.X_GITHUB_ORGS }}
+          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+          DEBUG: ${{ inputs.debug_output && 'true' || 'false' }}
+
+      - name: Upload logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: user-additions-log-${{ github.run_number }}
+          path: |
+            *.log
+          retention-days: 7 

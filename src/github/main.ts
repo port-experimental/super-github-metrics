@@ -108,7 +108,10 @@ async function main() {
                     `Insufficient permissions to query audit log for ${orgName}. Skipping...`
                   );
                 } else {
-                  console.warn(`Failed to fetch join records from ${orgName}, continuing without them:`, error);
+                  console.warn(
+                    `Failed to fetch join records from ${orgName}, continuing without them:`,
+                    error
+                  );
                 }
               }
             }

@@ -145,7 +145,9 @@ export class GitHubClient {
     const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
     const secondsUntilReset = Math.floor((resetTime.getTime() - Date.now()) / 1000);
 
-    console.log(`Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`);
+    console.log(
+      `Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`
+    );
 
     if (remaining <= 0) {
       console.log(`Rate limit exceeded. Waiting ${secondsUntilReset} seconds until reset...`);
@@ -279,7 +281,7 @@ export class GitHubClient {
    */
   async getMemberAddDates(orgName: string): Promise<AuditLogEntry[]> {
     await this.addRequestDelay();
-    
+
     let data = await this.makeRequestWithRetry(async () => {
       return (await this.octokit.paginate('GET /orgs/{org}/audit-log', {
         org: orgName,

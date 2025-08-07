@@ -159,8 +159,7 @@ function calculateAggregatedMetrics(prMetrics: PRMetrics[], period: number): Agg
   // Calculate standard deviation of contributions (PR sizes)
   const prSizes = prMetrics.map((pr) => pr.prSize);
   const meanSize = prSizes.reduce((sum, size) => sum + size, 0) / prSizes.length;
-  const variance =
-    prSizes.reduce((sum, size) => sum + (size - meanSize) ** 2, 0) / prSizes.length;
+  const variance = prSizes.reduce((sum, size) => sum + (size - meanSize) ** 2, 0) / prSizes.length;
   const contributionStandardDeviation = Math.sqrt(variance);
 
   return {

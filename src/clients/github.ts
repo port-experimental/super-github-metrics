@@ -105,9 +105,8 @@ export class GitHubClient {
    * Ensure we have a valid token before making requests
    */
   private async ensureValidToken(): Promise<void> {
-    console.log('Ensuring valid token');
     if (!this.authManager.isTokenValid()) {
-      console.log('Token is invalid, updating...');
+      console.log('Token expired, refreshing GitHub App installation access token...');
       await this.updateOctokitToken();
     }
   }
@@ -122,7 +121,8 @@ export class GitHubClient {
     secondsUntilReset: number;
   }> {
     await this.ensureValidToken();
-    const resp = await this.makeRequestWithRetry(() => this.octokit.rateLimit.get());
+    // Call rate limit endpoint directly to avoid recursion
+    const resp = await this.octokit.rateLimit.get();
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
     const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
     const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
@@ -140,21 +140,15 @@ export class GitHubClient {
    * Check rate limits and handle token refresh if needed
    */
   async checkRateLimits(): Promise<void> {
-    console.log('Checking rate limits');
     await this.ensureValidToken();
-    console.log('Ensured valid token');
-    const resp = await this.makeRequestWithRetry(() => this.octokit.rateLimit.get());
+    // Call rate limit endpoint directly to avoid recursion with makeRequestWithRetry
+    const resp = await this.octokit.rateLimit.get();
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
-    console.log('Remaining rate limit:', remaining);
     const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
-    console.log('Rate limit limit:', limit);
     const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
-    console.log('Rate limit reset time:', resetTime);
     const secondsUntilReset = Math.floor((resetTime.getTime() - Date.now()) / 1000);
-    console.log('Rate limit seconds until reset:', secondsUntilReset);
-    console.log(
-      `Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`
-    );
+
+    console.log(`Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`);
 
     if (remaining <= 0) {
       console.log(`Rate limit exceeded. Waiting ${secondsUntilReset} seconds until reset...`);

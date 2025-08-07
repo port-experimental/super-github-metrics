@@ -120,7 +120,7 @@ export class GitHubClient {
     secondsUntilReset: number;
   }> {
     await this.ensureValidToken();
-    const resp = await this.octokit.rateLimit.get();
+    const resp = await this.makeRequestWithRetry(() => this.octokit.rateLimit.get());
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
     const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
     const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
@@ -139,25 +139,35 @@ export class GitHubClient {
    */
   async checkRateLimits(): Promise<void> {
     await this.ensureValidToken();
-    const resp = await this.octokit.rateLimit.get();
+    const resp = await this.makeRequestWithRetry(() => this.octokit.rateLimit.get());
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
+    const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
     const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
     const secondsUntilReset = Math.floor((resetTime.getTime() - Date.now()) / 1000);
+
+    console.log(`Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`);
 
     if (remaining <= 0) {
       console.log(`Rate limit exceeded. Waiting ${secondsUntilReset} seconds until reset...`);
       await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
       console.log('Rate limit reset, continuing...');
-    } else if (remaining <= 5) {
-      // Low rate limit - add delay to be conservative
+    } else if (remaining <= 10) {
+      // Very low rate limit - wait until we have more requests available
+      const waitTime = Math.min(secondsUntilReset, 60); // Wait up to 1 minute or until reset
+      console.log(
+        `Rate limit very low (${remaining} requests left). Waiting ${waitTime} seconds to be safe...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
+    } else if (remaining <= 50) {
+      // Low rate limit - add significant delay to be conservative
       console.log(
         `Rate limit low (${remaining} requests left). Adding delay to be conservative...`
       );
+      await new Promise((resolve) => setTimeout(resolve, 5000)); // 5 second delay
+    } else if (remaining <= 100) {
+      // Getting low - add moderate delay
+      console.log(`Rate limit getting low (${remaining} requests left). Adding moderate delay...`);
       await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
-    } else if (remaining <= 20) {
-      // Getting low - add small delay
-      console.log(`Rate limit getting low (${remaining} requests left). Adding small delay...`);
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
     }
   }
 
@@ -204,6 +214,11 @@ export class GitHubClient {
               console.log('Rate limit reset, retrying...');
               continue; // Retry the request
             }
+          } else {
+            // If we can't determine reset time, wait a conservative amount
+            console.log('Could not determine rate limit reset time, waiting 60 seconds...');
+            await new Promise((resolve) => setTimeout(resolve, 60 * 1000));
+            continue; // Retry the request
           }
         }
 
@@ -260,28 +275,30 @@ export class GitHubClient {
   }
 
   /**
-   * Get member add dates from enterprise audit log
+   * Get member add dates from organization audit log
    */
-  async getMemberAddDates(enterprise: string): Promise<AuditLogEntry[]> {
+  async getMemberAddDates(orgName: string): Promise<AuditLogEntry[]> {
     await this.addRequestDelay();
-    let data = (await this.octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
-      enterprise,
-      phrase: 'action:org.add_member',
-      include: 'web',
-      per_page: 100,
-      order: 'desc',
-      headers: {
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    })) as Array<{ org: string; user: string; user_id: number; '@timestamp': string }>;
+    
+    let data = await this.makeRequestWithRetry(async () => {
+      return (await this.octokit.paginate('GET /orgs/{org}/audit-log', {
+        org: orgName,
+        phrase: 'action:org.add_member',
+        include: 'web',
+        per_page: 100,
+        order: 'desc',
+        headers: {
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      })) as Array<{ org: string; user: string; user_id: number; '@timestamp': string }>;
+    });
 
-    data = data.filter((x) => ['fmgl-internal', 'fmgl', 'fmgl-specialised'].includes(x.org));
-    console.log(`Fetched ${data.length} audit log events for member additions`);
+    console.log(`Fetched ${data.length} audit log events for member additions from ${orgName}`);
 
     // Log a summary instead of the full data
     if (data.length > 0) {
       const uniqueUsers = new Set(data.map((x) => x.user));
-      console.log(`Found member additions for ${uniqueUsers.size} unique users`);
+      console.log(`Found member additions for ${uniqueUsers.size} unique users in ${orgName}`);
     }
 
     return data.map((x) => ({

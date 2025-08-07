@@ -94,18 +94,27 @@ async function main() {
           console.log(`Found ${githubUsers.entities.length} github users in Port`);
 
           let joinRecords: AuditLogEntry[] = [];
-          // Try fetch join dates from the audit log
+          // Try fetch join dates from the audit log for each organization
           try {
-            joinRecords = await githubClient.getMemberAddDates(ENTERPRISE_NAME);
-            console.log(`Found ${joinRecords.length} join records`);
-          } catch (error) {
-            if (error instanceof Error && 'status' in error && error.status === 403) {
-              console.log(
-                'Looks like insufficient permissions to query audit log. Skipping join records...'
-              );
-            } else {
-              console.warn('Failed to fetch join records, continuing without them:', error);
+            console.log('Fetching member join dates from organization audit logs...');
+            for (const orgName of GITHUB_ORGS) {
+              try {
+                const orgJoinRecords = await githubClient.getMemberAddDates(orgName);
+                joinRecords.push(...orgJoinRecords);
+                console.log(`Found ${orgJoinRecords.length} join records from ${orgName}`);
+              } catch (error) {
+                if (error instanceof Error && 'status' in error && error.status === 403) {
+                  console.log(
+                    `Insufficient permissions to query audit log for ${orgName}. Skipping...`
+                  );
+                } else {
+                  console.warn(`Failed to fetch join records from ${orgName}, continuing without them:`, error);
+                }
+              }
             }
+            console.log(`Total join records found: ${joinRecords.length}`);
+          } catch (error) {
+            console.warn('Failed to fetch join records, continuing without them:', error);
           }
 
           // Check if we should force processing all users regardless of existing metrics

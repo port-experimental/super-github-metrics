@@ -26,11 +26,11 @@ interface DeveloperStats {
 }
 
 export async function getMemberAddDates(
-  enterprise: string,
+  orgName: string,
   config: GitHubAppConfig
 ): Promise<MemberJoinRecord[]> {
   const githubClient = createGitHubClient(config);
-  return await githubClient.getMemberAddDates(enterprise);
+  return await githubClient.getMemberAddDates(orgName);
 }
 
 export async function calculateAndStoreDeveloperStats(

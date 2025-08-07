@@ -1,4 +1,4 @@
-name: collect_workflow_metrics
+name: Collect Workflow Metrics
 on:
     workflow_dispatch:
     schedule:

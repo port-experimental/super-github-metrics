@@ -1,4 +1,4 @@
-name: collect_coder_workspaces
+name: Collect Coder Workspaces
 on:
     workflow_dispatch:
     schedule:

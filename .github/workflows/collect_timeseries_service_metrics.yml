@@ -1,4 +1,4 @@
-name: collect_timeseries_service_metrics
+name: Collect Time-Series Service Metrics
 on:
   workflow_dispatch:
   schedule:

@@ -1,4 +1,4 @@
-name: collect_pr_metrics
+name: Collect PR Metrics
 on:
     workflow_dispatch:
     schedule:

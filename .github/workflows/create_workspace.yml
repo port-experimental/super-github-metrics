@@ -1,4 +1,4 @@
-name: create_coder_workspace
+name: Create Coder Workspace
 on:
   workflow_dispatch:
     # Inputs the workflow accepts.

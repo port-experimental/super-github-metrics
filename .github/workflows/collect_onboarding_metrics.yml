@@ -1,4 +1,4 @@
-name: collect_onboarding_metrics
+name: Collect Onboarding Metrics
 on:
     workflow_dispatch:
     schedule:

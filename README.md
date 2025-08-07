@@ -1150,8 +1150,6 @@ npm run coder-integration create-workspace --name "my-workspace" --template "tem
 
 #### Onboarding Metrics Performance Settings
 - `ONBOARDING_BATCH_SIZE` - Number of users to process concurrently (optional, defaults to 3)
-- `ONBOARDING_TIMEOUT_PER_USER` - Timeout per user in milliseconds (optional, defaults to 300000 = 5 minutes)
-- `ONBOARDING_PROCESS_TIMEOUT` - Total process timeout in milliseconds (optional, defaults to 2700000 = 45 minutes)
 
 #### GitHub App Authentication
 

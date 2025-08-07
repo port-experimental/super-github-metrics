@@ -82,258 +82,182 @@ async function main() {
       .action(async () => {
         let hasFatalError = false;
 
-        // Add timeout for the entire onboarding metrics process (45 minutes)
-        const PROCESS_TIMEOUT = parseInt(process.env.ONBOARDING_PROCESS_TIMEOUT || '2700000', 10); // 45 minutes total by default
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Onboarding metrics process timeout')), PROCESS_TIMEOUT);
-        });
-
         try {
-          await Promise.race([
-            (async () => {
-              console.log('Calculating onboarding metrics...');
-              console.log('Step 1: Creating GitHub client...');
-              const githubClient = createGitHubClient({
-                appId: GITHUB_APP_ID,
-                privateKey: GITHUB_APP_PRIVATE_KEY,
-                installationId: GITHUB_APP_INSTALLATION_ID,
-              });
-              
-              console.log('Step 2: Checking rate limits...');
-              await githubClient.checkRateLimits();
-              
-              console.log('Step 3: Fetching GitHub users from Port...');
-              
-              // Add timeout for Port API call (5 minutes)
-              const portApiTimeout = new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error('Port API timeout')), 5 * 60 * 1000);
-              });
-              
-              const githubUsers = await Promise.race([
-                getEntities('githubUser'),
-                portApiTimeout
-              ]);
-              
-              console.log(`Found ${githubUsers.entities.length} github users in Port`);
+          console.log('Calculating onboarding metrics...');
+          console.log('Step 1: Creating GitHub client...');
+          const githubClient = createGitHubClient({
+            appId: GITHUB_APP_ID,
+            privateKey: GITHUB_APP_PRIVATE_KEY,
+            installationId: GITHUB_APP_INSTALLATION_ID,
+          });
+          
+          console.log('Step 2: Checking rate limits...');
+          await githubClient.checkRateLimits();
+          
+          console.log('Step 3: Fetching GitHub users from Port...');
+          const githubUsers = await getEntities('githubUser');
+          console.log(`Found ${githubUsers.entities.length} github users in Port`);
 
-              let joinRecords: AuditLogEntry[] = [];
-              // Try fetch join dates from the audit log for each organization concurrently
+          let joinRecords: AuditLogEntry[] = [];
+          // Try fetch join dates from the audit log for each organization concurrently
+          try {
+            console.log('Step 4: Fetching member join dates from organization audit logs...');
+            console.log(`Organizations to process: ${GITHUB_ORGS.join(', ')}`);
+            
+            const auditLogPromises = GITHUB_ORGS.map(async (orgName) => {
+              console.log(`Fetching audit logs for organization: ${orgName}`);
               try {
-                console.log('Step 4: Fetching member join dates from organization audit logs...');
-                console.log(`Organizations to process: ${GITHUB_ORGS.join(', ')}`);
-                
-                const auditLogPromises = GITHUB_ORGS.map(async (orgName) => {
-                  console.log(`Fetching audit logs for organization: ${orgName}`);
-                  try {
-                    const orgJoinRecords = await githubClient.getMemberAddDates(orgName);
-                    console.log(`Found ${orgJoinRecords.length} join records from ${orgName}`);
-                    return orgJoinRecords;
-                  } catch (error) {
-                    if (error instanceof Error && 'status' in error && error.status === 403) {
-                      console.log(
-                        `Insufficient permissions to query audit log for ${orgName}. Skipping...`
-                      );
-                    } else {
-                      console.warn(
-                        `Failed to fetch join records from ${orgName}, continuing without them:`,
-                        error
-                      );
-                    }
-                    return [];
-                  }
-                });
-
-                console.log('Waiting for all audit log requests to complete...');
-                
-                // Add timeout for audit log fetching (10 minutes)
-                const auditLogTimeout = new Promise<never>((_, reject) => {
-                  setTimeout(() => reject(new Error('Audit log fetching timeout')), 10 * 60 * 1000);
-                });
-                
-                const auditLogResults = await Promise.race([
-                  Promise.all(auditLogPromises),
-                  auditLogTimeout
-                ]);
-                
-                joinRecords = auditLogResults.flat();
-                console.log(`Total join records found: ${joinRecords.length}`);
+                const orgJoinRecords = await githubClient.getMemberAddDates(orgName);
+                console.log(`Found ${orgJoinRecords.length} join records from ${orgName}`);
+                return orgJoinRecords;
               } catch (error) {
-                if (error instanceof Error && error.message === 'Audit log fetching timeout') {
-                  console.error('Audit log fetching timed out after 10 minutes');
-                  console.error('Continuing without audit log data...');
+                if (error instanceof Error && 'status' in error && error.status === 403) {
+                  console.log(
+                    `Insufficient permissions to query audit log for ${orgName}. Skipping...`
+                  );
                 } else {
-                  console.warn('Failed to fetch join records, continuing without them:', error);
+                  console.warn(
+                    `Failed to fetch join records from ${orgName}, continuing without them:`,
+                    error
+                  );
+                }
+                return [];
+              }
+            });
+
+            console.log('Waiting for all audit log requests to complete...');
+            const auditLogResults = await Promise.all(auditLogPromises);
+            joinRecords = auditLogResults.flat();
+            console.log(`Total join records found: ${joinRecords.length}`);
+          } catch (error) {
+            console.warn('Failed to fetch join records, continuing without them:', error);
+          }
+
+          // Check if we should force processing all users regardless of existing metrics
+          const forceProcessing = process.env.FORCE_ONBOARDING_METRICS === 'true';
+
+          let usersToProcess: PortEntity[];
+          if (forceProcessing) {
+            console.log(
+              'FORCE_ONBOARDING_METRICS is enabled - processing all users regardless of existing metrics'
+            );
+            usersToProcess = githubUsers.entities;
+          } else {
+            // Only go over users without complete onboarding metrics in Port
+            console.log('Step 5: Filtering users without complete onboarding metrics...');
+            usersToProcess = githubUsers.entities.filter(
+              (user: PortEntity) => !hasCompleteOnboardingMetrics(user)
+            );
+            console.log(`Found ${usersToProcess.length} users without complete onboarding metrics`);
+          }
+
+          // Process users in batches to avoid overwhelming the system
+          const BATCH_SIZE = parseInt(process.env.ONBOARDING_BATCH_SIZE || '3', 10); // Process 3 users at a time by default
+          let processedCount = 0;
+          let errorCount = 0;
+          const usersWithErrors: string[] = [];
+
+          console.log(`Processing ${usersToProcess.length} users in batches of ${BATCH_SIZE}`);
+
+          for (let i = 0; i < usersToProcess.length; i += BATCH_SIZE) {
+            const batch = usersToProcess.slice(i, i + BATCH_SIZE);
+            const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+            const totalBatches = Math.ceil(usersToProcess.length / BATCH_SIZE);
+            console.log(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} users) - ${Math.round((i / usersToProcess.length) * 100)}% complete`);
+
+            // Process batch concurrently
+            const batchPromises = batch.map(async (user, batchIndex) => {
+              const userIndex = i + batchIndex;
+              console.log(`Processing developer ${userIndex + 1} of ${usersToProcess.length}: ${user.identifier}`);
+              
+              try {
+                // Ensure user has required properties
+                if (!user.identifier) {
+                  console.error(`User missing identifier:`, user);
+                  return { success: false, user: user.identifier, error: 'Missing identifier' };
+                }
+
+                const joinDate = joinRecords.find(
+                  (record) => record.user === user.identifier
+                )?.created_at;
+                if (!joinDate) {
+                  console.error(`No join date found for ${user.identifier}`);
+                  return { success: false, user: user.identifier, error: 'No join date found' };
+                }
+                console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
+
+                // Convert PortEntity to GitHubUser format
+                const githubUser: GitHubUser = {
+                  identifier: user.identifier,
+                  title: user.title,
+                  properties: user.properties || {},
+                  relations: user.relations || undefined,
+                };
+
+                await calculateAndStoreDeveloperStats(
+                  GITHUB_ORGS,
+                  {
+                    appId: GITHUB_APP_ID,
+                    privateKey: GITHUB_APP_PRIVATE_KEY,
+                    installationId: GITHUB_APP_INSTALLATION_ID,
+                  },
+                  githubUser,
+                  joinDate
+                );
+
+                console.log(`Successfully processed ${user.identifier}`);
+                return { success: true, user: user.identifier };
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                console.error(`Error processing developer ${user.identifier}: ${errorMessage}`);
+                return { success: false, user: user.identifier, error: errorMessage };
+              }
+            });
+
+            // Wait for batch to complete
+            const batchResults = await Promise.all(batchPromises);
+            
+            // Process batch results
+            batchResults.forEach(result => {
+              if (result.success) {
+                processedCount++;
+              } else {
+                errorCount++;
+                if (result.user) {
+                  usersWithErrors.push(result.user);
                 }
               }
+            });
 
-              // Check if we should force processing all users regardless of existing metrics
-              const forceProcessing = process.env.FORCE_ONBOARDING_METRICS === 'true';
+            console.log(`Batch ${batchNumber}/${totalBatches} completed. Progress: ${processedCount + errorCount}/${usersToProcess.length} users processed (${Math.round(((processedCount + errorCount) / usersToProcess.length) * 100)}% complete)`);
+            
+            // Add a small delay between batches to be conservative with rate limits
+            if (i + BATCH_SIZE < usersToProcess.length) {
+              console.log('Waiting 15 seconds before next batch...');
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+          }
 
-              let usersToProcess: PortEntity[];
-              if (forceProcessing) {
-                console.log(
-                  'FORCE_ONBOARDING_METRICS is enabled - processing all users regardless of existing metrics'
-                );
-                usersToProcess = githubUsers.entities;
-              } else {
-                // Only go over users without complete onboarding metrics in Port
-                console.log('Step 5: Filtering users without complete onboarding metrics...');
-                usersToProcess = githubUsers.entities.filter(
-                  (user: PortEntity) => !hasCompleteOnboardingMetrics(user)
-                );
-                console.log(`Found ${usersToProcess.length} users without complete onboarding metrics`);
-              }
+          // Print summary
+          console.log('\n=== Processing Summary ===');
+          console.log(`Total users processed: ${processedCount}`);
+          console.log(`Users with errors: ${errorCount}`);
+          if (forceProcessing) {
+            console.log('Note: All users were processed due to FORCE_ONBOARDING_METRICS=true');
+          }
 
-              // Process users in batches to avoid timeouts
-              const BATCH_SIZE = parseInt(process.env.ONBOARDING_BATCH_SIZE || '3', 10); // Process 3 users at a time by default (reduced from 5)
-              const TIMEOUT_PER_USER = parseInt(process.env.ONBOARDING_TIMEOUT_PER_USER || '300000', 10); // 5 minutes per user by default
-              let processedCount = 0;
-              let errorCount = 0;
-              const usersWithErrors: string[] = [];
+          if (usersWithErrors.length > 0) {
+            console.log('\nUsers with errors:');
+            usersWithErrors.forEach((userId) => console.log(`- ${userId}`));
+          }
 
-              console.log(`Processing ${usersToProcess.length} users in batches of ${BATCH_SIZE}`);
-              console.log(`Timeout settings: ${TIMEOUT_PER_USER/1000}s per user, ${PROCESS_TIMEOUT/1000}s total process`);
-
-              // Add a timeout for the entire user processing section
-              const userProcessingTimeout = new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error('User processing section timeout')), PROCESS_TIMEOUT - 60000); // 1 minute less than total timeout
-              });
-
-              await Promise.race([
-                (async () => {
-                  for (let i = 0; i < usersToProcess.length; i += BATCH_SIZE) {
-                    const batch = usersToProcess.slice(i, i + BATCH_SIZE);
-                    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-                    const totalBatches = Math.ceil(usersToProcess.length / BATCH_SIZE);
-                    console.log(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} users) - ${Math.round((i / usersToProcess.length) * 100)}% complete`);
-
-                    // Process batch concurrently with timeout
-                    const batchPromises = batch.map(async (user, batchIndex) => {
-                      const userIndex = i + batchIndex;
-                      console.log(`Processing developer ${userIndex + 1} of ${usersToProcess.length}: ${user.identifier}`);
-                      
-                      try {
-                        // Ensure user has required properties
-                        if (!user.identifier) {
-                          console.error(`User missing identifier:`, user);
-                          return { success: false, user: user.identifier, error: 'Missing identifier' };
-                        }
-
-                        const joinDate = joinRecords.find(
-                          (record) => record.user === user.identifier
-                        )?.created_at;
-                        if (!joinDate) {
-                          console.error(`No join date found for ${user.identifier}`);
-                          return { success: false, user: user.identifier, error: 'No join date found' };
-                        }
-                        console.log(`Calculating stats for ${user.identifier} with join date ${joinDate}`);
-
-                        // Convert PortEntity to GitHubUser format
-                        const githubUser: GitHubUser = {
-                          identifier: user.identifier,
-                          title: user.title,
-                          properties: user.properties || {},
-                          relations: user.relations || undefined,
-                        };
-
-                        // Add timeout to individual user processing
-                        const timeoutPromise = new Promise<never>((_, reject) => {
-                          setTimeout(() => reject(new Error('User processing timeout')), TIMEOUT_PER_USER);
-                        });
-
-                        await Promise.race([
-                          calculateAndStoreDeveloperStats(
-                            GITHUB_ORGS,
-                            {
-                              appId: GITHUB_APP_ID,
-                              privateKey: GITHUB_APP_PRIVATE_KEY,
-                              installationId: GITHUB_APP_INSTALLATION_ID,
-                            },
-                            githubUser,
-                            joinDate
-                          ),
-                          timeoutPromise
-                        ]);
-
-                        console.log(`Successfully processed ${user.identifier}`);
-                        return { success: true, user: user.identifier };
-                      } catch (error) {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                        console.error(`Error processing developer ${user.identifier}: ${errorMessage}`);
-                        return { success: false, user: user.identifier, error: errorMessage };
-                      }
-                    });
-
-                    // Wait for batch to complete
-                    const batchResults = await Promise.all(batchPromises);
-                    
-                    // Process batch results
-                    batchResults.forEach(result => {
-                      if (result.success) {
-                        processedCount++;
-                      } else {
-                        errorCount++;
-                        if (result.user) {
-                          usersWithErrors.push(result.user);
-                        }
-                      }
-                    });
-
-                    console.log(`Batch ${batchNumber}/${totalBatches} completed. Progress: ${processedCount + errorCount}/${usersToProcess.length} users processed (${Math.round(((processedCount + errorCount) / usersToProcess.length) * 100)}% complete)`);
-                    
-                    // Add a small delay between batches to be conservative with rate limits
-                    if (i + BATCH_SIZE < usersToProcess.length) {
-                      console.log('Waiting 15 seconds before next batch...');
-                      await new Promise(resolve => setTimeout(resolve, 15000)); // Increased from 10 to 15 seconds
-                    }
-                  }
-                })(),
-                userProcessingTimeout
-              ]);
-
-              // Print summary
-              console.log('\n=== Processing Summary ===');
-              console.log(`Total users processed: ${processedCount}`);
-              console.log(`Users with errors: ${errorCount}`);
-              if (forceProcessing) {
-                console.log('Note: All users were processed due to FORCE_ONBOARDING_METRICS=true');
-              }
-
-              if (usersWithErrors.length > 0) {
-                console.log('\nUsers with errors:');
-                usersWithErrors.forEach((userId) => console.log(`- ${userId}`));
-              }
-
-              // If all users failed, that's a fatal error
-              if (processedCount === 0 && usersToProcess.length > 0) {
-                hasFatalError = true;
-                throw new FatalError('Failed to process any users for onboarding metrics');
-              }
-            })(),
-            timeoutPromise
-          ]);
+          // If all users failed, that's a fatal error
+          if (processedCount === 0 && usersToProcess.length > 0) {
+            hasFatalError = true;
+            throw new FatalError('Failed to process any users for onboarding metrics');
+          }
         } catch (error) {
-          if (error instanceof Error && error.message === 'Onboarding metrics process timeout') {
-            console.error('Onboarding metrics process timed out after 45 minutes');
-            console.error('Consider processing fewer users or increasing the timeout');
-            hasFatalError = true;
-            throw new FatalError('Onboarding metrics process timeout', error);
-          } else if (error instanceof Error && error.message === 'User processing section timeout') {
-            console.error('User processing section timed out');
-            console.error('Consider reducing batch size or increasing timeout');
-            hasFatalError = true;
-            throw new FatalError('User processing section timeout', error);
-          } else if (error instanceof Error && error.message === 'Audit log fetching timeout') {
-            console.error('Audit log fetching timed out');
-            console.error('Consider reducing the number of organizations or checking permissions');
-            hasFatalError = true;
-            throw new FatalError('Audit log fetching timeout', error);
-          } else if (error instanceof Error && error.message === 'Port API timeout') {
-            console.error('Port API call timed out');
-            console.error('Check your Port API credentials and network connectivity');
-            hasFatalError = true;
-            throw new FatalError('Port API timeout', error);
-          } else if (error instanceof FatalError) {
+          if (error instanceof FatalError) {
             hasFatalError = true;
             throw error;
           }

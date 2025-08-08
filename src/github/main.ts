@@ -563,6 +563,7 @@ async function main() {
               if (error instanceof Error && 'status' in error && error.status === 403) {
                 console.log(`❌ Insufficient permissions to query audit log for ${orgName}`);
                 console.log('   Make sure the GitHub App has "Administration" read permissions');
+                console.log("Original error:", error);
               } else {
                 console.error(`❌ Error fetching audit logs for ${orgName}:`, error);
               }

@@ -125,8 +125,10 @@ export class GitHubClient {
     const resp = await this.octokit.rateLimit.get();
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
     const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
-    const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
-    const secondsUntilReset = Math.floor((resetTime.getTime() - Date.now()) / 1000);
+    const resetEpochSeconds = Number.parseInt(resp.headers['x-ratelimit-reset'] || '0');
+    const currentEpochSeconds = Math.floor(Date.now() / 1000);
+    const secondsUntilReset = Math.max(0, resetEpochSeconds - currentEpochSeconds);
+    const resetTime = new Date(resetEpochSeconds * 1000);
 
     return {
       remaining,
@@ -145,8 +147,9 @@ export class GitHubClient {
     const resp = await this.octokit.rateLimit.get();
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
     const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
-    const resetTime = new Date(Number.parseInt(resp.headers['x-ratelimit-reset'] || '') * 1000);
-    const secondsUntilReset = Math.floor((resetTime.getTime() - Date.now()) / 1000);
+    const resetEpochSeconds = Number.parseInt(resp.headers['x-ratelimit-reset'] || '0');
+    const currentEpochSeconds = Math.floor(Date.now() / 1000);
+    const secondsUntilReset = Math.max(0, resetEpochSeconds - currentEpochSeconds);
 
     console.log(`Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`);
 
@@ -154,24 +157,25 @@ export class GitHubClient {
       console.log(`Rate limit exceeded. Waiting ${secondsUntilReset} seconds until reset...`);
       await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
       console.log('Rate limit reset, continuing...');
-    } else if (remaining <= 10) {
-      // Very low rate limit - wait until we have more requests available
-      const waitTime = Math.min(secondsUntilReset, 60); // Wait up to 1 minute or until reset
+    } else if (remaining <= 5) {
+      // Almost exhausted - wait for reset
+      const waitTime = Math.min(secondsUntilReset, 120); // Wait up to 2 minutes or until reset
       console.log(
-        `Rate limit very low (${remaining} requests left). Waiting ${waitTime} seconds to be safe...`
+        `Rate limit almost exhausted (${remaining} requests left). Waiting ${waitTime} seconds until reset...`
       );
       await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
-    } else if (remaining <= 50) {
-      // Low rate limit - add significant delay to be conservative
+    } else if (remaining <= 25) {
+      // Very low rate limit - add significant delay
       console.log(
-        `Rate limit low (${remaining} requests left). Adding delay to be conservative...`
+        `Rate limit very low (${remaining} requests left). Adding 10 second delay...`
       );
-      await new Promise((resolve) => setTimeout(resolve, 5000)); // 5 second delay
+      await new Promise((resolve) => setTimeout(resolve, 10000)); // 10 second delay
     } else if (remaining <= 100) {
-      // Getting low - add moderate delay
-      console.log(`Rate limit getting low (${remaining} requests left). Adding moderate delay...`);
+      // Getting low - add small delay
+      console.log(`Rate limit getting low (${remaining} requests left). Adding 2 second delay...`);
       await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
     }
+    // For remaining > 100, no delay needed - GitHub Apps have 5000/hour limit
   }
 
   /**

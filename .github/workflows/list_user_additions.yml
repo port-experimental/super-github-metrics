@@ -37,3 +37,12 @@ jobs:
           PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
           PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
           DEBUG: ${{ inputs.debug_output && 'true' || 'false' }}
+
+      - name: Upload logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: user-additions-log-${{ github.run_number }}
+          path: |
+            *.log
+          retention-days: 7 

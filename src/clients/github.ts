@@ -317,6 +317,30 @@ export class GitHubClient {
   }
 
   /**
+   * Get raw member add audit log data for debugging purposes
+   */
+  async getRawMemberAddDates(orgName: string): Promise<any[]> {
+    await this.addRequestDelay();
+
+    let data = await this.makeRequestWithRetry(async () => {
+      return (await this.octokit.paginate('GET /orgs/{org}/audit-log', {
+        org: orgName,
+        phrase: 'action:org.add_member',
+        include: 'web',
+        per_page: 100,
+        order: 'desc',
+        headers: {
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      })) as Array<any>;
+    });
+
+    console.log(`Fetched ${data.length} raw audit log events for member additions from ${orgName}`);
+
+    return data; // Return completely raw data
+  }
+
+  /**
    * Search for commits by author and organization
    */
   async searchCommits(author: string, orgName: string): Promise<Commit[]> {

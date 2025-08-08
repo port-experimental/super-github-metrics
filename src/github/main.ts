@@ -534,12 +534,12 @@ async function main() {
           console.log('='.repeat(80));
 
           let totalEvents = 0;
-          const allEvents: AuditLogEntry[] = [];
+          const allEvents: any[] = [];
 
           for (const orgName of GITHUB_ORGS) {
             try {
               console.log(`\n📋 Fetching audit logs for organization: ${orgName}`);
-              const orgEvents = await githubClient.getMemberAddDates(orgName);
+              const orgEvents = await githubClient.getRawMemberAddDates(orgName);
               
               console.log(`Found ${orgEvents.length} user addition events in ${orgName}`);
               
@@ -548,10 +548,8 @@ async function main() {
                 console.log('-'.repeat(60));
                 
                 orgEvents.forEach((event, index) => {
-                  console.log(`${index + 1}. User: ${event.user}`);
-                  console.log(`   User ID: ${event.user_id}`);
-                  console.log(`   Added on: ${event.created_at}`);
-                  console.log(`   Organization: ${event.org}`);
+                  console.log(`${index + 1}. RAW EVENT DATA:`);
+                  console.log(JSON.stringify(event, null, 2));
                   console.log('');
                 });
               } else {
@@ -583,7 +581,8 @@ async function main() {
             
             console.log('\n📅 Events by date:');
             const eventsByDate = allEvents.reduce((acc, event) => {
-              const date = event.created_at.split('T')[0]; // Get just the date part
+              const timestamp = event['@timestamp'] || event.created_at;
+              const date = timestamp ? timestamp.split('T')[0] : 'unknown'; // Get just the date part
               acc[date] = (acc[date] || 0) + 1;
               return acc;
             }, {} as Record<string, number>);
@@ -598,6 +597,13 @@ async function main() {
             Array.from(uniqueUsers).sort().forEach((user, index) => {
               console.log(`   ${index + 1}. ${user}`);
             });
+
+            console.log('\n🔍 Sample of available fields in raw data:');
+            if (allEvents.length > 0) {
+              const sampleEvent = allEvents[0];
+              const fields = Object.keys(sampleEvent).sort();
+              console.log(`   Available fields: ${fields.join(', ')}`);
+            }
           }
 
         } catch (error) {

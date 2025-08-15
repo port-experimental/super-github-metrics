@@ -380,11 +380,10 @@ export async function storeServiceMetricsEntities(entities: ServiceMetricsEntity
  */
 export async function calculateAndStoreTimeSeriesServiceMetrics(
   repos: Repository[],
-  config: GitHubAppConfig,
   periodType: 'daily' | 'weekly' | 'monthly' = 'daily',
-  daysBack: number = 90
+  daysBack: number = 90,
+  githubClient: GitHubClient
 ): Promise<void> {
-  const githubClient = createGitHubClient(config);
   let hasFatalError = false;
   const failedRepos: string[] = [];
   const allEntities: ServiceMetricsEntity[] = [];

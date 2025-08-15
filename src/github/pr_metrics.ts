@@ -177,9 +177,8 @@ function calculateAggregatedMetrics(prMetrics: PRMetrics[], period: number): Agg
 
 export async function calculateAndStorePRMetrics(
   repos: Repository[],
-  config: GitHubAppConfig
+  githubClient: GitHubClient
 ): Promise<void> {
-  const githubClient = createGitHubClient(config);
   let hasFatalError = false;
   const failedRepos: string[] = [];
   const allEntities: PortEntity[] = [];

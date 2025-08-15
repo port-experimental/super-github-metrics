@@ -45,10 +45,9 @@ interface WorkflowRun {
 
 export async function getWorkflowMetrics(
   repos: GitHubRepository[] | Repository[],
-  config: GitHubAppConfig
+  githubClient: GitHubClient
 ): Promise<RepositoryWorkflowMetrics[]> {
   const workflowMetrics: RepositoryWorkflowMetrics[] = [];
-  const githubClient = createGitHubClient(config);
   let hasFatalError = false;
   const failedRepos: string[] = [];
   const allEntities: PortEntity[] = [];

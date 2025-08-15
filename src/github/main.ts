@@ -72,6 +72,10 @@ async function main() {
       );
     }
 
+    // Initialize GitHub client once
+    console.log('Initializing GitHub client...');
+    const githubClient = createGitHubClient();
+
     const program = new Command();
 
     program.name('github-sync').description('CLI to pull metrics from GitHub to Port');
@@ -84,26 +88,19 @@ async function main() {
 
         try {
           console.log('Calculating onboarding metrics...');
-          console.log('Step 1: Creating GitHub client...');
-          const githubClient = createGitHubClient({
-            appId: GITHUB_APP_ID,
-            privateKey: GITHUB_APP_PRIVATE_KEY,
-            installationId: GITHUB_APP_INSTALLATION_ID,
-          });
-          
-          console.log('Step 2: Checking rate limits...');
+          console.log('Step 1: Checking rate limits...');
           await githubClient.checkRateLimits();
-          
-          console.log('Step 3: Fetching GitHub users from Port...');
+
+          console.log('Step 2: Fetching GitHub users from Port...');
           const githubUsers = await getEntities('githubUser');
           console.log(`Found ${githubUsers.entities.length} github users in Port`);
 
           let joinRecords: AuditLogEntry[] = [];
           // Try fetch join dates from the audit log for each organization concurrently
           try {
-            console.log('Step 4: Fetching member join dates from organization audit logs...');
+            console.log('Step 3: Fetching member join dates from organization audit logs...');
             console.log(`Organizations to process: ${GITHUB_ORGS.join(', ')}`);
-            
+
             const auditLogPromises = GITHUB_ORGS.map(async (orgName) => {
               console.log(`Fetching audit logs for organization: ${orgName}`);
               try {
@@ -144,7 +141,7 @@ async function main() {
             usersToProcess = githubUsers.entities;
           } else {
             // Only go over users without complete onboarding metrics in Port
-            console.log('Step 5: Filtering users without complete onboarding metrics...');
+            console.log('Step 4: Filtering users without complete onboarding metrics...');
             usersToProcess = githubUsers.entities.filter(
               (user: PortEntity) => !hasCompleteOnboardingMetrics(user)
             );
@@ -163,13 +160,17 @@ async function main() {
             const batch = usersToProcess.slice(i, i + BATCH_SIZE);
             const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
             const totalBatches = Math.ceil(usersToProcess.length / BATCH_SIZE);
-            console.log(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} users) - ${Math.round((i / usersToProcess.length) * 100)}% complete`);
+            console.log(
+              `Processing batch ${batchNumber}/${totalBatches} (${batch.length} users) - ${Math.round((i / usersToProcess.length) * 100)}% complete`
+            );
 
             // Process batch concurrently
             const batchPromises = batch.map(async (user, batchIndex) => {
               const userIndex = i + batchIndex;
-              console.log(`Processing developer ${userIndex + 1} of ${usersToProcess.length}: ${user.identifier}`);
-              
+              console.log(
+                `Processing developer ${userIndex + 1} of ${usersToProcess.length}: ${user.identifier}`
+              );
+
               try {
                 // Ensure user has required properties
                 if (!user.identifier) {
@@ -196,13 +197,9 @@ async function main() {
 
                 await calculateAndStoreDeveloperStats(
                   GITHUB_ORGS,
-                  {
-                    appId: GITHUB_APP_ID,
-                    privateKey: GITHUB_APP_PRIVATE_KEY,
-                    installationId: GITHUB_APP_INSTALLATION_ID,
-                  },
                   githubUser,
-                  joinDate
+                  joinDate,
+                  githubClient
                 );
 
                 console.log(`Successfully processed ${user.identifier}`);
@@ -216,9 +213,9 @@ async function main() {
 
             // Wait for batch to complete
             const batchResults = await Promise.all(batchPromises);
-            
+
             // Process batch results
-            batchResults.forEach(result => {
+            batchResults.forEach((result) => {
               if (result.success) {
                 processedCount++;
               } else {
@@ -229,12 +226,14 @@ async function main() {
               }
             });
 
-            console.log(`Batch ${batchNumber}/${totalBatches} completed. Progress: ${processedCount + errorCount}/${usersToProcess.length} users processed (${Math.round(((processedCount + errorCount) / usersToProcess.length) * 100)}% complete)`);
-            
+            console.log(
+              `Batch ${batchNumber}/${totalBatches} completed. Progress: ${processedCount + errorCount}/${usersToProcess.length} users processed (${Math.round(((processedCount + errorCount) / usersToProcess.length) * 100)}% complete)`
+            );
+
             // Add a small delay between batches to be conservative with rate limits
             if (i + BATCH_SIZE < usersToProcess.length) {
               console.log('Waiting 15 seconds before next batch...');
-              await new Promise(resolve => setTimeout(resolve, 15000));
+              await new Promise((resolve) => setTimeout(resolve, 15000));
             }
           }
 
@@ -281,22 +280,13 @@ async function main() {
 
         try {
           console.log('Calculating PR metrics...');
-          const githubClient = createGitHubClient({
-            appId: GITHUB_APP_ID,
-            privateKey: GITHUB_APP_PRIVATE_KEY,
-            installationId: GITHUB_APP_INSTALLATION_ID,
-          });
           await githubClient.checkRateLimits();
 
           // Process organizations concurrently
           const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-                await calculateAndStorePRMetrics(repos, {
-                  appId: GITHUB_APP_ID,
-                  privateKey: GITHUB_APP_PRIVATE_KEY,
-                  installationId: GITHUB_APP_INSTALLATION_ID,
-                });
+                await calculateAndStorePRMetrics(repos, githubClient);
               });
               return { success: true, orgName };
             } catch (error) {
@@ -339,11 +329,6 @@ async function main() {
 
         try {
           console.log('Calculating Workflows metrics...');
-          const githubClient = createGitHubClient({
-            appId: GITHUB_APP_ID,
-            privateKey: GITHUB_APP_PRIVATE_KEY,
-            installationId: GITHUB_APP_INSTALLATION_ID,
-          });
           await githubClient.checkRateLimits();
           const portClient = await PortClient.getInstance();
 
@@ -394,22 +379,13 @@ async function main() {
 
         try {
           console.log('Calculating Service metrics...');
-          const githubClient = createGitHubClient({
-            appId: GITHUB_APP_ID,
-            privateKey: GITHUB_APP_PRIVATE_KEY,
-            installationId: GITHUB_APP_INSTALLATION_ID,
-          });
           await githubClient.checkRateLimits();
 
           // Process organizations concurrently
           const orgPromises = GITHUB_ORGS.map(async (orgName) => {
             try {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
-                await calculateAndStoreServiceMetrics(repos, {
-                  appId: GITHUB_APP_ID,
-                  privateKey: GITHUB_APP_PRIVATE_KEY,
-                  installationId: GITHUB_APP_INSTALLATION_ID,
-                });
+                await calculateAndStoreServiceMetrics(repos, githubClient);
               });
               return { success: true, orgName };
             } catch (error) {
@@ -454,11 +430,6 @@ async function main() {
 
         try {
           console.log('Calculating Time-Series Service metrics...');
-          const githubClient = createGitHubClient({
-            appId: GITHUB_APP_ID,
-            privateKey: GITHUB_APP_PRIVATE_KEY,
-            installationId: GITHUB_APP_INSTALLATION_ID,
-          });
           await githubClient.checkRateLimits();
 
           const periodType = options.periodType as 'daily' | 'weekly' | 'monthly';
@@ -472,13 +443,9 @@ async function main() {
               await processOrganizationRepositories(githubClient, orgName, async (repos) => {
                 await calculateAndStoreTimeSeriesServiceMetrics(
                   repos,
-                  {
-                    appId: GITHUB_APP_ID,
-                    privateKey: GITHUB_APP_PRIVATE_KEY,
-                    installationId: GITHUB_APP_INSTALLATION_ID,
-                  },
                   periodType,
-                  daysBack
+                  daysBack,
+                  githubClient
                 );
               });
               return { success: true, orgName };
@@ -523,11 +490,6 @@ async function main() {
 
         try {
           console.log('Fetching user addition events from organization audit logs...');
-          const githubClient = createGitHubClient({
-            appId: GITHUB_APP_ID,
-            privateKey: GITHUB_APP_PRIVATE_KEY,
-            installationId: GITHUB_APP_INSTALLATION_ID,
-          });
           await githubClient.checkRateLimits();
 
           console.log(`Organizations to query: ${GITHUB_ORGS.join(', ')}`);
@@ -540,13 +502,13 @@ async function main() {
             try {
               console.log(`\n📋 Fetching audit logs for organization: ${orgName}`);
               const orgEvents = await githubClient.getRawMemberAddDates(orgName);
-              
+
               console.log(`Found ${orgEvents.length} user addition events in ${orgName}`);
-              
+
               if (orgEvents.length > 0) {
                 console.log(`\n👥 User addition events for ${orgName}:`);
                 console.log('-'.repeat(60));
-                
+
                 orgEvents.forEach((event, index) => {
                   console.log(`${index + 1}. RAW EVENT DATA:`);
                   console.log(JSON.stringify(event, null, 2));
@@ -558,12 +520,11 @@ async function main() {
 
               allEvents.push(...orgEvents);
               totalEvents += orgEvents.length;
-
             } catch (error) {
               if (error instanceof Error && 'status' in error && error.status === 403) {
                 console.log(`❌ Insufficient permissions to query audit log for ${orgName}`);
                 console.log('   Make sure the GitHub App has "Administration" read permissions');
-                console.log("Original error:", error);
+                console.log('Original error:', error);
               } else {
                 console.error(`❌ Error fetching audit logs for ${orgName}:`, error);
               }
@@ -575,19 +536,22 @@ async function main() {
           console.log('='.repeat(80));
           console.log(`Total organizations queried: ${GITHUB_ORGS.length}`);
           console.log(`Total user addition events found: ${totalEvents}`);
-          
+
           if (allEvents.length > 0) {
-            const uniqueUsers = new Set(allEvents.map(event => event.user));
+            const uniqueUsers = new Set(allEvents.map((event) => event.user));
             console.log(`Unique users found: ${uniqueUsers.size}`);
-            
+
             console.log('\n📅 Events by date:');
-            const eventsByDate = allEvents.reduce((acc, event) => {
-              const timestamp = event['@timestamp'] || event.created_at;
-              const date = timestamp ? timestamp.split('T')[0] : 'unknown'; // Get just the date part
-              acc[date] = (acc[date] || 0) + 1;
-              return acc;
-            }, {} as Record<string, number>);
-            
+            const eventsByDate = allEvents.reduce(
+              (acc, event) => {
+                const timestamp = event['@timestamp'] || event.created_at;
+                const date = timestamp ? timestamp.split('T')[0] : 'unknown'; // Get just the date part
+                acc[date] = (acc[date] || 0) + 1;
+                return acc;
+              },
+              {} as Record<string, number>
+            );
+
             Object.entries(eventsByDate)
               .sort(([a], [b]) => a.localeCompare(b))
               .forEach(([date, count]) => {
@@ -595,9 +559,11 @@ async function main() {
               });
 
             console.log('\n👤 All unique users:');
-            Array.from(uniqueUsers).sort().forEach((user, index) => {
-              console.log(`   ${index + 1}. ${user}`);
-            });
+            Array.from(uniqueUsers)
+              .sort()
+              .forEach((user, index) => {
+                console.log(`   ${index + 1}. ${user}`);
+              });
 
             console.log('\n🔍 Sample of available fields in raw data:');
             if (allEvents.length > 0) {
@@ -606,7 +572,6 @@ async function main() {
               console.log(`   Available fields: ${fields.join(', ')}`);
             }
           }
-
         } catch (error) {
           if (error instanceof FatalError) {
             hasFatalError = true;

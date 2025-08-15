@@ -35,7 +35,7 @@ const config: Config.InitialOptions = {
   testTimeout: 30000,
   verbose: true,
   transformIgnorePatterns: [
-    'node_modules/(?!(@octokit/rest|@octokit/core|@octokit/types|@octokit/request|@octokit/auth-token)/)',
+    'node_modules/(?!(@octokit/rest|@octokit/core|@octokit/types|@octokit/request|@octokit/auth-token|@octokit/auth-app|@octokit/auth-oauth-app|universal-user-agent)/)',
   ],
   extensionsToTreatAsEsm: [],
   globals: {

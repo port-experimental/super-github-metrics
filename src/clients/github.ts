@@ -11,6 +11,15 @@ import type {
 } from '../types/github';
 
 /**
+ * Base class for GitHub authentication methods
+ */
+export abstract class GitHubAuth {
+  abstract getToken(): Promise<string>;
+  abstract isTokenValid(): boolean;
+  abstract getOctokit(): Promise<Octokit>;
+}
+
+/**
  * GitHub App authentication configuration
  */
 interface GitHubAppConfig {
@@ -20,9 +29,16 @@ interface GitHubAppConfig {
 }
 
 /**
- * Manages GitHub App authentication and token generation
+ * Personal Access Token authentication configuration
  */
-export class GitHubAppAuthManager {
+interface PATConfig {
+  token: string;
+}
+
+/**
+ * GitHub App authentication implementation
+ */
+export class GitHubAppAuth extends GitHubAuth {
   private appId: string;
   private privateKey: string;
   private installationId: string;
@@ -30,6 +46,7 @@ export class GitHubAppAuthManager {
   private tokenExpiry: Date | null = null;
 
   constructor(config: GitHubAppConfig) {
+    super();
     this.appId = config.appId;
     this.privateKey = config.privateKey;
     this.installationId = config.installationId;
@@ -38,7 +55,7 @@ export class GitHubAppAuthManager {
   /**
    * Get a valid installation access token
    */
-  async getInstallationToken(): Promise<string> {
+  async getToken(): Promise<string> {
     // Check if current token is still valid (with 5 minute buffer)
     if (
       this.currentToken &&
@@ -81,33 +98,93 @@ export class GitHubAppAuthManager {
       this.tokenExpiry.getTime() > Date.now() + 5 * 60 * 1000
     );
   }
+
+  /**
+   * Get Octokit instance with valid token
+   */
+  async getOctokit(): Promise<Octokit> {
+    const token = await this.getToken();
+    return new Octokit({ auth: token });
+  }
+}
+
+/**
+ * Personal Access Token authentication implementation
+ */
+export class PATAuth extends GitHubAuth {
+  private token: string;
+
+  constructor(config: PATConfig) {
+    super();
+    this.token = config.token;
+  }
+
+  /**
+   * Get the PAT token
+   */
+  async getToken(): Promise<string> {
+    return this.token;
+  }
+
+  /**
+   * Check if token is valid (always true for PATs as we can't check expiry)
+   */
+  isTokenValid(): boolean {
+    return !!this.token;
+  }
+
+  /**
+   * Get Octokit instance with PAT
+   */
+  async getOctokit(): Promise<Octokit> {
+    return new Octokit({ auth: this.token });
+  }
+}
+
+/**
+ * Factory function to create the appropriate authentication method
+ */
+export function createGitHubAuth(): GitHubAuth {
+  // Check for GitHub App configuration first (preferred method)
+  const appId = process.env.X_GITHUB_APP_ID;
+  const privateKey = process.env.X_GITHUB_APP_PRIVATE_KEY;
+  const installationId = process.env.X_GITHUB_APP_INSTALLATION_ID;
+
+  if (appId && privateKey && installationId) {
+    console.log('Using GitHub App authentication');
+    return new GitHubAppAuth({
+      appId,
+      privateKey,
+      installationId,
+    });
+  }
+
+  // Fall back to PAT authentication
+  const patToken = process.env.X_GITHUB_TOKEN;
+  if (patToken) {
+    console.log('Using Personal Access Token authentication');
+    return new PATAuth({ token: patToken });
+  }
+
+  throw new Error(
+    'No GitHub authentication configured. Please set either GitHub App credentials (X_GITHUB_APP_ID, X_GITHUB_APP_PRIVATE_KEY, X_GITHUB_APP_INSTALLATION_ID) or Personal Access Token (X_GITHUB_TOKEN)'
+  );
 }
 
 export class GitHubClient {
-  private octokit: Octokit;
-  private authManager: GitHubAppAuthManager;
+  private octokit: Octokit | null = null;
+  private auth: GitHubAuth;
 
-  constructor(config: GitHubAppConfig) {
-    this.authManager = new GitHubAppAuthManager(config);
-    // Initialize with a placeholder token, will be updated on first request
-    this.octokit = new Octokit({ auth: 'placeholder' });
+  constructor(auth: GitHubAuth) {
+    this.auth = auth;
   }
 
   /**
-   * Update the Octokit instance with a new token
+   * Ensure we have a valid Octokit instance
    */
-  private async updateOctokitToken(): Promise<void> {
-    const token = await this.authManager.getInstallationToken();
-    this.octokit = new Octokit({ auth: token });
-  }
-
-  /**
-   * Ensure we have a valid token before making requests
-   */
-  private async ensureValidToken(): Promise<void> {
-    if (!this.authManager.isTokenValid()) {
-      console.log('Token expired, refreshing GitHub App installation access token...');
-      await this.updateOctokitToken();
+  private async ensureValidOctokit(): Promise<void> {
+    if (!this.octokit || !this.auth.isTokenValid()) {
+      this.octokit = await this.auth.getOctokit();
     }
   }
 
@@ -120,7 +197,9 @@ export class GitHubClient {
     resetTime: Date;
     secondsUntilReset: number;
   }> {
-    await this.ensureValidToken();
+    await this.ensureValidOctokit();
+    if (!this.octokit) throw new Error('Octokit not initialized');
+
     // Call rate limit endpoint directly to avoid recursion
     const resp = await this.octokit.rateLimit.get();
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
@@ -142,7 +221,9 @@ export class GitHubClient {
    * Check rate limits and handle token refresh if needed
    */
   async checkRateLimits(): Promise<void> {
-    await this.ensureValidToken();
+    await this.ensureValidOctokit();
+    if (!this.octokit) throw new Error('Octokit not initialized');
+
     // Call rate limit endpoint directly to avoid recursion with makeRequestWithRetry
     const resp = await this.octokit.rateLimit.get();
     const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
@@ -151,7 +232,9 @@ export class GitHubClient {
     const currentEpochSeconds = Math.floor(Date.now() / 1000);
     const secondsUntilReset = Math.max(0, resetEpochSeconds - currentEpochSeconds);
 
-    console.log(`Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`);
+    console.log(
+      `Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`
+    );
 
     if (remaining <= 0) {
       console.log(`Rate limit exceeded. Waiting ${secondsUntilReset} seconds until reset...`);
@@ -166,16 +249,14 @@ export class GitHubClient {
       await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
     } else if (remaining <= 25) {
       // Very low rate limit - add significant delay
-      console.log(
-        `Rate limit very low (${remaining} requests left). Adding 10 second delay...`
-      );
+      console.log(`Rate limit very low (${remaining} requests left). Adding 10 second delay...`);
       await new Promise((resolve) => setTimeout(resolve, 10000)); // 10 second delay
     } else if (remaining <= 100) {
       // Getting low - add small delay
       console.log(`Rate limit getting low (${remaining} requests left). Adding 2 second delay...`);
       await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
     }
-    // For remaining > 100, no delay needed - GitHub Apps have 5000/hour limit
+    // For remaining > 100, no delay needed - GitHub Apps have 5000/hour limit, PATs have 5000/hour limit
   }
 
   /**
@@ -186,8 +267,8 @@ export class GitHubClient {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        // Ensure we have a valid token before making request
-        await this.ensureValidToken();
+        // Ensure we have a valid Octokit instance before making request
+        await this.ensureValidOctokit();
         // Check rate limits before making request
         await this.checkRateLimits();
         return await requestFn();
@@ -261,14 +342,15 @@ export class GitHubClient {
 
     while (hasMore) {
       await this.addRequestDelay();
-      const { data: orgRepos } = await this.makeRequestWithRetry(() =>
-        this.octokit.repos.listForOrg({
+      const { data: orgRepos } = await this.makeRequestWithRetry(() => {
+        if (!this.octokit) throw new Error('Octokit not initialized');
+        return this.octokit.repos.listForOrg({
           org: orgName,
           sort: 'pushed', // default = direction: desc
           per_page: 100,
           page: page,
-        })
-      );
+        });
+      });
 
       allRepos.push(...orgRepos);
       console.log(`Fetched ${orgRepos.length} repos from ${orgName} (page ${page})`);
@@ -288,6 +370,7 @@ export class GitHubClient {
     await this.addRequestDelay();
 
     let data = await this.makeRequestWithRetry(async () => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
       return (await this.octokit.paginate('GET /orgs/{org}/audit-log', {
         org: orgName,
         phrase: 'action:org.add_member',
@@ -323,6 +406,7 @@ export class GitHubClient {
     await this.addRequestDelay();
 
     let data = await this.makeRequestWithRetry(async () => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
       return (await this.octokit.paginate('GET /orgs/{org}/audit-log', {
         org: orgName,
         phrase: 'action:org.add_member',
@@ -360,8 +444,9 @@ export class GitHubClient {
     // Construct search query with actual search text
     const searchQuery = `${author} author:${author} org:${orgName} sort:committer-date-asc`;
 
-    const { data: commits } = await this.makeRequestWithRetry(() =>
-      this.octokit.request('GET /search/commits ', {
+    const { data: commits } = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.request('GET /search/commits ', {
         q: searchQuery,
         advanced_search: true,
         per_page: 10,
@@ -370,8 +455,8 @@ export class GitHubClient {
           'If-None-Match': '', // Bypass cache to avoid stale results
           Accept: 'application/vnd.github.v3+json', // Specify API version
         },
-      })
-    );
+      });
+    });
 
     return commits.items;
   }
@@ -396,14 +481,15 @@ export class GitHubClient {
     // Construct search query with actual search text
     const searchQuery = `${author} author:${author} org:${orgName} is:pr`;
 
-    const { data: pulls } = await this.makeRequestWithRetry(() =>
-      this.octokit.search.issuesAndPullRequests({
+    const { data: pulls } = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.search.issuesAndPullRequests({
         q: searchQuery,
         per_page: 100,
         sort: 'created',
         order: 'desc',
-      })
-    );
+      });
+    });
 
     return pulls.items.map((pull) => ({
       id: pull.id,
@@ -437,14 +523,15 @@ export class GitHubClient {
     } = {}
   ): Promise<Commit[]> {
     await this.addRequestDelay();
-    const { data: commits } = await this.makeRequestWithRetry(() =>
-      this.octokit.rest.repos.listCommits({
+    const { data: commits } = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.rest.repos.listCommits({
         owner,
         repo,
         per_page: options.per_page || 100,
         page: options.page || 1,
-      })
-    );
+      });
+    });
 
     return commits;
   }
@@ -466,8 +553,9 @@ export class GitHubClient {
     await this.addRequestDelay();
 
     try {
-      const { data: prs } = await this.makeRequestWithRetry(() =>
-        this.octokit.rest.pulls.list({
+      const { data: prs } = await this.makeRequestWithRetry(() => {
+        if (!this.octokit) throw new Error('Octokit not initialized');
+        return this.octokit.rest.pulls.list({
           owner,
           repo,
           state: options.state || 'closed',
@@ -475,8 +563,8 @@ export class GitHubClient {
           direction: options.direction || 'desc',
           per_page: options.per_page || 100,
           page: options.page || 1,
-        })
-      );
+        });
+      });
 
       return prs;
     } catch (error: any) {
@@ -508,13 +596,14 @@ export class GitHubClient {
    */
   async getPullRequest(owner: string, repo: string, pullNumber: number): Promise<PullRequest> {
     await this.addRequestDelay();
-    const { data: prData } = await this.makeRequestWithRetry(() =>
-      this.octokit.rest.pulls.get({
+    const { data: prData } = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.rest.pulls.get({
         owner,
         repo,
         pull_number: pullNumber,
-      })
-    );
+      });
+    });
 
     return prData;
   }
@@ -528,13 +617,14 @@ export class GitHubClient {
     pullNumber: number
   ): Promise<PullRequestReview[]> {
     await this.addRequestDelay();
-    const { data: reviews } = await this.makeRequestWithRetry(() =>
-      this.octokit.rest.pulls.listReviews({
+    const { data: reviews } = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.rest.pulls.listReviews({
         owner,
         repo,
         pull_number: pullNumber,
-      })
-    );
+      });
+    });
 
     return reviews;
   }
@@ -544,13 +634,14 @@ export class GitHubClient {
    */
   async getPullRequestCommits(owner: string, repo: string, pullNumber: number): Promise<Commit[]> {
     await this.addRequestDelay();
-    const response = await this.makeRequestWithRetry(() =>
-      this.octokit.pulls.listCommits({
+    const response = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.pulls.listCommits({
         owner,
         repo,
         pull_number: pullNumber,
-      })
-    );
+      });
+    });
 
     return response.data;
   }
@@ -562,8 +653,9 @@ export class GitHubClient {
     await this.addRequestDelay();
     const {
       data: { workflow_runs: runs },
-    } = await this.makeRequestWithRetry(() =>
-      this.octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
+    } = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
         owner,
         repo,
         branch: branch,
@@ -571,8 +663,8 @@ export class GitHubClient {
         headers: {
           'X-GitHub-Api-Version': '2022-11-28',
         },
-      })
-    );
+      });
+    });
 
     return runs;
   }
@@ -594,13 +686,14 @@ export class GitHubClient {
     { id: number; number: number; created_at: string; user?: { login: string } | null }[]
   > {
     await this.addRequestDelay();
-    const { data: issues } = await this.makeRequestWithRetry(() =>
-      this.octokit.issues.listForRepo({
+    const { data: issues } = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.issues.listForRepo({
         owner,
         repo,
         ...options,
-      })
-    );
+      });
+    });
 
     return issues.map((issue) => ({
       id: issue.id,
@@ -619,13 +712,14 @@ export class GitHubClient {
     issueNumber: number
   ): Promise<{ id: number; created_at: string; user?: { login: string } | null }[]> {
     await this.addRequestDelay();
-    const { data: comments } = await this.makeRequestWithRetry(() =>
-      this.octokit.issues.listComments({
+    const { data: comments } = await this.makeRequestWithRetry(() => {
+      if (!this.octokit) throw new Error('Octokit not initialized');
+      return this.octokit.issues.listComments({
         owner,
         repo,
         issue_number: issueNumber,
-      })
-    );
+      });
+    });
 
     return comments.map((comment) => ({
       id: comment.id,
@@ -636,9 +730,9 @@ export class GitHubClient {
 }
 
 /**
- * Factory function to create a GitHub client instance using GitHub App authentication
+ * Factory function to create a GitHub client instance using automatic authentication detection
  */
-export function createGitHubClient(config: GitHubAppConfig): GitHubClient {
-  console.log('Initializing GitHub client with GitHub App authentication');
-  return new GitHubClient(config);
+export function createGitHubClient(): GitHubClient {
+  const auth = createGitHubAuth();
+  return new GitHubClient(auth);
 }

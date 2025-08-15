@@ -556,9 +556,8 @@ export async function processRepositoryServiceMetrics(
  */
 export async function calculateAndStoreServiceMetrics(
   repos: Repository[],
-  config: GitHubAppConfig
+  githubClient: GitHubClient
 ): Promise<void> {
-  const githubClient = createGitHubClient(config);
   let hasFatalError = false;
   const failedRepos: string[] = [];
   const allEntities: PortEntity[] = [];

@@ -1,5 +1,5 @@
 import _ from 'lodash';
-import { createGitHubClient } from '../clients/github';
+import { createGitHubClient, GitHubClient } from '../clients/github';
 import { createEntitiesInBatches } from '../clients/port';
 import type {
   GitHubCommit,
@@ -27,20 +27,18 @@ interface DeveloperStats {
 
 export async function getMemberAddDates(
   orgName: string,
-  config: GitHubAppConfig
+  githubClient: GitHubClient
 ): Promise<MemberJoinRecord[]> {
-  const githubClient = createGitHubClient(config);
   return await githubClient.getMemberAddDates(orgName);
 }
 
 export async function calculateAndStoreDeveloperStats(
   orgNames: string[],
-  config: GitHubAppConfig,
   user: GitHubUser,
   joinDate: string,
-  githubClient?: any
+  githubClient: GitHubClient
 ): Promise<PortEntity | null> {
-  const stats = await getDeveloperStats(orgNames, config, user.identifier, joinDate, githubClient);
+  const stats = await getDeveloperStats(orgNames, user.identifier, joinDate, githubClient);
   const record = stats.find((rec) => rec.login === user.identifier);
   if (!record) {
     console.log(`No record found for ${user.identifier}, unprocessable, skipping...`);
@@ -52,20 +50,21 @@ export async function calculateAndStoreDeveloperStats(
 
 export async function getDeveloperStats(
   orgNames: string[],
-  config: GitHubAppConfig,
   login: string,
   joinDate: string,
-  githubClient?: any
+  githubClient: GitHubClient
 ): Promise<DeveloperStats[]> {
-  const client = githubClient || createGitHubClient(config);
-  console.log('Using client:', client === githubClient ? 'injected client' : 'created client');
+  console.log(
+    'Using client:',
+    githubClient === githubClient ? 'injected client' : 'created client'
+  );
   const stats: DeveloperStats[] = [];
 
   try {
     console.log(`Getting stats for ${login}`);
 
     // Log rate limit status at the start
-    const rateLimitStatus = await client.getRateLimitStatus();
+    const rateLimitStatus = await githubClient.getRateLimitStatus();
     console.log(
       `Rate limit status: ${rateLimitStatus.remaining}/${rateLimitStatus.limit} requests remaining, resets in ${rateLimitStatus.secondsUntilReset} seconds`
     );
@@ -84,9 +83,9 @@ export async function getDeveloperStats(
       try {
         // Run all API calls for this org concurrently
         const [commits, pulls, reviews] = await Promise.all([
-          client.searchCommits(login, orgName),
-          client.searchPullRequests(login, orgName),
-          client.searchReviews(login, orgName),
+          githubClient.searchCommits(login, orgName),
+          githubClient.searchPullRequests(login, orgName),
+          githubClient.searchReviews(login, orgName),
         ]);
 
         console.log(

@@ -477,16 +477,33 @@ export async function createEntitiesInBatches(
       const result = await createBulkEntities(blueprint, batch);
       results.push(result);
 
-      // Log results
+      // Log results - check both entities array and errors array
       const successful = result.entities.filter((r) => r.created).length;
-      const failed = result.entities.filter((r) => !r.created).length;
-      console.log(`Batch completed: ${successful} successful, ${failed} failed`);
+      const failedFromEntities = result.entities.filter((r) => !r.created).length;
+      const failedFromErrors = result.errors ? result.errors.length : 0;
+      const totalFailed = failedFromEntities + failedFromErrors;
+      
+      console.log(`Batch completed: ${successful} successful, ${totalFailed} failed`);
 
-      if (failed > 0) {
-        const failedIdentifiers = result.entities
+      if (totalFailed > 0) {
+        // Collect failed identifiers from both sources
+        const failedFromEntitiesIdentifiers = result.entities
           .filter((r) => !r.created)
           .map((r) => r.identifier);
-        console.warn(`Failed entities in batch: ${failedIdentifiers.join(', ')}`);
+        const failedFromErrorsIdentifiers = result.errors 
+          ? result.errors.map((e) => e.identifier)
+          : [];
+        const allFailedIdentifiers = [...failedFromEntitiesIdentifiers, ...failedFromErrorsIdentifiers];
+        
+        console.warn(`Failed entities in batch: ${allFailedIdentifiers.join(', ')}`);
+        
+        // Log error details if available
+        if (result.errors && result.errors.length > 0) {
+          console.warn('Error details:');
+          result.errors.forEach((error) => {
+            console.warn(`  - ${error.identifier}: ${error.message} (${error.statusCode})`);
+          });
+        }
       }
     } catch (error) {
       console.error(

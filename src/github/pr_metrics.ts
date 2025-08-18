@@ -407,22 +407,41 @@ export async function storePRMetricsEntities(entities: PortEntity[]): Promise<vo
     console.log(`Storing ${entities.length} PR metrics entities using bulk ingestion...`);
     const results = await createEntitiesInBatches('githubPullRequest', entities);
 
-    // Aggregate results
+    // Aggregate results - check both entities array and errors array
     const totalSuccessful = results.reduce(
       (sum, result) => sum + result.entities.filter((r) => r.created).length,
       0
     );
     const totalFailed = results.reduce(
-      (sum, result) => sum + result.entities.filter((r) => !r.created).length,
+      (sum, result) => {
+        const failedFromEntities = result.entities.filter((r) => !r.created).length;
+        const failedFromErrors = result.errors ? result.errors.length : 0;
+        return sum + failedFromEntities + failedFromErrors;
+      },
       0
     );
 
     console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
 
     if (totalFailed > 0) {
-      const allFailed = results.flatMap((result) => result.entities.filter((r) => !r.created));
+      // Collect all failed entities from both sources
+      const allFailed = results.flatMap((result) => {
+        const failedFromEntities = result.entities.filter((r) => !r.created);
+        const failedFromErrors = result.errors || [];
+        return [...failedFromEntities, ...failedFromErrors];
+      });
+      
       const failedIdentifiers = allFailed.map((r) => r.identifier);
       console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
+      
+      // Log detailed error information
+      const errors = results.flatMap((result) => result.errors || []);
+      if (errors.length > 0) {
+        console.warn('Detailed error information:');
+        errors.forEach((error) => {
+          console.warn(`  - ${error.identifier}: ${error.message} (${error.statusCode})`);
+        });
+      }
     }
   } catch (error) {
     console.error(

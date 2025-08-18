@@ -109,47 +109,194 @@ export class GitHubAppAuth extends GitHubAuth {
 }
 
 /**
+ * Manages multiple Personal Access Tokens for rotation and rate limit optimization
+ */
+class PATTokenManager {
+  private tokens: string[];
+  private currentTokenIndex: number = 0;
+  private tokenRateLimits: Map<string, { remaining: number; reset: number }> = new Map();
+
+  constructor(tokens: string[]) {
+    this.tokens = tokens.filter(token => token.trim().length > 0);
+    if (this.tokens.length === 0) {
+      throw new Error('At least one valid PAT token is required');
+    }
+    
+    // Initialize rate limit tracking for all tokens
+    this.tokens.forEach(token => {
+      this.tokenRateLimits.set(token, { remaining: 5000, reset: Date.now() + 3600000 }); // Default values
+    });
+  }
+
+  /**
+   * Gets the best available token based on remaining rate limits
+   */
+  getBestToken(): string {
+    const now = Date.now();
+    let bestToken = this.tokens[0];
+    let maxRemaining = 0;
+
+    for (const [token, limits] of this.tokenRateLimits.entries()) {
+      // If token is reset, use it
+      if (limits.reset <= now) {
+        this.tokenRateLimits.set(token, { remaining: 5000, reset: now + 3600000 });
+        return token;
+      }
+
+      // Otherwise, find the token with the most remaining requests
+      if (limits.remaining > maxRemaining) {
+        maxRemaining = limits.remaining;
+        bestToken = token;
+      }
+    }
+
+    return bestToken;
+  }
+
+  /**
+   * Updates rate limit information for a specific token
+   */
+  updateRateLimits(token: string, remaining: number, reset: number): void {
+    this.tokenRateLimits.set(token, { remaining, reset });
+  }
+
+  /**
+   * Gets the next token in rotation (for when current token is exhausted)
+   */
+  getNextToken(): string {
+    this.currentTokenIndex = (this.currentTokenIndex + 1) % this.tokens.length;
+    return this.tokens[this.currentTokenIndex];
+  }
+
+  /**
+   * Gets all available tokens
+   */
+  getAllTokens(): string[] {
+    return [...this.tokens];
+  }
+
+  /**
+   * Gets the number of available tokens
+   */
+  getTokenCount(): number {
+    return this.tokens.length;
+  }
+
+  /**
+   * Checks if any token has remaining rate limit
+   */
+  hasAvailableTokens(): boolean {
+    const now = Date.now();
+    return this.tokens.some(token => {
+      const limits = this.tokenRateLimits.get(token);
+      if (!limits) return true;
+      return limits.reset <= now || limits.remaining > 0;
+    });
+  }
+
+  /**
+   * Gets rate limit status for all tokens
+   */
+  getRateLimitStatus(): Array<{ token: string; remaining: number; reset: Date }> {
+    const now = Date.now();
+    return this.tokens.map(token => {
+      const limits = this.tokenRateLimits.get(token) || { remaining: 5000, reset: now + 3600000 };
+      return {
+        token: token.substring(0, 8) + '...', // Show only first 8 chars for security
+        remaining: limits.reset <= now ? 5000 : limits.remaining,
+        reset: new Date(limits.reset)
+      };
+    });
+  }
+}
+
+/**
  * Personal Access Token authentication implementation
  */
 export class PATAuth extends GitHubAuth {
-  private token: string;
+  private tokenManager: PATTokenManager;
+  private currentOctokit: Octokit | null = null;
+  private currentToken: string | null = null;
 
-  constructor(config: PATConfig) {
+  constructor(tokens: string | string[]) {
     super();
-    this.token = config.token;
+    const tokenArray = Array.isArray(tokens) ? tokens : tokens.split(',').map(t => t.trim());
+    this.tokenManager = new PATTokenManager(tokenArray);
   }
 
-  /**
-   * Get the PAT token
-   */
   async getToken(): Promise<string> {
-    return this.token;
+    const token = this.tokenManager.getBestToken();
+    this.currentToken = token;
+    return token;
   }
 
-  /**
-   * Check if token is valid (always true for PATs as we can't check expiry)
-   */
   isTokenValid(): boolean {
-    return !!this.token;
+    return this.currentToken !== null && this.tokenManager.hasAvailableTokens();
+  }
+
+  async getOctokit(): Promise<Octokit> {
+    const token = await this.getToken();
+    
+    // Create new Octokit instance with the selected token
+    this.currentOctokit = new Octokit({
+      auth: token,
+      baseUrl: process.env.X_GITHUB_ENTERPRISE 
+        ? `https://${process.env.X_GITHUB_ENTERPRISE}/api/v3`
+        : 'https://api.github.com',
+    });
+
+    return this.currentOctokit;
   }
 
   /**
-   * Get Octokit instance with PAT
+   * Updates rate limits for the current token
    */
-  async getOctokit(): Promise<Octokit> {
-    return new Octokit({ auth: this.token });
+  updateRateLimits(remaining: number, reset: number): void {
+    if (this.currentToken) {
+      this.tokenManager.updateRateLimits(this.currentToken, remaining, reset);
+    }
   }
+
+  /**
+   * Rotates to the next available token
+   */
+  rotateToken(): void {
+    this.currentToken = this.tokenManager.getNextToken();
+    this.currentOctokit = null; // Force recreation of Octokit instance
+  }
+
+  /**
+   * Gets rate limit status for all tokens
+   */
+  getRateLimitStatus(): Array<{ token: string; remaining: number; reset: Date }> {
+    return this.tokenManager.getRateLimitStatus();
+  }
+
+  /**
+   * Gets the number of available tokens
+   */
+  getTokenCount(): number {
+    return this.tokenManager.getTokenCount();
+  }
+}
+
+interface GitHubAuthConfig {
+  appId?: string;
+  privateKey?: string;
+  installationId?: string;
+  patTokens?: string[];
 }
 
 /**
  * Factory function to create the appropriate authentication method
  */
-export function createGitHubAuth(): GitHubAuth {
+export function createGitHubAuth({
+  appId,
+  privateKey,
+  installationId,
+  patTokens,
+}: GitHubAuthConfig): GitHubAuth {
   // Check for GitHub App configuration first (preferred method)
-  const appId = process.env.X_GITHUB_APP_ID;
-  const privateKey = process.env.X_GITHUB_APP_PRIVATE_KEY;
-  const installationId = process.env.X_GITHUB_APP_INSTALLATION_ID;
-
   if (appId && privateKey && installationId) {
     console.log('Using GitHub App authentication');
     return new GitHubAppAuth({
@@ -160,10 +307,9 @@ export function createGitHubAuth(): GitHubAuth {
   }
 
   // Fall back to PAT authentication
-  const patToken = process.env.X_GITHUB_TOKEN;
-  if (patToken) {
+  if (patTokens) {
     console.log('Using Personal Access Token authentication');
-    return new PATAuth({ token: patToken });
+    return new PATAuth(patTokens);
   }
 
   throw new Error(
@@ -179,9 +325,6 @@ export class GitHubClient {
     this.auth = auth;
   }
 
-  /**
-   * Ensure we have a valid Octokit instance
-   */
   private async ensureValidOctokit(): Promise<void> {
     if (!this.octokit || !this.auth.isTokenValid()) {
       this.octokit = await this.auth.getOctokit();
@@ -189,139 +332,189 @@ export class GitHubClient {
   }
 
   /**
-   * Get current rate limit status for debugging
+   * Extract rate limit information from API response headers
    */
-  async getRateLimitStatus(): Promise<{
-    remaining: number;
-    limit: number;
-    resetTime: Date;
-    secondsUntilReset: number;
-  }> {
-    await this.ensureValidOctokit();
-    if (!this.octokit) throw new Error('Octokit not initialized');
-
-    // Call rate limit endpoint directly to avoid recursion
-    const resp = await this.octokit.rateLimit.get();
-    const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
-    const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
-    const resetEpochSeconds = Number.parseInt(resp.headers['x-ratelimit-reset'] || '0');
-    const currentEpochSeconds = Math.floor(Date.now() / 1000);
-    const secondsUntilReset = Math.max(0, resetEpochSeconds - currentEpochSeconds);
-    const resetTime = new Date(resetEpochSeconds * 1000);
-
-    return {
-      remaining,
-      limit,
-      resetTime,
-      secondsUntilReset,
-    };
-  }
-
-  /**
-   * Check rate limits and handle token refresh if needed
-   */
-  async checkRateLimits(): Promise<void> {
-    await this.ensureValidOctokit();
-    if (!this.octokit) throw new Error('Octokit not initialized');
-
-    // Call rate limit endpoint directly to avoid recursion with makeRequestWithRetry
-    const resp = await this.octokit.rateLimit.get();
-    const remaining = Number.parseInt(resp.headers['x-ratelimit-remaining'] || '0');
-    const limit = Number.parseInt(resp.headers['x-ratelimit-limit'] || '0');
-    const resetEpochSeconds = Number.parseInt(resp.headers['x-ratelimit-reset'] || '0');
-    const currentEpochSeconds = Math.floor(Date.now() / 1000);
-    const secondsUntilReset = Math.max(0, resetEpochSeconds - currentEpochSeconds);
-
-    console.log(
-      `Rate limit status: ${remaining}/${limit} requests remaining, reset in ${secondsUntilReset}s`
-    );
-
-    if (remaining <= 0) {
-      console.log(`Rate limit exceeded. Waiting ${secondsUntilReset} seconds until reset...`);
-      await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
-      console.log('Rate limit reset, continuing...');
-    } else if (remaining <= 5) {
-      // Almost exhausted - wait for reset
-      const waitTime = Math.min(secondsUntilReset, 120); // Wait up to 2 minutes or until reset
-      console.log(
-        `Rate limit almost exhausted (${remaining} requests left). Waiting ${waitTime} seconds until reset...`
-      );
-      await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
-    } else if (remaining <= 25) {
-      // Very low rate limit - add significant delay
-      console.log(`Rate limit very low (${remaining} requests left). Adding 10 second delay...`);
-      await new Promise((resolve) => setTimeout(resolve, 10000)); // 10 second delay
-    } else if (remaining <= 100) {
-      // Getting low - add small delay
-      console.log(`Rate limit getting low (${remaining} requests left). Adding 2 second delay...`);
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
+  private extractRateLimitInfo(response: any): { remaining: number; reset: number } | null {
+    if (!response || typeof response !== 'object') return null;
+    
+    // Check if response has headers property
+    const headers = response.headers || response.response?.headers;
+    if (!headers) return null;
+    
+    const remaining = headers['x-ratelimit-remaining'];
+    const reset = headers['x-ratelimit-reset'];
+    
+    if (remaining !== undefined && reset !== undefined) {
+      return {
+        remaining: parseInt(remaining, 10),
+        reset: parseInt(reset, 10) * 1000 // Convert to milliseconds
+      };
     }
-    // For remaining > 100, no delay needed - GitHub Apps have 5000/hour limit, PATs have 5000/hour limit
+    
+    return null;
   }
 
   /**
-   * Makes a GitHub API request with exponential backoff retry logic and rate limit handling
+   * Makes a request with automatic token rotation for PAT authentication
    */
-  async makeRequestWithRetry<T>(requestFn: () => Promise<T>, maxRetries: number = 3): Promise<T> {
-    let lastError: Error = new Error('Request failed after all retries');
+  private async makeRequestWithTokenRotation<T>(
+    requestFn: (octokit: Octokit) => Promise<T>
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    let attempts = 0;
+    const maxAttempts = this.auth instanceof PATAuth ? this.auth.getTokenCount() : 1;
+    const maxRetries = 3; // Maximum retries per token
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    while (attempts < maxAttempts) {
       try {
-        // Ensure we have a valid Octokit instance before making request
         await this.ensureValidOctokit();
-        // Check rate limits before making request
-        await this.checkRateLimits();
-        return await requestFn();
-      } catch (error: unknown) {
-        lastError = error as Error;
+        if (!this.octokit) {
+          throw new Error('Failed to create Octokit instance');
+        }
 
-        // For rate limit errors, wait for reset
-        const errorWithStatus = error as {
-          status?: number;
-          response?: { headers?: Record<string, string> };
-        };
-        if (errorWithStatus.status === 403 || errorWithStatus.status === 429) {
-          console.log(`Rate limit error (${errorWithStatus.status}) - waiting for reset...`);
-
-          // Extract reset time from error headers if available
-          let resetTime = errorWithStatus.response?.headers?.['x-ratelimit-reset'];
-          if (!resetTime && errorWithStatus.response?.headers?.['retry-after']) {
-            // Some APIs return retry-after header instead
-            const retryAfter = Number.parseInt(errorWithStatus.response.headers['retry-after']);
-            if (retryAfter) {
-              resetTime = (Math.floor(Date.now() / 1000) + retryAfter).toString();
-            }
+        const result = await requestFn(this.octokit);
+        
+        // Update rate limits for PAT authentication using response headers
+        if (this.auth instanceof PATAuth) {
+          const rateLimitInfo = this.extractRateLimitInfo(result);
+          if (rateLimitInfo) {
+            this.auth.updateRateLimits(rateLimitInfo.remaining, rateLimitInfo.reset);
           }
+        }
 
-          if (resetTime) {
-            const resetDate = new Date(Number.parseInt(resetTime) * 1000);
-            const secondsUntilReset = Math.floor((resetDate.getTime() - Date.now()) / 1000);
-            if (secondsUntilReset > 0) {
-              console.log(`Waiting ${secondsUntilReset} seconds for rate limit reset...`);
-              await new Promise((resolve) => setTimeout(resolve, (secondsUntilReset + 10) * 1000)); // Add 10 seconds buffer
-              console.log('Rate limit reset, retrying...');
-              continue; // Retry the request
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        
+        // Check if it's a rate limit error using response headers
+        if (error.status === 403 && error.response?.headers?.['x-ratelimit-remaining'] === '0') {
+          const resetTime = error.response?.headers?.['x-ratelimit-reset'];
+          const secondsUntilReset = resetTime ? parseInt(resetTime, 10) - Math.floor(Date.now() / 1000) : 0;
+          
+          console.log(`Rate limit exceeded. Reset in ${secondsUntilReset} seconds.`);
+          
+          if (this.auth instanceof PATAuth) {
+            // For PAT auth, try token rotation first
+            if (attempts < maxAttempts - 1) {
+              console.log('Attempting token rotation...');
+              this.auth.rotateToken();
+              this.octokit = null; // Force recreation of Octokit instance
+              attempts++;
+              continue;
+            } else {
+              // All tokens exhausted, wait for the token with earliest reset
+              console.log('All tokens exhausted. Waiting for rate limit reset...');
+              await this.waitForRateLimitReset();
+              attempts = 0; // Reset attempts and try again
+              continue;
             }
           } else {
-            // If we can't determine reset time, wait a conservative amount
-            console.log('Could not determine rate limit reset time, waiting 60 seconds...');
-            await new Promise((resolve) => setTimeout(resolve, 60 * 1000));
-            continue; // Retry the request
+            // For GitHub App or single PAT, wait for reset
+            console.log('Waiting for rate limit reset...');
+            await this.waitForRateLimitReset(secondsUntilReset);
+            continue;
           }
         }
-
+        
         // For other errors, implement exponential backoff
-        if (attempt < maxRetries) {
-          const delay = 2 ** attempt * 1000; // Exponential backoff: 1s, 2s, 4s, 8s...
-          console.log(
-            `Request failed (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${delay}ms...`
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
+        if (attempts < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempts), 30000); // Max 30 seconds
+          console.log(`Request failed (attempt ${attempts + 1}/${maxRetries}). Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          attempts++;
+          continue;
         }
+        
+        // For other errors or if max retries exceeded, don't retry
+        break;
       }
     }
 
-    throw lastError;
+    throw lastError || new Error('Request failed after all attempts');
+  }
+
+  /**
+   * Wait for rate limit reset
+   */
+  private async waitForRateLimitReset(secondsUntilReset?: number): Promise<void> {
+    let waitTime = secondsUntilReset || 3600; // Default to 1 hour if not specified
+    
+    if (this.auth instanceof PATAuth) {
+      // For PAT auth, find the token with the earliest reset time
+      const tokenStatus = this.auth.getRateLimitStatus();
+      const now = Date.now();
+      const earliestReset = Math.min(...tokenStatus.map(status => status.reset.getTime()));
+      waitTime = Math.max(0, Math.ceil((earliestReset - now) / 1000));
+    }
+    
+    if (waitTime > 0) {
+      console.log(`Waiting ${waitTime} seconds for rate limit reset...`);
+      
+      // Wait in chunks to allow for early termination
+      const chunkSize = Math.min(waitTime, 60); // Wait in 1-minute chunks
+      const chunks = Math.ceil(waitTime / chunkSize);
+      
+      for (let i = 0; i < chunks; i++) {
+        const remainingTime = waitTime - (i * chunkSize);
+        const currentChunk = Math.min(chunkSize, remainingTime);
+        
+        if (currentChunk > 0) {
+          await new Promise(resolve => setTimeout(resolve, currentChunk * 1000));
+          
+          // Log progress every 5 minutes
+          if (i % 5 === 0 && remainingTime > 60) {
+            console.log(`Rate limit reset in progress: ${Math.ceil(remainingTime / 60)} minutes remaining...`);
+          }
+        }
+      }
+      
+      console.log('Rate limit reset complete. Continuing...');
+    }
+  }
+
+  /**
+   * Check rate limits and log status
+   */
+  async checkRateLimits(): Promise<void> {
+    try {
+      await this.ensureValidOctokit();
+      if (!this.octokit) {
+        throw new Error('Failed to create Octokit instance');
+      }
+
+      // Make a simple API call to get rate limit headers
+      const result = await this.makeRequestWithTokenRotation(async (octokit) => {
+        return octokit.rest.rateLimit.get();
+      });
+      
+      // Update rate limits for PAT authentication using response headers
+      if (this.auth instanceof PATAuth) {
+        const rateLimitInfo = this.extractRateLimitInfo(result);
+        if (rateLimitInfo) {
+          this.auth.updateRateLimits(rateLimitInfo.remaining, rateLimitInfo.reset);
+        }
+        
+        // Log status for all tokens
+        const tokenStatus = this.auth.getRateLimitStatus();
+        console.log(`\n=== PAT Token Rate Limit Status ===`);
+        console.log(`Total tokens available: ${this.auth.getTokenCount()}`);
+        tokenStatus.forEach((status, index) => {
+          console.log(`Token ${index + 1} (${status.token}): ${status.remaining} remaining, resets at ${status.reset.toISOString()}`);
+        });
+        console.log('=====================================\n');
+      } else {
+        // For GitHub App auth, use the data from the rate limit response
+        if (result && typeof result === 'object' && 'data' in result) {
+          const rateLimitData = (result as any).data;
+          if (rateLimitData && rateLimitData.rate) {
+            console.log(`Rate limit: ${rateLimitData.rate.remaining}/${rateLimitData.rate.limit} remaining, resets at ${new Date(rateLimitData.rate.reset * 1000).toISOString()}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check rate limits:', error);
+      throw error;
+    }
   }
 
   /**
@@ -342,9 +535,8 @@ export class GitHubClient {
 
     while (hasMore) {
       await this.addRequestDelay();
-      const { data: orgRepos } = await this.makeRequestWithRetry(() => {
-        if (!this.octokit) throw new Error('Octokit not initialized');
-        return this.octokit.repos.listForOrg({
+      const { data: orgRepos } = await this.makeRequestWithTokenRotation(async (octokit) => {
+        return octokit.repos.listForOrg({
           org: orgName,
           sort: 'pushed', // default = direction: desc
           per_page: 100,
@@ -369,9 +561,8 @@ export class GitHubClient {
   async getMemberAddDates(orgName: string): Promise<AuditLogEntry[]> {
     await this.addRequestDelay();
 
-    let data = await this.makeRequestWithRetry(async () => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return (await this.octokit.paginate('GET /orgs/{org}/audit-log', {
+    let data = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return (await octokit.paginate('GET /orgs/{org}/audit-log', {
         org: orgName,
         phrase: 'action:org.add_member',
         include: 'web',
@@ -405,9 +596,8 @@ export class GitHubClient {
   async getRawMemberAddDates(orgName: string): Promise<any[]> {
     await this.addRequestDelay();
 
-    let data = await this.makeRequestWithRetry(async () => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return (await this.octokit.paginate('GET /orgs/{org}/audit-log', {
+    let data = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return (await octokit.paginate('GET /orgs/{org}/audit-log', {
         org: orgName,
         phrase: 'action:org.add_member',
         include: 'web',
@@ -444,9 +634,8 @@ export class GitHubClient {
     // Construct search query with actual search text
     const searchQuery = `${author} author:${author} org:${orgName} sort:committer-date-asc`;
 
-    const { data: commits } = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.request('GET /search/commits ', {
+    const { data: commits } = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.request('GET /search/commits ', {
         q: searchQuery,
         advanced_search: true,
         per_page: 10,
@@ -481,9 +670,8 @@ export class GitHubClient {
     // Construct search query with actual search text
     const searchQuery = `${author} author:${author} org:${orgName} is:pr`;
 
-    const { data: pulls } = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.search.issuesAndPullRequests({
+    const { data: pulls } = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.search.issuesAndPullRequests({
         q: searchQuery,
         per_page: 100,
         sort: 'created',
@@ -523,9 +711,8 @@ export class GitHubClient {
     } = {}
   ): Promise<Commit[]> {
     await this.addRequestDelay();
-    const { data: commits } = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.rest.repos.listCommits({
+    const { data: commits } = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.rest.repos.listCommits({
         owner,
         repo,
         per_page: options.per_page || 100,
@@ -553,9 +740,8 @@ export class GitHubClient {
     await this.addRequestDelay();
 
     try {
-      const { data: prs } = await this.makeRequestWithRetry(() => {
-        if (!this.octokit) throw new Error('Octokit not initialized');
-        return this.octokit.rest.pulls.list({
+      const { data: prs } = await this.makeRequestWithTokenRotation(async (octokit) => {
+        return octokit.rest.pulls.list({
           owner,
           repo,
           state: options.state || 'closed',
@@ -596,9 +782,8 @@ export class GitHubClient {
    */
   async getPullRequest(owner: string, repo: string, pullNumber: number): Promise<PullRequest> {
     await this.addRequestDelay();
-    const { data: prData } = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.rest.pulls.get({
+    const { data: prData } = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.rest.pulls.get({
         owner,
         repo,
         pull_number: pullNumber,
@@ -617,9 +802,8 @@ export class GitHubClient {
     pullNumber: number
   ): Promise<PullRequestReview[]> {
     await this.addRequestDelay();
-    const { data: reviews } = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.rest.pulls.listReviews({
+    const { data: reviews } = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.rest.pulls.listReviews({
         owner,
         repo,
         pull_number: pullNumber,
@@ -634,9 +818,8 @@ export class GitHubClient {
    */
   async getPullRequestCommits(owner: string, repo: string, pullNumber: number): Promise<Commit[]> {
     await this.addRequestDelay();
-    const response = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.pulls.listCommits({
+    const response = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.pulls.listCommits({
         owner,
         repo,
         pull_number: pullNumber,
@@ -653,9 +836,8 @@ export class GitHubClient {
     await this.addRequestDelay();
     const {
       data: { workflow_runs: runs },
-    } = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
+    } = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
         owner,
         repo,
         branch: branch,
@@ -686,9 +868,8 @@ export class GitHubClient {
     { id: number; number: number; created_at: string; user?: { login: string } | null }[]
   > {
     await this.addRequestDelay();
-    const { data: issues } = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.issues.listForRepo({
+    const { data: issues } = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.issues.listForRepo({
         owner,
         repo,
         ...options,
@@ -712,9 +893,8 @@ export class GitHubClient {
     issueNumber: number
   ): Promise<{ id: number; created_at: string; user?: { login: string } | null }[]> {
     await this.addRequestDelay();
-    const { data: comments } = await this.makeRequestWithRetry(() => {
-      if (!this.octokit) throw new Error('Octokit not initialized');
-      return this.octokit.issues.listComments({
+    const { data: comments } = await this.makeRequestWithTokenRotation(async (octokit) => {
+      return octokit.issues.listComments({
         owner,
         repo,
         issue_number: issueNumber,
@@ -727,12 +907,36 @@ export class GitHubClient {
       user: comment.user,
     }));
   }
+
+  /**
+   * Check if any tokens are available for use
+   */
+  private hasAvailableTokens(): boolean {
+    if (this.auth instanceof PATAuth) {
+      // Access the method through the token manager
+      return (this.auth as any).tokenManager?.hasAvailableTokens() || false;
+    }
+    return true; // For GitHub App, assume always available
+  }
+
+  /**
+   * Get the earliest reset time for any token
+   */
+  private getEarliestResetTime(): number | null {
+    if (this.auth instanceof PATAuth) {
+      const tokenStatus = this.auth.getRateLimitStatus();
+      const now = Date.now();
+      const resetTimes = tokenStatus.map(status => status.reset.getTime());
+      return Math.min(...resetTimes);
+    }
+    return null;
+  }
 }
 
 /**
  * Factory function to create a GitHub client instance using automatic authentication detection
  */
-export function createGitHubClient(): GitHubClient {
-  const auth = createGitHubAuth();
+export function createGitHubClient(config: GitHubAuthConfig): GitHubClient {
+  const auth = createGitHubAuth(config);
   return new GitHubClient(auth);
 }

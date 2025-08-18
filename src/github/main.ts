@@ -53,28 +53,44 @@ async function main() {
     const GITHUB_APP_INSTALLATION_ID = process.env.X_GITHUB_APP_INSTALLATION_ID;
     const ENTERPRISE_NAME = process.env.X_GITHUB_ENTERPRISE;
     const GITHUB_ORGS = process.env.X_GITHUB_ORGS?.split(',');
+    const GITHUB_PAT_TOKENS = process.env.X_GITHUB_TOKEN?.split(',');
 
     if (!GITHUB_APP_ID) {
-      throw new FatalError('X_GITHUB_APP_ID environment variable is required');
+      console.warn('X_GITHUB_APP_ID environment variable is not set, will use PATs instead');
     }
     if (!GITHUB_APP_PRIVATE_KEY) {
-      throw new FatalError('X_GITHUB_APP_PRIVATE_KEY environment variable is required');
+      console.warn('X_GITHUB_APP_PRIVATE_KEY environment variable is not set, will use PATs instead');
     }
     if (!GITHUB_APP_INSTALLATION_ID) {
-      throw new FatalError('X_GITHUB_APP_INSTALLATION_ID environment variable is required');
+      console.warn('X_GITHUB_APP_INSTALLATION_ID environment variable is not set, will use PATs instead');
     }
     if (!ENTERPRISE_NAME) {
-      throw new FatalError('X_GITHUB_ENTERPRISE environment variable is required');
+      console.warn('X_GITHUB_ENTERPRISE environment variable is not set, will not use enterprise features');
     }
     if (!GITHUB_ORGS || GITHUB_ORGS.length === 0) {
-      throw new FatalError(
-        'X_GITHUB_ORGS environment variable is required and must contain at least one organization'
-      );
+      throw new FatalError('X_GITHUB_ORGS environment variable is required and must contain at least one organization');
+    }
+    if (!GITHUB_PAT_TOKENS || GITHUB_PAT_TOKENS.length === 0) {
+      console.warn('X_GITHUB_PAT_TOKENS environment variable is not set, will not use PATs');
     }
 
     // Initialize GitHub client once
+    let githubClient: GitHubClient;
     console.log('Initializing GitHub client...');
-    const githubClient = createGitHubClient();
+    if (GITHUB_PAT_TOKENS) {
+      githubClient = createGitHubClient({
+        appId: GITHUB_APP_ID,
+        privateKey: GITHUB_APP_PRIVATE_KEY,
+        installationId: GITHUB_APP_INSTALLATION_ID,
+        patTokens: GITHUB_PAT_TOKENS,
+      });
+    } else {
+      githubClient = createGitHubClient({
+        appId: GITHUB_APP_ID,
+        privateKey: GITHUB_APP_PRIVATE_KEY,
+        installationId: GITHUB_APP_INSTALLATION_ID,
+      });
+    }
 
     const program = new Command();
 

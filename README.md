@@ -32,7 +32,7 @@ For GitHub integrations, you'll also need:
 - `X_GITHUB_APP_INSTALLATION_ID` - GitHub App installation ID
 
 **OR Personal Access Token Authentication (Fallback):**
-- `X_GITHUB_TOKEN` - Personal Access Token
+- `X_GITHUB_TOKEN` - Personal Access Token (can be comma-separated for token rotation)
 
 **Additional Configuration:**
 - `X_GITHUB_ENTERPRISE` - GitHub Enterprise name (if using GitHub Enterprise)
@@ -91,10 +91,11 @@ GitHub App authentication provides better security, higher rate limits, and auto
 
 If you prefer to use a Personal Access Token:
 
-1. **Create a Personal Access Token**:
+1. **Create Personal Access Token(s)**:
    - Go to your GitHub settings
    - Navigate to Developer settings > Personal access tokens
-   - Generate a new token with appropriate permissions
+   - Generate one or more tokens with appropriate permissions
+   - For token rotation, create multiple tokens to increase rate limits
 
 2. **Required Permissions**:
    - `repo` - Full control of private repositories
@@ -102,9 +103,22 @@ If you prefer to use a Personal Access Token:
    - `read:user` - Read user data
 
 3. **Set Environment Variable**:
-   ```bash
-   X_GITHUB_TOKEN=ghp_your_token_here
-   ```
+```bash
+   # Single token
+X_GITHUB_TOKEN=ghp_your_token_here
+
+   # Multiple tokens for rotation (comma-separated)
+X_GITHUB_TOKEN=ghp_token1,ghp_token2,ghp_token3
+```
+
+4. **Token Rotation Benefits**:
+   - **Increased Rate Limits**: Each token provides 5000 requests per hour
+   - **Automatic Rotation**: System automatically switches to the best available token
+   - **Smart Selection**: Chooses token with the most remaining requests
+   - **Fault Tolerance**: Continues operation if one token is exhausted
+   - **Efficient Monitoring**: Uses response headers for real-time rate limit tracking
+   - **Automatic Recovery**: Waits for rate limit reset when all tokens are exhausted
+   - **Exponential Backoff**: Intelligent retry logic for transient failures
 
 ### Authentication Priority
 
@@ -206,10 +220,10 @@ Track each developer's journey from joining your organization through their firs
 
 ```bash
 # Process only users without complete metrics (default)
-npm run github-sync onboarding-metrics
+npm run onboarding-metrics
 
 # Process all users regardless of existing metrics
-FORCE_ONBOARDING_METRICS=true npm run github-sync onboarding-metrics
+FORCE_ONBOARDING_METRICS=true npm run onboarding-metrics
 ```
 
 ---
@@ -298,14 +312,23 @@ Track detailed metrics for individual pull requests including size, lifetime, re
   "mirrorProperties": {},
   "calculationProperties": {},
   "aggregationProperties": {},
-  "relations": {}
+  "relations": {
+    "service": {
+      "title": "Service",
+      "target": "service",
+      "required": true,
+      "many": false
+    }
+  }
 }
 ```
+
+*Note*: The `service` relation uses the repository name as the service identifier.
 
 ## How to Run It
 
 ```bash
-npm run github-sync pr-metrics
+npm run pr-metrics
 ```
 
 ---
@@ -404,7 +427,7 @@ For each time period (1, 7, 30, 60, and 90 days):
 ## How to Run It
 
 ```bash
-npm run github-sync service-metrics
+npm run service-metrics
 ```
 
 ---
@@ -531,20 +554,22 @@ For each time period (daily, weekly, or monthly):
 }
 ```
 
+*Note*: The `service` relation uses the repository name as the service identifier.
+
 ## How to Run It
 
 ```bash
 # Process daily metrics for the last 90 days (default)
-npm run github-sync timeseries-service-metrics
+npm run timeseries-service-metrics
 
 # Process weekly metrics for the last 90 days
-npm run github-sync timeseries-service-metrics --period-type weekly
+npm run timeseries-service-metrics --period-type weekly
 
 # Process monthly metrics for the last 90 days
-npm run github-sync timeseries-service-metrics --period-type monthly
+npm run timeseries-service-metrics --period-type monthly
 
 # Process daily metrics for the last 30 days
-npm run github-sync timeseries-service-metrics --period-type daily --days-back 30
+npm run timeseries-service-metrics --period-type daily --days-back 30
 ```
 
 ---
@@ -627,10 +652,12 @@ Track CI/CD workflow performance and reliability metrics across your repositorie
 }
 ```
 
+*Note*: The `repository` relation uses the repository name as the repository identifier.
+
 ## How to Run It
 
 ```bash
-npm run github-sync workflow-metrics
+npm run workflow-metrics
 ```
 
 ---
@@ -917,8 +944,14 @@ The system supports two authentication methods with automatic detection:
 
 #### Personal Access Token Authentication (Fallback)
 - **Simple Setup**: Single token configuration
-- **Standard Rate Limits**: 5000 requests per hour
-- **Backward Compatibility**: Works with existing PAT configurations
+- **Token Rotation**: Support for multiple comma-separated tokens
+- **Smart Selection**: Automatically chooses token with best rate limit status
+- **Automatic Rotation**: Switches tokens when rate limits are exhausted
+- **Efficient Rate Limiting**: Uses response headers instead of additional API calls
+- **Automatic Recovery**: Waits for rate limit reset when all tokens are exhausted
+- **Exponential Backoff**: Intelligent retry logic for transient failures
+- **Standard Rate Limits**: 5000 requests per hour per token
+- **Backward Compatibility**: Works with existing single token configurations
 
 #### Authentication Detection
 The system automatically detects which authentication method to use based on environment variables:

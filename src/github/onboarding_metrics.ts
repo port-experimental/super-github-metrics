@@ -64,10 +64,7 @@ export async function getDeveloperStats(
     console.log(`Getting stats for ${login}`);
 
     // Log rate limit status at the start
-    const rateLimitStatus = await githubClient.getRateLimitStatus();
-    console.log(
-      `Rate limit status: ${rateLimitStatus.remaining}/${rateLimitStatus.limit} requests remaining, resets in ${rateLimitStatus.secondsUntilReset} seconds`
-    );
+    await githubClient.checkRateLimits();
 
     let firstCommitDate: string | null = null;
     let tenthCommitDate: string | null = null;

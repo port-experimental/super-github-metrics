@@ -1,8 +1,8 @@
 name: Collect Onboarding Metrics
 on:
     workflow_dispatch:
-    schedule:
-      - cron: '0 0 * * *'
+    # schedule:
+    #   - cron: '0 0 * * *'
 jobs:
     onboarding:
       name: onboarding_metrics

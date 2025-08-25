@@ -1,8 +1,8 @@
 name: Collect Coder Templates
 on:
     workflow_dispatch:
-    schedule:
-      - cron: '0 * * * *'
+    # schedule:
+    #   - cron: '0 * * * *'
 jobs:
     my-job:
       name: collect_coder_templates

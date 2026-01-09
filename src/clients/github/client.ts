@@ -8,7 +8,7 @@ import type {
   PullRequestReview,
   Repository,
   WorkflowRun,
-} from '../types/github';
+} from './types';
 
 /**
  * Base class for GitHub authentication methods

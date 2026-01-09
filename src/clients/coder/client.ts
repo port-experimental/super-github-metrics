@@ -1,6 +1,6 @@
 import process from 'node:process';
 import axios from 'axios';
-import type { Template, WorkspacesResponse } from './coder_types';
+import type { Template, WorkspacesResponse } from './types';
 
 class ApiClient {
   private baseUrl: string;

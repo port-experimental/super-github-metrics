@@ -7,7 +7,7 @@ import type {
   PortEntityResponse,
   PortBulkEntitiesRequest,
   PortBulkEntitiesResponse,
-} from '../types/port';
+} from './types';
 
 /**
  * PortClient class for interacting with Port API

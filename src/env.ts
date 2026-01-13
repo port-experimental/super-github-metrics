@@ -65,6 +65,12 @@ export type GithubEnv = {
   patTokens?: string[];
 };
 
+export type CoderEnv = {
+  sessionToken: string;
+  apiBaseUrl: string;
+  organizationId: string;
+};
+
 export function getPortEnv(): PortEnv {
   const env = cleanEnv(
     process.env,
@@ -118,5 +124,23 @@ export function getGithubEnv(): GithubEnv {
     enterpriseName,
     orgs: env.X_GITHUB_ORGS,
     patTokens,
+  };
+}
+
+export function getCoderEnv(): CoderEnv {
+  const env = cleanEnv(
+    process.env,
+    {
+      CODER_SESSION_TOKEN: str(),
+      CODER_API_BASE_URL: str(),
+      CODER_ORGANIZATION_ID: str(),
+    },
+    { reporter: throwReporter },
+  );
+
+  return {
+    sessionToken: env.CODER_SESSION_TOKEN,
+    apiBaseUrl: env.CODER_API_BASE_URL,
+    organizationId: env.CODER_ORGANIZATION_ID,
   };
 }

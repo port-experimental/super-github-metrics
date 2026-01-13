@@ -1,3 +1,26 @@
+export interface GitHubAuthConfig {
+  appId?: string;
+  privateKey?: string;
+  installationId?: string;
+  patTokens?: string[];
+}
+
+/**
+ * GitHub App authentication configuration
+ */
+export interface GitHubAppConfig {
+  appId: string;
+  privateKey: string;
+  installationId: string;
+}
+
+/**
+ * Personal Access Token authentication configuration
+ */
+interface PATConfig {
+  token: string;
+}
+
 export interface GitHubUser {
   identifier: string;
   title?: string;

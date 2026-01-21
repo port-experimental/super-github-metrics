@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 
-import { Command } from 'commander';
-import { registerGithubCommands } from './command';
+import { Command } from "commander";
+import pino from "pino";
+import { registerGithubCommands } from "./command";
+import pinoConfig from "../pino.config";
+
+const logger = pino(pinoConfig);
 
 async function main() {
   try {
     const program = new Command();
 
     program
-      .name('github-sync')
-      .description('CLI to pull metrics from GitHub to Port');
+      .name("github-sync")
+      .description("CLI to pull metrics from GitHub to Port");
 
-    registerGithubCommands(program);
+    registerGithubCommands(program, logger);
 
     await program.parseAsync();
   } catch (error) {
-    console.error(
-      `Fatal error: ${error instanceof Error ? error.message : 'Unknown error'}`
+    logger.error(
+      { err: error },
+      `Fatal error: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
     process.exit(1);
   }

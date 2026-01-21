@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { Logger } from "pino";
-import { upsertEntity } from "../clients/port/client";
+import { upsertEntitiesInBatches } from "../clients/port/client";
 import {
   createWorkspace,
   getTemplates,
@@ -26,15 +26,14 @@ export function registerCoderCommands(command: Command, logger: Logger): void {
     .action(async () => {
       logger.info("fetching templates");
       const templates = await getTemplates();
-      for (const template of templates) {
-        await upsertEntity(
-          "coder_template",
-          `${template.organization_id}-${template.id}-${template.active_version_id}`,
-          template.name,
-          {},
-          {},
-        );
-      }
+      const entities = templates.map((template) => ({
+        identifier: `${template.organization_id}-${template.id}-${template.active_version_id}`,
+        title: template.name,
+        properties: {},
+        relations: {},
+      }));
+
+      await upsertEntitiesInBatches("coder_template", entities);
       // get the data
       // write the data to port
     });
@@ -45,34 +44,33 @@ export function registerCoderCommands(command: Command, logger: Logger): void {
     .action(async () => {
       logger.info("fetching workspaces");
       const resp = await getWorkspaces();
-      for (const workspace of resp.workspaces) {
-        await upsertEntity(
-          "coder_workspace",
-          workspace.id,
-          workspace.name,
-          {
-            owner_id: workspace.owner_id,
-            owner_name: workspace.owner_name,
-            ttl_ms: workspace.ttl_ms,
-            daily_cost: workspace.latest_build.daily_cost,
-            organization_id: workspace.organization_id,
-            organization_name: workspace.organization_name,
-            healthy: workspace.health.healthy,
-            latest_build_number: workspace.latest_build.build_number,
-            automatic_updates: workspace.automatic_updates,
-            autostart_schedule: workspace.autostart_schedule,
-            created_at: workspace.created_at,
-            deleting_at: workspace.deleting_at,
-            dormant_at: workspace.dormant_at,
-            updated_at: workspace.updated_at,
-            last_used_at: workspace.last_used_at,
-            next_start_at: workspace.next_start_at,
-          },
-          {
-            template_id: workspace.template_id,
-          },
-        );
-      }
+      const entities = resp.workspaces.map((workspace) => ({
+        identifier: workspace.id,
+        title: workspace.name,
+        properties: {
+          owner_id: workspace.owner_id,
+          owner_name: workspace.owner_name,
+          ttl_ms: workspace.ttl_ms,
+          daily_cost: workspace.latest_build.daily_cost,
+          organization_id: workspace.organization_id,
+          organization_name: workspace.organization_name,
+          healthy: workspace.health.healthy,
+          latest_build_number: workspace.latest_build.build_number,
+          automatic_updates: workspace.automatic_updates,
+          autostart_schedule: workspace.autostart_schedule,
+          created_at: workspace.created_at,
+          deleting_at: workspace.deleting_at,
+          dormant_at: workspace.dormant_at,
+          updated_at: workspace.updated_at,
+          last_used_at: workspace.last_used_at,
+          next_start_at: workspace.next_start_at,
+        },
+        relations: {
+          template_id: workspace.template_id,
+        },
+      }));
+
+      await upsertEntitiesInBatches("coder_workspace", entities);
       // get the data
       // write the data to port
     });

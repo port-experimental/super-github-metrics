@@ -39,14 +39,21 @@ async function processOrganizationRepositories(
   githubClient: GitHubClient,
   orgName: string,
   processor: (repos: Repository[]) => Promise<void>,
+  logger: any,
 ): Promise<void> {
-  console.log(`Processing repositories for organization: ${orgName}`);
+  logger.info(
+    { orgName },
+    `Processing repositories for organization: ${orgName}`,
+  );
   const repos = await githubClient.fetchOrganizationRepositories(orgName);
-  console.log(`Processing ${repos.length} repositories from ${orgName}`);
+  logger.info(
+    { orgName, count: repos.length },
+    `Processing ${repos.length} repositories from ${orgName}`,
+  );
   await processor(repos);
 }
 
-export function registerGithubCommands(program: Command): void {
+export function registerGithubCommands(program: Command, logger: any): void {
   let githubClient!: GitHubClient;
   let GITHUB_ORGS: string[] = [];
 
@@ -64,47 +71,53 @@ export function registerGithubCommands(program: Command): void {
     } = githubEnv;
 
     if (!GITHUB_APP_ID) {
-      console.warn(
+      logger.warn(
         "X_GITHUB_APP_ID environment variable is not set, will use PATs instead",
       );
     }
     if (!GITHUB_APP_PRIVATE_KEY) {
-      console.warn(
+      logger.warn(
         "X_GITHUB_APP_PRIVATE_KEY environment variable is not set, will use PATs instead",
       );
     }
     if (!GITHUB_APP_INSTALLATION_ID) {
-      console.warn(
+      logger.warn(
         "X_GITHUB_APP_INSTALLATION_ID environment variable is not set, will use PATs instead",
       );
     }
     if (!ENTERPRISE_NAME) {
-      console.warn(
+      logger.warn(
         "X_GITHUB_ENTERPRISE environment variable is not set, will not use enterprise features",
       );
     }
     if (!GITHUB_PAT_TOKENS || GITHUB_PAT_TOKENS.length === 0) {
-      console.warn(
+      logger.warn(
         "X_GITHUB_PAT_TOKENS environment variable is not set, will not use PATs",
       );
     }
 
     GITHUB_ORGS = GITHUB_ORGS_ENV;
 
-    console.log("Initializing GitHub client...");
+    logger.info("Initializing GitHub client...");
     if (GITHUB_PAT_TOKENS && GITHUB_PAT_TOKENS.length > 0) {
-      githubClient = createGitHubClient({
-        appId: GITHUB_APP_ID,
-        privateKey: GITHUB_APP_PRIVATE_KEY,
-        installationId: GITHUB_APP_INSTALLATION_ID,
-        patTokens: GITHUB_PAT_TOKENS,
-      });
+      githubClient = createGitHubClient(
+        {
+          appId: GITHUB_APP_ID,
+          privateKey: GITHUB_APP_PRIVATE_KEY,
+          installationId: GITHUB_APP_INSTALLATION_ID,
+          patTokens: GITHUB_PAT_TOKENS,
+        },
+        logger,
+      );
     } else {
-      githubClient = createGitHubClient({
-        appId: GITHUB_APP_ID,
-        privateKey: GITHUB_APP_PRIVATE_KEY,
-        installationId: GITHUB_APP_INSTALLATION_ID,
-      });
+      githubClient = createGitHubClient(
+        {
+          appId: GITHUB_APP_ID,
+          privateKey: GITHUB_APP_PRIVATE_KEY,
+          installationId: GITHUB_APP_INSTALLATION_ID,
+        },
+        logger,
+      );
     }
   };
 
@@ -123,30 +136,30 @@ export function registerGithubCommands(program: Command): void {
       let hasFatalError = false;
 
       try {
-        console.log("Calculating onboarding metrics...");
-        console.log("Step 1: Checking rate limits...");
+        logger.info("Calculating onboarding metrics...");
+        logger.info("Step 1: Checking rate limits...");
         await githubClient.checkRateLimits();
 
-        console.log("Step 2: Fetching GitHub users from Port...");
+        logger.info("Step 2: Fetching GitHub users from Port...");
         const githubUsers = await getEntities("githubUser");
-        console.log(
+        logger.info(
           `Found ${githubUsers.entities.length} github users in Port`,
         );
 
         let joinRecords: AuditLogEntry[] = [];
         // Try fetch join dates from the audit log for each organization concurrently
         try {
-          console.log(
+          logger.info(
             "Step 3: Fetching member join dates from organization audit logs...",
           );
-          console.log(`Organizations to process: ${GITHUB_ORGS.join(", ")}`);
+          logger.info(`Organizations to process: ${GITHUB_ORGS.join(", ")}`);
 
           const auditLogPromises = GITHUB_ORGS.map(async (orgName) => {
-            console.log(`Fetching audit logs for organization: ${orgName}`);
+            logger.info(`Fetching audit logs for organization: ${orgName}`);
             try {
               const orgJoinRecords =
                 await githubClient.getMemberAddDates(orgName);
-              console.log(
+              logger.info(
                 `Found ${orgJoinRecords.length} join records from ${orgName}`,
               );
               return orgJoinRecords;
@@ -156,11 +169,11 @@ export function registerGithubCommands(program: Command): void {
                 "status" in error &&
                 error.status === 403
               ) {
-                console.log(
+                logger.info(
                   `Insufficient permissions to query audit log for ${orgName}. Skipping...`,
                 );
               } else {
-                console.warn(
+                logger.warn(
                   `Failed to fetch join records from ${orgName}, continuing without them:`,
                   error,
                 );
@@ -169,12 +182,12 @@ export function registerGithubCommands(program: Command): void {
             }
           });
 
-          console.log("Waiting for all audit log requests to complete...");
+          logger.info("Waiting for all audit log requests to complete...");
           const auditLogResults = await Promise.all(auditLogPromises);
           joinRecords = auditLogResults.flat();
-          console.log(`Total join records found: ${joinRecords.length}`);
+          logger.info(`Total join records found: ${joinRecords.length}`);
         } catch (error) {
-          console.warn(
+          logger.warn(
             "Failed to fetch join records, continuing without them:",
             error,
           );
@@ -185,19 +198,19 @@ export function registerGithubCommands(program: Command): void {
 
         let usersToProcess: PortEntity[];
         if (forceProcessing) {
-          console.log(
+          logger.info(
             "FORCE_ONBOARDING_METRICS is enabled - processing all users regardless of existing metrics",
           );
           usersToProcess = githubUsers.entities;
         } else {
           // Only go over users without complete onboarding metrics in Port
-          console.log(
+          logger.info(
             "Step 4: Filtering users without complete onboarding metrics...",
           );
           usersToProcess = githubUsers.entities.filter(
             (user: PortEntity) => !hasCompleteOnboardingMetrics(user),
           );
-          console.log(
+          logger.info(
             `Found ${usersToProcess.length} users without complete onboarding metrics`,
           );
         }
@@ -211,7 +224,7 @@ export function registerGithubCommands(program: Command): void {
         let errorCount = 0;
         const usersWithErrors: string[] = [];
 
-        console.log(
+        logger.info(
           `Processing ${usersToProcess.length} users in batches of ${BATCH_SIZE}`,
         );
 
@@ -219,21 +232,21 @@ export function registerGithubCommands(program: Command): void {
           const batch = usersToProcess.slice(i, i + BATCH_SIZE);
           const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
           const totalBatches = Math.ceil(usersToProcess.length / BATCH_SIZE);
-          console.log(
+          logger.info(
             `Processing batch ${batchNumber}/${totalBatches} (${batch.length} users) - ${Math.round((i / usersToProcess.length) * 100)}% complete`,
           );
 
           // Process batch concurrently
           const batchPromises = batch.map(async (user, batchIndex) => {
             const userIndex = i + batchIndex;
-            console.log(
+            logger.info(
               `Processing developer ${userIndex + 1} of ${usersToProcess.length}: ${user.identifier}`,
             );
 
             try {
               // Ensure user has required properties
               if (!user.identifier) {
-                console.error(`User missing identifier:`, user);
+                logger.error(`User missing identifier:`, user);
                 return {
                   success: false,
                   user: user.identifier,
@@ -245,14 +258,14 @@ export function registerGithubCommands(program: Command): void {
                 (record) => record.user === user.identifier,
               )?.created_at;
               if (!joinDate) {
-                console.error(`No join date found for ${user.identifier}`);
+                logger.error(`No join date found for ${user.identifier}`);
                 return {
                   success: false,
                   user: user.identifier,
                   error: "No join date found",
                 };
               }
-              console.log(
+              logger.info(
                 `Calculating stats for ${user.identifier} with join date ${joinDate}`,
               );
 
@@ -271,12 +284,12 @@ export function registerGithubCommands(program: Command): void {
                 githubClient,
               );
 
-              console.log(`Successfully processed ${user.identifier}`);
+              logger.info(`Successfully processed ${user.identifier}`);
               return { success: true, user: user.identifier };
             } catch (error) {
               const errorMessage =
                 error instanceof Error ? error.message : "Unknown error";
-              console.error(
+              logger.error(
                 `Error processing developer ${user.identifier}: ${errorMessage}`,
               );
               return {
@@ -302,30 +315,30 @@ export function registerGithubCommands(program: Command): void {
             }
           });
 
-          console.log(
+          logger.info(
             `Batch ${batchNumber}/${totalBatches} completed. Progress: ${processedCount + errorCount}/${usersToProcess.length} users processed (${Math.round(((processedCount + errorCount) / usersToProcess.length) * 100)}% complete)`,
           );
 
           // Add a small delay between batches to be conservative with rate limits
           if (i + BATCH_SIZE < usersToProcess.length) {
-            console.log("Waiting 15 seconds before next batch...");
+            logger.info("Waiting 15 seconds before next batch...");
             await new Promise((resolve) => setTimeout(resolve, 15000));
           }
         }
 
         // Print summary
-        console.log("\n=== Processing Summary ===");
-        console.log(`Total users processed: ${processedCount}`);
-        console.log(`Users with errors: ${errorCount}`);
+        logger.info("\n=== Processing Summary ===");
+        logger.info(`Total users processed: ${processedCount}`);
+        logger.info(`Users with errors: ${errorCount}`);
         if (forceProcessing) {
-          console.log(
+          logger.info(
             "Note: All users were processed due to FORCE_ONBOARDING_METRICS=true",
           );
         }
 
         if (usersWithErrors.length > 0) {
-          console.log("\nUsers with errors:");
-          usersWithErrors.forEach((userId) => console.log(`- ${userId}`));
+          logger.info("\nUsers with errors:");
+          usersWithErrors.forEach((userId) => logger.info(`- ${userId}`));
         }
 
         // If all users failed, that's a fatal error
@@ -340,7 +353,7 @@ export function registerGithubCommands(program: Command): void {
           hasFatalError = true;
           throw error;
         }
-        console.error(
+        logger.error(
           `Unexpected error in onboarding metrics: ${error instanceof Error ? error.message : "Unknown error"}`,
         );
         hasFatalError = true;
@@ -362,7 +375,7 @@ export function registerGithubCommands(program: Command): void {
       let hasFatalError = false;
 
       try {
-        console.log("Calculating PR metrics...");
+        logger.info("Calculating PR metrics...");
         await githubClient.checkRateLimits();
 
         // Process organizations concurrently
@@ -374,10 +387,11 @@ export function registerGithubCommands(program: Command): void {
               async (repos) => {
                 await calculateAndStorePRMetrics(repos, githubClient);
               },
+              logger,
             );
             return { success: true, orgName };
           } catch (error) {
-            console.error(
+            logger.error(
               `Error processing organization ${orgName}: ${error instanceof Error ? error.message : "Unknown error"}`,
             );
             return { success: false, orgName, error };
@@ -388,7 +402,7 @@ export function registerGithubCommands(program: Command): void {
         const successful = results.filter((r) => r.success);
         const failed = results.filter((r) => !r.success);
 
-        console.log(
+        logger.info(
           `PR metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`,
         );
 
@@ -402,7 +416,7 @@ export function registerGithubCommands(program: Command): void {
         if (error instanceof FatalError) {
           throw error;
         }
-        console.error(
+        logger.error(
           `Unexpected error in PR metrics: ${error instanceof Error ? error.message : "Unknown error"}`,
         );
         hasFatalError = true;
@@ -417,7 +431,7 @@ export function registerGithubCommands(program: Command): void {
       let hasFatalError = false;
 
       try {
-        console.log("Calculating Workflows metrics...");
+        logger.info("Calculating Workflows metrics...");
         await githubClient.checkRateLimits();
         const portClient = await PortClient.getInstance();
 
@@ -427,7 +441,7 @@ export function registerGithubCommands(program: Command): void {
             await calculateWorkflowMetrics(githubClient, portClient, orgName);
             return { success: true, orgName };
           } catch (error) {
-            console.error(
+            logger.error(
               `Error processing organization ${orgName}: ${error instanceof Error ? error.message : "Unknown error"}`,
             );
             return { success: false, orgName, error };
@@ -438,7 +452,7 @@ export function registerGithubCommands(program: Command): void {
         const successful = results.filter((r) => r.success);
         const failed = results.filter((r) => !r.success);
 
-        console.log(
+        logger.info(
           `Workflow metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`,
         );
 
@@ -452,7 +466,7 @@ export function registerGithubCommands(program: Command): void {
         if (error instanceof FatalError) {
           throw error;
         }
-        console.error(
+        logger.error(
           `Unexpected error in workflow metrics: ${error instanceof Error ? error.message : "Unknown error"}`,
         );
         hasFatalError = true;
@@ -470,7 +484,7 @@ export function registerGithubCommands(program: Command): void {
       let hasFatalError = false;
 
       try {
-        console.log("Calculating Service metrics...");
+        logger.info("Calculating Service metrics...");
         await githubClient.checkRateLimits();
 
         // Process organizations concurrently
@@ -482,10 +496,11 @@ export function registerGithubCommands(program: Command): void {
               async (repos) => {
                 await calculateAndStoreServiceMetrics(repos, githubClient);
               },
+              logger,
             );
             return { success: true, orgName };
           } catch (error) {
-            console.error(
+            logger.error(
               `Error processing organization ${orgName}: ${error instanceof Error ? error.message : "Unknown error"}`,
             );
             return { success: false, orgName, error };
@@ -496,7 +511,7 @@ export function registerGithubCommands(program: Command): void {
         const successful = results.filter((r) => r.success);
         const failed = results.filter((r) => !r.success);
 
-        console.log(
+        logger.info(
           `Service metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`,
         );
 
@@ -510,7 +525,7 @@ export function registerGithubCommands(program: Command): void {
         if (error instanceof FatalError) {
           throw error;
         }
-        console.error(
+        logger.error(
           `Unexpected error in service metrics: ${error instanceof Error ? error.message : "Unknown error"}`,
         );
         hasFatalError = true;
@@ -534,13 +549,13 @@ export function registerGithubCommands(program: Command): void {
       let hasFatalError = false;
 
       try {
-        console.log("Calculating Time-Series Service metrics...");
+        logger.info("Calculating Time-Series Service metrics...");
         await githubClient.checkRateLimits();
 
         const periodType = options.periodType as "daily" | "weekly" | "monthly";
         const daysBack = parseInt(options.daysBack, 10);
 
-        console.log(
+        logger.info(
           `Processing ${periodType} metrics for the last ${daysBack} days`,
         );
 
@@ -558,10 +573,11 @@ export function registerGithubCommands(program: Command): void {
                   githubClient,
                 );
               },
+              logger,
             );
             return { success: true, orgName };
           } catch (error) {
-            console.error(
+            logger.error(
               `Error processing organization ${orgName}: ${error instanceof Error ? error.message : "Unknown error"}`,
             );
             return { success: false, orgName, error };
@@ -572,7 +588,7 @@ export function registerGithubCommands(program: Command): void {
         const successful = results.filter((r) => r.success);
         const failed = results.filter((r) => !r.success);
 
-        console.log(
+        logger.info(
           `Time-series service metrics processing complete: ${successful.length} organizations successful, ${failed.length} failed`,
         );
 
@@ -586,7 +602,7 @@ export function registerGithubCommands(program: Command): void {
         if (error instanceof FatalError) {
           throw error;
         }
-        console.error(
+        logger.error(
           `Unexpected error in time-series service metrics: ${error instanceof Error ? error.message : "Unknown error"}`,
         );
         throw new FatalError(
@@ -603,39 +619,39 @@ export function registerGithubCommands(program: Command): void {
       let hasFatalError = false;
 
       try {
-        console.log(
+        logger.info(
           "Fetching user addition events from organization audit logs...",
         );
         await githubClient.checkRateLimits();
 
-        console.log(`Organizations to query: ${GITHUB_ORGS.join(", ")}`);
-        console.log("=".repeat(80));
+        logger.info(`Organizations to query: ${GITHUB_ORGS.join(", ")}`);
+        logger.info("=".repeat(80));
 
         let totalEvents = 0;
         const allEvents: any[] = [];
 
         for (const orgName of GITHUB_ORGS) {
           try {
-            console.log(
+            logger.info(
               `\n📋 Fetching audit logs for organization: ${orgName}`,
             );
             const orgEvents = await githubClient.getRawMemberAddDates(orgName);
 
-            console.log(
+            logger.info(
               `Found ${orgEvents.length} user addition events in ${orgName}`,
             );
 
             if (orgEvents.length > 0) {
-              console.log(`\n👥 User addition events for ${orgName}:`);
-              console.log("-".repeat(60));
+              logger.info(`\n👥 User addition events for ${orgName}:`);
+              logger.info("-".repeat(60));
 
               orgEvents.forEach((event, index) => {
-                console.log(`${index + 1}. RAW EVENT DATA:`);
-                console.log(JSON.stringify(event, null, 2));
-                console.log("");
+                logger.info(`${index + 1}. RAW EVENT DATA:`);
+                logger.info(JSON.stringify(event, null, 2));
+                logger.info("");
               });
             } else {
-              console.log(`   No user addition events found in ${orgName}`);
+              logger.info(`   No user addition events found in ${orgName}`);
             }
 
             allEvents.push(...orgEvents);
@@ -646,15 +662,15 @@ export function registerGithubCommands(program: Command): void {
               "status" in error &&
               error.status === 403
             ) {
-              console.log(
+              logger.info(
                 `❌ Insufficient permissions to query audit log for ${orgName}`,
               );
-              console.log(
+              logger.info(
                 '   Make sure the GitHub App has "Administration" read permissions',
               );
-              console.log("Original error:", error);
+              logger.info("Original error:", error);
             } else {
-              console.error(
+              logger.error(
                 `❌ Error fetching audit logs for ${orgName}:`,
                 error,
               );
@@ -662,17 +678,17 @@ export function registerGithubCommands(program: Command): void {
           }
         }
 
-        console.log("\n" + "=".repeat(80));
-        console.log("📊 SUMMARY");
-        console.log("=".repeat(80));
-        console.log(`Total organizations queried: ${GITHUB_ORGS.length}`);
-        console.log(`Total user addition events found: ${totalEvents}`);
+        logger.info("\n" + "=".repeat(80));
+        logger.info("📊 SUMMARY");
+        logger.info("=".repeat(80));
+        logger.info(`Total organizations queried: ${GITHUB_ORGS.length}`);
+        logger.info(`Total user addition events found: ${totalEvents}`);
 
         if (allEvents.length > 0) {
           const uniqueUsers = new Set(allEvents.map((event) => event.user));
-          console.log(`Unique users found: ${uniqueUsers.size}`);
+          logger.info(`Unique users found: ${uniqueUsers.size}`);
 
-          console.log("\n📅 Events by date:");
+          logger.info("\n📅 Events by date:");
           const eventsByDate = allEvents.reduce(
             (acc, event) => {
               const timestamp = event["@timestamp"] || event.created_at;
@@ -686,21 +702,21 @@ export function registerGithubCommands(program: Command): void {
           Object.entries(eventsByDate)
             .sort(([a], [b]) => a.localeCompare(b))
             .forEach(([date, count]) => {
-              console.log(`   ${date}: ${count} addition(s)`);
+              logger.info(`   ${date}: ${count} addition(s)`);
             });
 
-          console.log("\n👤 All unique users:");
+          logger.info("\n👤 All unique users:");
           Array.from(uniqueUsers)
             .sort()
             .forEach((user, index) => {
-              console.log(`   ${index + 1}. ${user}`);
+              logger.info(`   ${index + 1}. ${user}`);
             });
 
-          console.log("\n🔍 Sample of available fields in raw data:");
+          logger.info("\n🔍 Sample of available fields in raw data:");
           if (allEvents.length > 0) {
             const sampleEvent = allEvents[0];
             const fields = Object.keys(sampleEvent).sort();
-            console.log(`   Available fields: ${fields.join(", ")}`);
+            logger.info(`   Available fields: ${fields.join(", ")}`);
           }
         }
       } catch (error) {
@@ -708,7 +724,7 @@ export function registerGithubCommands(program: Command): void {
           hasFatalError = true;
           throw error;
         }
-        console.error(
+        logger.error(
           `Unexpected error listing user additions: ${error instanceof Error ? error.message : "Unknown error"}`,
         );
         hasFatalError = true;

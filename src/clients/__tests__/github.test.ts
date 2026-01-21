@@ -1,13 +1,31 @@
 // Mock @octokit/auth-app to avoid ES module issues
-jest.mock('@octokit/auth-app', () => ({
+jest.mock("@octokit/auth-app", () => ({
   createAppAuth: jest.fn(),
 }));
 
-import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { GitHubClient, createGitHubClient, PATAuth } from '../github';
+import {
+  jest,
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from "@jest/globals";
+import { GitHubClient, createGitHubClient, PATAuth } from "../github";
+
+// Mock logger
+const mockLogger = {
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+  debug: jest.fn(),
+  trace: jest.fn(),
+  fatal: jest.fn(),
+  child: jest.fn(() => mockLogger),
+} as any;
 
 // Mock Octokit using the same pattern as existing tests
-jest.mock('@octokit/rest', () => ({
+jest.mock("@octokit/rest", () => ({
   Octokit: jest.fn().mockImplementation(() => ({
     rest: {
       pulls: {
@@ -31,47 +49,49 @@ jest.mock('@octokit/rest', () => ({
   })),
 }));
 
-describe('GitHub Authentication', () => {
-  describe('PATAuth', () => {
-    it('should create PAT auth instance with single token', () => {
-      const auth = new PATAuth('test-token');
+describe("GitHub Authentication", () => {
+  describe("PATAuth", () => {
+    it("should create PAT auth instance with single token", () => {
+      const auth = new PATAuth("test-token", mockLogger);
       expect(auth).toBeInstanceOf(PATAuth);
       expect(auth.getTokenCount()).toBe(1);
     });
 
-    it('should create PAT auth instance with multiple tokens', () => {
-      const auth = new PATAuth(['token1', 'token2', 'token3']);
+    it("should create PAT auth instance with multiple tokens", () => {
+      const auth = new PATAuth(["token1", "token2", "token3"], mockLogger);
       expect(auth).toBeInstanceOf(PATAuth);
       expect(auth.getTokenCount()).toBe(3);
     });
 
-    it('should create PAT auth instance with comma-separated tokens', () => {
-      const auth = new PATAuth('token1,token2,token3');
+    it("should create PAT auth instance with comma-separated tokens", () => {
+      const auth = new PATAuth("token1,token2,token3", mockLogger);
       expect(auth).toBeInstanceOf(PATAuth);
       expect(auth.getTokenCount()).toBe(3);
     });
 
-    it('should check token validity', async () => {
-      const auth = new PATAuth('test-token');
+    it("should check token validity", async () => {
+      const auth = new PATAuth("test-token", mockLogger);
       // Token validity depends on having a current token and available tokens
       expect(auth.isTokenValid()).toBe(false); // Initially false until getToken() is called
     });
 
-    it('should return false for empty token', () => {
-      expect(() => new PATAuth('')).toThrow('At least one valid PAT token is required');
+    it("should return false for empty token", () => {
+      expect(() => new PATAuth("", mockLogger)).toThrow(
+        "At least one valid PAT token is required",
+      );
     });
 
-    it('should get rate limit status', async () => {
-      const auth = new PATAuth(['token1', 'token2']);
+    it("should get rate limit status", async () => {
+      const auth = new PATAuth(["token1", "token2"], mockLogger);
       const status = auth.getRateLimitStatus();
       expect(status).toHaveLength(2);
-      expect(status[0]).toHaveProperty('token');
-      expect(status[0]).toHaveProperty('remaining');
-      expect(status[0]).toHaveProperty('reset');
+      expect(status[0]).toHaveProperty("token");
+      expect(status[0]).toHaveProperty("remaining");
+      expect(status[0]).toHaveProperty("reset");
     });
 
-    it('should update rate limits', async () => {
-      const auth = new PATAuth('test-token');
+    it("should update rate limits", async () => {
+      const auth = new PATAuth("test-token", mockLogger);
       // First get a token to set the current token
       await auth.getToken();
       // Now update the rate limits
@@ -81,8 +101,8 @@ describe('GitHub Authentication', () => {
       expect(status[0].remaining).toBe(100);
     });
 
-    it('should rotate tokens', async () => {
-      const auth = new PATAuth(['token1', 'token2', 'token3']);
+    it("should rotate tokens", async () => {
+      const auth = new PATAuth(["token1", "token2", "token3"], mockLogger);
       const initialToken = await auth.getToken();
       auth.rotateToken();
       const rotatedToken = await auth.getToken();
@@ -91,28 +111,28 @@ describe('GitHub Authentication', () => {
     });
   });
 
-  describe('GitHubClient', () => {
-    it('should create client with PAT auth', async () => {
-      const auth = new PATAuth('test-token');
-      const client = new GitHubClient(auth);
+  describe("GitHubClient", () => {
+    it("should create client with PAT auth", async () => {
+      const auth = new PATAuth("test-token", mockLogger);
+      const client = new GitHubClient(auth, mockLogger);
       expect(client).toBeInstanceOf(GitHubClient);
     });
 
-    it('should handle rate limit updates for PAT auth', async () => {
-      const auth = new PATAuth('test-token');
-      const client = new GitHubClient(auth);
-      
+    it("should handle rate limit updates for PAT auth", async () => {
+      const auth = new PATAuth("test-token", mockLogger);
+      const client = new GitHubClient(auth, mockLogger);
+
       // Test that the client can be created and basic functionality works
       expect(client).toBeInstanceOf(GitHubClient);
-      
+
       // Test that the auth instance has the expected methods
-      expect(typeof auth.updateRateLimits).toBe('function');
-      expect(typeof auth.getRateLimitStatus).toBe('function');
-      expect(typeof auth.getTokenCount).toBe('function');
+      expect(typeof auth.updateRateLimits).toBe("function");
+      expect(typeof auth.getRateLimitStatus).toBe("function");
+      expect(typeof auth.getTokenCount).toBe("function");
     });
   });
 
-  describe('createGitHubClient factory', () => {
+  describe("createGitHubClient factory", () => {
     beforeEach(() => {
       // Clear all environment variables
       delete process.env.X_GITHUB_TOKEN;
@@ -121,23 +141,26 @@ describe('GitHub Authentication', () => {
       delete process.env.X_GITHUB_APP_INSTALLATION_ID;
     });
 
-    it('should use PAT auth when only token is provided', () => {
-      process.env.X_GITHUB_TOKEN = 'test-token';
-      
-      const client = createGitHubClient();
+    it("should use PAT auth when only token is provided", () => {
+      const client = createGitHubClient(
+        { patTokens: ["test-token"] },
+        mockLogger,
+      );
       expect(client).toBeInstanceOf(GitHubClient);
     });
 
-    it('should use PAT auth with multiple tokens', () => {
-      process.env.X_GITHUB_TOKEN = 'token1,token2,token3';
-      
-      const client = createGitHubClient();
+    it("should use PAT auth with multiple tokens", () => {
+      const client = createGitHubClient(
+        { patTokens: ["token1", "token2", "token3"] },
+        mockLogger,
+      );
       expect(client).toBeInstanceOf(GitHubClient);
     });
 
-    it('should throw error when no authentication is configured', () => {
-      expect(() => createGitHubClient()).toThrow('No GitHub authentication configured');
+    it("should throw error when no authentication is configured", () => {
+      expect(() => createGitHubClient({}, mockLogger)).toThrow(
+        "No GitHub authentication configured",
+      );
     });
   });
 });
-

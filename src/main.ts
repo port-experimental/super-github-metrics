@@ -13,9 +13,7 @@ async function main() {
   try {
     const program = new Command();
 
-    program
-      .name("integration")
-      .description("CLI to run integration commands");
+    program.name("integration").description("CLI to run integration commands");
 
     const coderCommand = new Command("coder").description(
       "CLI to interact with coder",
@@ -26,7 +24,7 @@ async function main() {
     const githubCommand = new Command("github").description(
       "CLI to pull metrics from GitHub to Port",
     );
-    registerGithubCommands(githubCommand);
+    registerGithubCommands(githubCommand, logger);
     program.addCommand(githubCommand);
 
     await program.parseAsync();

@@ -12,18 +12,24 @@ import type {
   GitHubAuthConfig,
 } from "./types";
 import { GitHubAuth, PATAuth, createGitHubAuth } from "./auth";
-/**
- * Factory function to create the appropriate authentication method
- */
+
+export interface AuditLogParams {
+  phrase: string;
+  include?: "web" | "git" | "all";
+  order?: "asc" | "desc";
+  per_page?: number;
+}
 
 export class GitHubClient {
   private octokit: Octokit | null = null;
   private auth: GitHubAuth;
   private logger: Logger;
+  private enterpriseName?: string;
 
-  constructor(auth: GitHubAuth, logger: Logger) {
+  constructor(auth: GitHubAuth, logger: Logger, enterpriseName?: string) {
     this.auth = auth;
     this.logger = logger;
+    this.enterpriseName = enterpriseName;
   }
 
   private async ensureValidOctokit(): Promise<void> {
@@ -122,35 +128,57 @@ export class GitHubClient {
   }
 
   /**
-   * Get member add dates from organization audit log
+   * Fetch raw audit log data from enterprise (enterprise feature only)
+   * Uses the /enterprises/{enterprise}/audit-log endpoint
    */
-  async getMemberAddDates(orgName: string): Promise<AuditLogEntry[]> {
+  async getAuditLog(params: AuditLogParams): Promise<any[]> {
+    if (!this.enterpriseName) {
+      this.logger.warn(
+        { params },
+        `Audit log is an enterprise feature. Set X_GITHUB_ENTERPRISE to enable.`,
+      );
+      return [];
+    }
+
     await this.addRequestDelay();
 
-    let data = await this.makeRequest(async (octokit) => {
-      return (await octokit.paginate("GET /orgs/{org}/audit-log", {
-        org: orgName,
-        phrase: "action:org.add_member",
-        include: "web",
-        per_page: 100,
-        order: "desc",
-        headers: {
-          "X-GitHub-Api-Version": "2022-11-28",
+    const data = await this.makeRequest(async (octokit) => {
+      return (await octokit.paginate(
+        "GET /enterprises/{enterprise}/audit-log",
+        {
+          enterprise: this.enterpriseName!,
+          phrase: params.phrase,
+          include: params.include || "web",
+          per_page: params.per_page || 100,
+          order: params.order || "desc",
+          headers: {
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
         },
-      })) as Array<{
-        org: string;
-        user: string;
-        user_id: number;
-        "@timestamp": string;
-      }>;
+      )) as Array<any>;
     });
 
     this.logger.info(
-      { count: data.length, orgName },
-      `Fetched ${data.length} audit log events for member additions from ${orgName}`,
+      {
+        count: data.length,
+        enterprise: this.enterpriseName,
+        phrase: params.phrase,
+      },
+      `Fetched ${data.length} audit log events (enterprise: ${this.enterpriseName})`,
     );
 
-    // Log a summary instead of the full data
+    return data;
+  }
+
+  /**
+   * Get member add dates from enterprise audit log (enterprise feature only)
+   * Uses the /enterprises/{enterprise}/audit-log endpoint
+   */
+  async getMemberAddDates(orgName: string): Promise<AuditLogEntry[]> {
+    const data = await this.getAuditLog({
+      phrase: `action:org.add_member org:${orgName}`,
+    });
+
     if (data.length > 0) {
       const uniqueUsers = new Set(data.map((x) => x.user));
       this.logger.info(
@@ -165,33 +193,6 @@ export class GitHubClient {
       created_at: x["@timestamp"],
       org: x.org,
     }));
-  }
-
-  /**
-   * Get raw member add audit log data for debugging purposes
-   */
-  async getRawMemberAddDates(orgName: string): Promise<any[]> {
-    await this.addRequestDelay();
-
-    let data = await this.makeRequest(async (octokit) => {
-      return (await octokit.paginate("GET /orgs/{org}/audit-log", {
-        org: orgName,
-        phrase: "action:org.add_member",
-        include: "web",
-        per_page: 100,
-        order: "desc",
-        headers: {
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
-      })) as Array<any>;
-    });
-
-    this.logger.info(
-      { count: data.length, orgName },
-      `Fetched ${data.length} raw audit log events for member additions from ${orgName}`,
-    );
-
-    return data; // Return completely raw data
   }
 
   /**
@@ -537,5 +538,5 @@ export function createGitHubClient(
   logger: Logger,
 ): GitHubClient {
   const auth = createGitHubAuth(config, logger);
-  return new GitHubClient(auth, logger);
+  return new GitHubClient(auth, logger, config.enterpriseName);
 }

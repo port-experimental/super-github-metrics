@@ -56,6 +56,7 @@ async function processOrganizationRepositories(
 export function registerGithubCommands(program: Command, logger: any): void {
   let githubClient!: GitHubClient;
   let GITHUB_ORGS: string[] = [];
+  let ENTERPRISE_NAME: string | undefined;
 
   const ensureGithubClient = () => {
     const githubEnv = getGithubEnv();
@@ -65,10 +66,12 @@ export function registerGithubCommands(program: Command, logger: any): void {
       appId: GITHUB_APP_ID,
       privateKey: GITHUB_APP_PRIVATE_KEY,
       installationId: GITHUB_APP_INSTALLATION_ID,
-      enterpriseName: ENTERPRISE_NAME,
+      enterpriseName,
       orgs: GITHUB_ORGS_ENV,
       patTokens: GITHUB_PAT_TOKENS,
     } = githubEnv;
+
+    ENTERPRISE_NAME = enterpriseName;
 
     if (!GITHUB_APP_ID) {
       logger.warn(
@@ -105,6 +108,7 @@ export function registerGithubCommands(program: Command, logger: any): void {
           appId: GITHUB_APP_ID,
           privateKey: GITHUB_APP_PRIVATE_KEY,
           installationId: GITHUB_APP_INSTALLATION_ID,
+          enterpriseName: ENTERPRISE_NAME,
           patTokens: GITHUB_PAT_TOKENS,
         },
         logger,
@@ -115,6 +119,7 @@ export function registerGithubCommands(program: Command, logger: any): void {
           appId: GITHUB_APP_ID,
           privateKey: GITHUB_APP_PRIVATE_KEY,
           installationId: GITHUB_APP_INSTALLATION_ID,
+          enterpriseName: ENTERPRISE_NAME,
         },
         logger,
       );
@@ -136,6 +141,13 @@ export function registerGithubCommands(program: Command, logger: any): void {
       let hasFatalError = false;
 
       try {
+        // Early check: onboarding-metrics requires enterprise audit log access
+        if (!ENTERPRISE_NAME) {
+          throw new FatalError(
+            "onboarding-metrics requires X_GITHUB_ENTERPRISE to be set. Audit log access is an enterprise feature.",
+          );
+        }
+
         logger.info("Calculating onboarding metrics...");
         logger.info("Step 1: Checking rate limits...");
         await githubClient.checkRateLimits();
@@ -351,7 +363,8 @@ export function registerGithubCommands(program: Command, logger: any): void {
       } catch (error) {
         if (error instanceof FatalError) {
           hasFatalError = true;
-          throw error;
+          logger.error(error.message);
+          process.exit(1);
         }
         logger.error(
           `Unexpected error in onboarding metrics: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -619,6 +632,13 @@ export function registerGithubCommands(program: Command, logger: any): void {
       let hasFatalError = false;
 
       try {
+        // Early check: list-user-additions requires enterprise audit log access
+        if (!ENTERPRISE_NAME) {
+          throw new FatalError(
+            "list-user-additions requires X_GITHUB_ENTERPRISE to be set. Audit log access is an enterprise feature.",
+          );
+        }
+
         logger.info(
           "Fetching user addition events from organization audit logs...",
         );
@@ -635,7 +655,9 @@ export function registerGithubCommands(program: Command, logger: any): void {
             logger.info(
               `\n📋 Fetching audit logs for organization: ${orgName}`,
             );
-            const orgEvents = await githubClient.getRawMemberAddDates(orgName);
+            const orgEvents = await githubClient.getAuditLog({
+              phrase: `action:org.add_member org:${orgName}`,
+            });
 
             logger.info(
               `Found ${orgEvents.length} user addition events in ${orgName}`,
@@ -722,7 +744,8 @@ export function registerGithubCommands(program: Command, logger: any): void {
       } catch (error) {
         if (error instanceof FatalError) {
           hasFatalError = true;
-          throw error;
+          logger.error(error.message);
+          process.exit(1);
         }
         logger.error(
           `Unexpected error listing user additions: ${error instanceof Error ? error.message : "Unknown error"}`,

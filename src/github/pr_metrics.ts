@@ -29,7 +29,7 @@ export interface PRMetrics {
   // PR Merge Time: (PR merge timestamp) - (First approval timestamp) in days
   prMergeTime: number | null;
   // PR Maturity: Ratio of changes added after PR publication vs total changes (0.0 to 1.0)
-  prMaturity: number;
+  prMaturity: number | null;
   // PR Success Rate: (# of merged PRs / total # of closed PRs) × 100
   prSuccessRate: number;
   // Review Participation: Average reviewers per PR
@@ -44,8 +44,8 @@ export interface PRMetrics {
   // PR First Approval: (First approval timestamp)
   prFirstApproval: string | null;
   // Number of changes after PR is opened
-  numberOfLineChangesAfterPRIsOpened: number;
-  numberOfCommitsAfterPRIsOpened: number;
+  numberOfLineChangesAfterPRIsOpened: number | null;
+  numberOfCommitsAfterPRIsOpened: number | null;
 }
 
 export const getNumberOfChangesAfterPRIsOpened = async (
@@ -55,8 +55,8 @@ export const getNumberOfChangesAfterPRIsOpened = async (
   prNumber: number,
   prCreationDate: Date,
 ): Promise<{
-  numberOfLineChangesAfterPRIsOpened: number;
-  numberOfCommitsAfterPRIsOpened: number;
+  numberOfLineChangesAfterPRIsOpened: number | null;
+  numberOfCommitsAfterPRIsOpened: number | null;
 }> => {
   try {
     const commits = await githubClient.getPullRequestCommits(
@@ -86,8 +86,8 @@ export const getNumberOfChangesAfterPRIsOpened = async (
       error,
     );
     return {
-      numberOfLineChangesAfterPRIsOpened: 0,
-      numberOfCommitsAfterPRIsOpened: 0,
+      numberOfLineChangesAfterPRIsOpened: null,
+      numberOfCommitsAfterPRIsOpened: null,
     };
   }
 };
@@ -336,9 +336,10 @@ export async function calculateAndStorePRMetrics(
                         new Date(prFirstApproval).getTime()) /
                       (1000 * 60 * 60 * 24)
                     : null,
-                prMaturity:
-                  changesAfterPR.numberOfLineChangesAfterPRIsOpened /
-                  (prData.additions + prData.deletions),
+                prMaturity: changesAfterPR.numberOfLineChangesAfterPRIsOpened
+                  ? changesAfterPR.numberOfLineChangesAfterPRIsOpened /
+                    (prData.additions + prData.deletions)
+                  : null,
                 prSuccessRate: pr.merged_at ? 100 : 0,
                 reviewParticipation: reviews.length,
                 comments: prData.comments,

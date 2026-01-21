@@ -13,6 +13,7 @@
     "onboarding-metrics": "bun run src/github/main.ts onboarding-metrics",
     "pr-metrics": "bun run src/github/main.ts pr-metrics",
     "workflow-metrics": "bun run src/github/main.ts workflow-metrics",
+    "list-user-additions": "bun run src/github/main.ts list-user-additions",
     "fetch-templates": "bun run src/main.ts fetch-templates",
     "fetch-workspaces": "bun run src/main.ts fetch-workspaces",
     "create-workspace": "bun run src/main.ts create-workspace",

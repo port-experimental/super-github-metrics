@@ -1,5 +1,5 @@
-import process from "node:process";
 import axios from "axios";
+import { getPortEnv } from "../../env";
 import type {
   OAuthResponse,
   PortEntitiesResponse,
@@ -22,15 +22,10 @@ export class PortClient {
   private static instance: PortClient | null = null;
 
   private constructor() {
-    this.baseUrl = "https://api.getport.io/v1";
-    this.clientId = process.env.PORT_CLIENT_ID || "";
-    this.clientSecret = process.env.PORT_CLIENT_SECRET || "";
-
-    if (!this.clientId || !this.clientSecret) {
-      throw new Error(
-        "PORT_CLIENT_ID and PORT_CLIENT_SECRET must be set in environment variables",
-      );
-    }
+    const portEnv = getPortEnv();
+    this.baseUrl = portEnv.portBaseUrl;
+    this.clientId = portEnv.portClientId;
+    this.clientSecret = portEnv.portClientSecret;
   }
 
   /**

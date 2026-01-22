@@ -54,6 +54,7 @@ const parseOptionalList = (value: string) => {
 export type PortEnv = {
   portClientId: string;
   portClientSecret: string;
+  portBaseUrl: string;
 };
 
 export type GithubEnv = {
@@ -77,6 +78,7 @@ export function getPortEnv(): PortEnv {
     {
       PORT_CLIENT_ID: str(),
       PORT_CLIENT_SECRET: str(),
+      PORT_BASE_URL: str(),
     },
     { reporter: throwReporter },
   );
@@ -84,6 +86,7 @@ export function getPortEnv(): PortEnv {
   return {
     portClientId: env.PORT_CLIENT_ID,
     portClientSecret: env.PORT_CLIENT_SECRET,
+    portBaseUrl: env.PORT_BASE_URL,
   };
 }
 

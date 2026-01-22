@@ -1,6 +1,6 @@
-import _ from 'lodash';
-import { createGitHubClient, GitHubClient } from '../clients/github';
-import { createEntitiesInBatches } from '../clients/port';
+import _ from "lodash";
+import { createGitHubClient, GitHubClient } from "../clients/github";
+import { upsertEntitiesInBatches } from "../clients/port";
 import type {
   GitHubCommit,
   GitHubPullRequest,
@@ -8,8 +8,8 @@ import type {
   GitHubUser,
   MemberJoinRecord,
   GitHubAppConfig,
-} from '../types/github';
-import type { PortEntity } from '../types/port';
+} from "../clients/github/types";
+import type { PortEntity } from "../clients/port/types";
 
 interface DeveloperStats {
   login: string;
@@ -27,7 +27,7 @@ interface DeveloperStats {
 
 export async function getMemberAddDates(
   orgName: string,
-  githubClient: GitHubClient
+  githubClient: GitHubClient,
 ): Promise<MemberJoinRecord[]> {
   return await githubClient.getMemberAddDates(orgName);
 }
@@ -36,12 +36,19 @@ export async function calculateAndStoreDeveloperStats(
   orgNames: string[],
   user: GitHubUser,
   joinDate: string,
-  githubClient: GitHubClient
+  githubClient: GitHubClient,
 ): Promise<PortEntity | null> {
-  const stats = await getDeveloperStats(orgNames, user.identifier, joinDate, githubClient);
+  const stats = await getDeveloperStats(
+    orgNames,
+    user.identifier,
+    joinDate,
+    githubClient,
+  );
   const record = stats.find((rec) => rec.login === user.identifier);
   if (!record) {
-    console.log(`No record found for ${user.identifier}, unprocessable, skipping...`);
+    console.log(
+      `No record found for ${user.identifier}, unprocessable, skipping...`,
+    );
     return null;
   }
   console.log(record);
@@ -52,11 +59,11 @@ export async function getDeveloperStats(
   orgNames: string[],
   login: string,
   joinDate: string,
-  githubClient: GitHubClient
+  githubClient: GitHubClient,
 ): Promise<DeveloperStats[]> {
   console.log(
-    'Using client:',
-    githubClient === githubClient ? 'injected client' : 'created client'
+    "Using client:",
+    githubClient === githubClient ? "injected client" : "created client",
   );
   const stats: DeveloperStats[] = [];
 
@@ -86,7 +93,7 @@ export async function getDeveloperStats(
         ]);
 
         console.log(
-          `Org ${orgName} - Commits: ${commits.length}, PRs: ${pulls.length}, Reviews: ${reviews.length}`
+          `Org ${orgName} - Commits: ${commits.length}, PRs: ${pulls.length}, Reviews: ${reviews.length}`,
         );
 
         // Convert PullRequestBasic to GitHubPullRequest
@@ -123,25 +130,26 @@ export async function getDeveloperStats(
     });
 
     console.log(
-      `Total data collected: ${allCommits.length} commits, ${allPulls.length} PRs, ${allReviews.length} reviews`
+      `Total data collected: ${allCommits.length} commits, ${allPulls.length} PRs, ${allReviews.length} reviews`,
     );
 
     // Sort commits by date (oldest first)
     const sortedCommits = allCommits.sort((a, b) => {
-      const dateA = a.commit.author?.date || '';
-      const dateB = b.commit.author?.date || '';
+      const dateA = a.commit.author?.date || "";
+      const dateB = b.commit.author?.date || "";
       return new Date(dateA).getTime() - new Date(dateB).getTime();
     });
 
     // Sort PRs by date (oldest first)
     const sortedPulls = allPulls.sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
 
     // Sort reviews by date (oldest first)
     const sortedReviews = allReviews.sort((a, b) => {
-      const dateA = a.submitted_at || a.created_at || '';
-      const dateB = b.submitted_at || b.created_at || '';
+      const dateA = a.submitted_at || a.created_at || "";
+      const dateB = b.submitted_at || b.created_at || "";
       return new Date(dateA).getTime() - new Date(dateB).getTime();
     });
 
@@ -185,7 +193,8 @@ export async function getDeveloperStats(
       const firstReview = sortedReviews[0];
       if (firstReview && firstReview.submitted_at) {
         initialReviewResponseTime =
-          new Date(firstReview.submitted_at).getTime() - new Date(firstPR.created_at).getTime();
+          new Date(firstReview.submitted_at).getTime() -
+          new Date(firstPR.created_at).getTime();
       }
     }
 
@@ -199,7 +208,9 @@ export async function getDeveloperStats(
     const timeTo10thCommitDays = timeTo10thCommit
       ? Math.round(timeTo10thCommit / (1000 * 60 * 60 * 24))
       : null;
-    const timeTo10thPRDays = timeTo10thPR ? Math.round(timeTo10thPR / (1000 * 60 * 60 * 24)) : null;
+    const timeTo10thPRDays = timeTo10thPR
+      ? Math.round(timeTo10thPR / (1000 * 60 * 60 * 24))
+      : null;
     const initialReviewResponseTimeDays = initialReviewResponseTime
       ? Math.round(initialReviewResponseTime / (1000 * 60 * 60 * 24))
       : null;
@@ -239,24 +250,24 @@ export async function getDeveloperStats(
 
 export async function storeDeveloperStats(
   user: GitHubUser,
-  record: DeveloperStats
+  record: DeveloperStats,
 ): Promise<PortEntity> {
   const props: Record<string, unknown> = _.chain(record)
     .pick([
-      'login',
-      'joinDate',
-      'firstCommitDate',
-      'tenthCommitDate',
-      'firstPRDate',
-      'tenthPRDate',
-      'initialReviewResponseTime',
-      'timeToFirstCommit',
-      'timeToFirstPR',
-      'timeTo10thCommit',
-      'timeTo10thPR',
+      "login",
+      "joinDate",
+      "firstCommitDate",
+      "tenthCommitDate",
+      "firstPRDate",
+      "tenthPRDate",
+      "initialReviewResponseTime",
+      "timeToFirstCommit",
+      "timeToFirstPR",
+      "timeTo10thCommit",
+      "timeTo10thPR",
     ])
     .mapKeys((_value, key) =>
-      key !== 'joinDate' ? _.snakeCase(key.replace('Date', '')) : 'join_date'
+      key !== "joinDate" ? _.snakeCase(key.replace("Date", "")) : "join_date",
     )
     .value();
 
@@ -273,36 +284,44 @@ export async function storeDeveloperStats(
 /**
  * Stores multiple developer stats entities in Port using bulk ingestion
  */
-export async function storeDeveloperStatsEntities(entities: PortEntity[]): Promise<void> {
+export async function storeDeveloperStatsEntities(
+  entities: PortEntity[],
+): Promise<void> {
   if (entities.length === 0) {
-    console.log('No developer stats entities to store');
+    console.log("No developer stats entities to store");
     return;
   }
 
   try {
-    console.log(`Storing ${entities.length} developer stats entities using bulk ingestion...`);
-    const results = await createEntitiesInBatches('githubUser', entities);
+    console.log(
+      `Storing ${entities.length} developer stats entities using bulk ingestion...`,
+    );
+    const results = await upsertEntitiesInBatches("githubUser", entities);
 
     // Aggregate results
     const totalSuccessful = results.reduce(
       (sum, result) => sum + result.entities.filter((r) => r.created).length,
-      0
+      0,
     );
     const totalFailed = results.reduce(
       (sum, result) => sum + result.entities.filter((r) => !r.created).length,
-      0
+      0,
     );
 
-    console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
+    console.log(
+      `Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`,
+    );
 
     if (totalFailed > 0) {
-      const allFailed = results.flatMap((result) => result.entities.filter((r) => !r.created));
+      const allFailed = results.flatMap((result) =>
+        result.entities.filter((r) => !r.created),
+      );
       const failedIdentifiers = allFailed.map((r) => r.identifier);
-      console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
+      console.warn(`Failed entities: ${failedIdentifiers.join(", ")}`);
     }
   } catch (error) {
     console.error(
-      `Failed to store developer stats entities: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to store developer stats entities: ${error instanceof Error ? error.message : "Unknown error"}`,
     );
     throw error;
   }

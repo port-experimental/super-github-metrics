@@ -35,7 +35,7 @@ For GitHub integrations, you'll also need:
 - `X_GITHUB_TOKEN` - Personal Access Token (can be comma-separated for token rotation)
 
 **Additional Configuration:**
-- `X_GITHUB_ENTERPRISE` - GitHub Enterprise name (if using GitHub Enterprise)
+- `X_GITHUB_ENTERPRISE` - GitHub Enterprise name (use for enterprise instances so the correct base URL is used)
 - `X_GITHUB_ORGS` - Comma-separated list of GitHub organizations to monitor
 
 ### Optional Variables

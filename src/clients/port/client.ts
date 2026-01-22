@@ -1,5 +1,5 @@
-import process from 'node:process';
-import axios from 'axios';
+import process from "node:process";
+import axios from "axios";
 import type {
   OAuthResponse,
   PortEntitiesResponse,
@@ -7,7 +7,7 @@ import type {
   PortEntityResponse,
   PortBulkEntitiesRequest,
   PortBulkEntitiesResponse,
-} from '../types/port';
+} from "./types";
 
 /**
  * PortClient class for interacting with Port API
@@ -22,12 +22,14 @@ export class PortClient {
   private static instance: PortClient | null = null;
 
   private constructor() {
-    this.baseUrl = 'https://api.getport.io/v1';
-    this.clientId = process.env.PORT_CLIENT_ID || '';
-    this.clientSecret = process.env.PORT_CLIENT_SECRET || '';
+    this.baseUrl = "https://api.getport.io/v1";
+    this.clientId = process.env.PORT_CLIENT_ID || "";
+    this.clientSecret = process.env.PORT_CLIENT_SECRET || "";
 
     if (!this.clientId || !this.clientSecret) {
-      throw new Error('PORT_CLIENT_ID and PORT_CLIENT_SECRET must be set in environment variables');
+      throw new Error(
+        "PORT_CLIENT_ID and PORT_CLIENT_SECRET must be set in environment variables",
+      );
     }
   }
 
@@ -62,27 +64,35 @@ export class PortClient {
    */
   private async generateNewToken(): Promise<void> {
     try {
-      console.log('Generating new OAuth token...');
-      const response = await axios.post<OAuthResponse>(`${this.baseUrl}/auth/access_token`, {
-        clientId: this.clientId,
-        clientSecret: this.clientSecret,
-      });
+      console.log("Generating new OAuth token...");
+      const response = await axios.post<OAuthResponse>(
+        `${this.baseUrl}/auth/access_token`,
+        {
+          clientId: this.clientId,
+          clientSecret: this.clientSecret,
+        },
+      );
 
       this.accessToken = response.data.accessToken;
       // Calculate expiry time based on expiresIn (seconds)
       this.tokenExpiryTime = Date.now() + response.data.expiresIn * 1000;
 
-      console.log(`Token generated successfully. Expires in ${response.data.expiresIn} seconds`);
+      console.log(
+        `Token generated successfully. Expires in ${response.data.expiresIn} seconds`,
+      );
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
-        console.error('OAuth token generation failed:', error.response?.data || error.message);
+        console.error(
+          "OAuth token generation failed:",
+          error.response?.data || error.message,
+        );
       } else {
         console.error(
-          'An unexpected error occurred during token generation:',
-          error.message || 'Unknown error'
+          "An unexpected error occurred during token generation:",
+          error.message || "Unknown error",
         );
       }
-      throw new Error('Failed to generate OAuth token');
+      throw new Error("Failed to generate OAuth token");
     }
   }
 
@@ -94,7 +104,11 @@ export class PortClient {
     const bufferTime = 5 * 60 * 1000; // 5 minutes buffer before expiry
 
     // If no token or token is expired (with buffer), generate new one
-    if (!this.accessToken || !this.tokenExpiryTime || this.tokenExpiryTime - now < bufferTime) {
+    if (
+      !this.accessToken ||
+      !this.tokenExpiryTime ||
+      this.tokenExpiryTime - now < bufferTime
+    ) {
       await this.generateNewToken();
     }
   }
@@ -103,16 +117,18 @@ export class PortClient {
    * Make an authenticated request with automatic token refresh
    */
   private async makeAuthenticatedRequest<T>(
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     endpoint: string,
     data?: Record<string, unknown>,
-    params?: Record<string, string>
+    params?: Record<string, string>,
   ): Promise<T> {
     await this.ensureValidToken();
 
     const url = new URL(`${this.baseUrl}${endpoint}`);
     if (params) {
-      Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+      Object.entries(params).forEach(([key, value]) =>
+        url.searchParams.set(key, value),
+      );
     }
 
     const config: {
@@ -125,7 +141,7 @@ export class PortClient {
       url: url.toString(),
       headers: {
         Authorization: `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     };
 
@@ -139,7 +155,7 @@ export class PortClient {
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         // Token might be invalid, try regenerating and retry once
-        console.log('Token appears invalid, regenerating...');
+        console.log("Token appears invalid, regenerating...");
         await this.generateNewToken();
 
         // Retry the request with new token
@@ -154,29 +170,38 @@ export class PortClient {
   /**
    * GET request
    */
-  async get<T = unknown>(endpoint: string, params?: Record<string, string>): Promise<T> {
-    return this.makeAuthenticatedRequest<T>('GET', endpoint, undefined, params);
+  async get<T = unknown>(
+    endpoint: string,
+    params?: Record<string, string>,
+  ): Promise<T> {
+    return this.makeAuthenticatedRequest<T>("GET", endpoint, undefined, params);
   }
 
   /**
    * POST request
    */
-  async post<T = unknown>(endpoint: string, data: Record<string, unknown>): Promise<T> {
-    return this.makeAuthenticatedRequest<T>('POST', endpoint, data);
+  async post<T = unknown>(
+    endpoint: string,
+    data: Record<string, unknown>,
+  ): Promise<T> {
+    return this.makeAuthenticatedRequest<T>("POST", endpoint, data);
   }
 
   /**
    * PATCH request
    */
-  async patch<T = unknown>(endpoint: string, data: Record<string, unknown>): Promise<T> {
-    return this.makeAuthenticatedRequest<T>('PATCH', endpoint, data);
+  async patch<T = unknown>(
+    endpoint: string,
+    data: Record<string, unknown>,
+  ): Promise<T> {
+    return this.makeAuthenticatedRequest<T>("PATCH", endpoint, data);
   }
 
   /**
    * DELETE request
    */
   async delete(endpoint: string): Promise<void> {
-    return this.makeAuthenticatedRequest<void>('DELETE', endpoint);
+    return this.makeAuthenticatedRequest<void>("DELETE", endpoint);
   }
 
   // Entity Management Methods
@@ -214,14 +239,22 @@ export class PortClient {
   /**
    * Get a specific entity by identifier
    */
-  async getEntity(entityType: string, identifier: string): Promise<PortEntityResponse> {
-    return this.get<PortEntityResponse>(`/blueprints/${entityType}/entities/${identifier}`);
+  async getEntity(
+    entityType: string,
+    identifier: string,
+  ): Promise<PortEntityResponse> {
+    return this.get<PortEntityResponse>(
+      `/blueprints/${entityType}/entities/${identifier}`,
+    );
   }
 
   /**
    * Get a specific entity by identifier (static method)
    */
-  static async getEntity(entityType: string, identifier: string): Promise<PortEntityResponse> {
+  static async getEntity(
+    entityType: string,
+    identifier: string,
+  ): Promise<PortEntityResponse> {
     const client = await PortClient.getInstance();
     return client.getEntity(entityType, identifier);
   }
@@ -230,7 +263,7 @@ export class PortClient {
    * Get all users
    */
   async getUsers(): Promise<PortEntitiesResponse> {
-    return this.get<PortEntitiesResponse>('/blueprints/_user/entities');
+    return this.get<PortEntitiesResponse>("/blueprints/_user/entities");
   }
 
   /**
@@ -245,7 +278,9 @@ export class PortClient {
    * Get a specific user by identifier
    */
   async getUser(identifier: string): Promise<PortEntityResponse> {
-    return this.get<PortEntityResponse>(`/blueprints/_user/entities/${identifier}`);
+    return this.get<PortEntityResponse>(
+      `/blueprints/_user/entities/${identifier}`,
+    );
   }
 
   /**
@@ -257,132 +292,52 @@ export class PortClient {
   }
 
   /**
-   * Upsert entity properties
-   */
-  async upsertProps(
-    entity: string,
-    identifier: string,
-    properties: Record<string, unknown>
-  ): Promise<unknown> {
-    return this.patch(`/blueprints/${entity}/entities/${identifier}`, {
-      properties,
-    });
-  }
-
-  /**
-   * Upsert entity properties (static method)
-   */
-  static async upsertProps(
-    entity: string,
-    identifier: string,
-    properties: Record<string, unknown>
-  ): Promise<unknown> {
-    const client = await PortClient.getInstance();
-    return client.upsertProps(entity, identifier, properties);
-  }
-
-  /**
-   * Upsert a complete entity
-   */
-  async upsertEntity(
-    entity: string,
-    identifier: string,
-    title: string,
-    properties: Record<string, unknown>,
-    relations: Record<string, unknown>,
-    team: string[] | null = null
-  ): Promise<unknown> {
-    return this.patch(`/blueprints/${entity}/entities/${identifier}`, {
-      title,
-      properties,
-      relations,
-      team,
-    });
-  }
-
-  /**
-   * Upsert a complete entity (static method)
-   */
-  static async upsertEntity(
-    entity: string,
-    identifier: string,
-    title: string,
-    properties: Record<string, unknown>,
-    relations: Record<string, unknown>,
-    team: string[] | null = null
-  ): Promise<unknown> {
-    const client = await PortClient.getInstance();
-    return client.upsertEntity(entity, identifier, title, properties, relations, team);
-  }
-
-  /**
-   * Create a new entity
-   */
-  async createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
-    return this.post(`/blueprints/${blueprint}/entities`, entity);
-  }
-
-  /**
-   * Create a new entity (static method)
-   */
-  static async createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
-    const client = await PortClient.getInstance();
-    return client.createEntity(blueprint, entity);
-  }
-
-  /**
-   * Create multiple entities in bulk with upsert support
+   * Upsert multiple entities in bulk
    * Maximum 20 entities per request as per Port API limits
+   * Uses bulk endpoint which handles both creation and updates
    */
-  async createBulkEntities(
+  async upsertEntities(
     blueprint: string,
-    entities: PortEntity[]
+    entities: PortEntity[],
   ): Promise<PortBulkEntitiesResponse> {
     if (entities.length > 20) {
-      throw new Error('Cannot create more than 20 entities in a single bulk request');
+      throw new Error(
+        "Cannot upsert more than 20 entities in a single bulk request",
+      );
     }
 
     const payload: PortBulkEntitiesRequest = { entities };
     return this.post<PortBulkEntitiesResponse>(
       `/blueprints/${blueprint}/entities/bulk?upsert=true&merge=true`,
-      payload as unknown as Record<string, unknown>
+      payload as unknown as Record<string, unknown>,
     );
   }
 
   /**
-   * Create multiple entities in bulk with upsert support (static method)
+   * Upsert multiple entities in bulk (static method)
    */
-  static async createBulkEntities(
+  static async upsertEntities(
     blueprint: string,
-    entities: PortEntity[]
+    entities: PortEntity[],
   ): Promise<PortBulkEntitiesResponse> {
     const client = await PortClient.getInstance();
-    return client.createBulkEntities(blueprint, entities);
-  }
-
-  /**
-   * Update an existing entity
-   */
-  async updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
-    return this.patch<PortEntity>(`/blueprints/${blueprint}/entities/${entity.identifier}`, entity);
-  }
-
-  /**
-   * Update an existing entity (static method)
-   */
-  static async updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
-    const client = await PortClient.getInstance();
-    return client.updateEntity(blueprint, entity);
+    return client.upsertEntities(blueprint, entities);
   }
 
   /**
    * Get token information
    */
-  getTokenInfo(): { hasToken: boolean; expiresAt: Date | null; isExpired: boolean } {
+  getTokenInfo(): {
+    hasToken: boolean;
+    expiresAt: Date | null;
+    isExpired: boolean;
+  } {
     return {
       hasToken: !!this.accessToken,
       expiresAt: this.tokenExpiryTime ? new Date(this.tokenExpiryTime) : null,
-      isExpired: this.tokenExpiryTime ? Date.now() > this.tokenExpiryTime : true,
+      isExpired: this.tokenExpiryTime
+        ? Date.now() > this.tokenExpiryTime
+        : true,
     };
   }
 
@@ -407,13 +362,15 @@ export async function deleteAllEntities(entityType: string): Promise<void> {
   return PortClient.deleteAllEntities(entityType);
 }
 
-export async function getEntities(entityType: string): Promise<PortEntitiesResponse> {
+export async function getEntities(
+  entityType: string,
+): Promise<PortEntitiesResponse> {
   return PortClient.getEntities(entityType);
 }
 
 export async function getEntity(
   entityType: string,
-  identifier: string
+  identifier: string,
 ): Promise<PortEntityResponse> {
   return PortClient.getEntity(entityType, identifier);
 }
@@ -426,43 +383,23 @@ export async function getUser(identifier: string): Promise<PortEntityResponse> {
   return PortClient.getUser(identifier);
 }
 
-export async function upsertProps(
-  entity: string,
-  identifier: string,
-  properties: Record<string, unknown>
-): Promise<unknown> {
-  return PortClient.upsertProps(entity, identifier, properties);
-}
-
-export async function upsertEntity(
-  entity: string,
-  identifier: string,
-  title: string,
-  properties: Record<string, unknown>,
-  relations: Record<string, unknown>,
-  team: string[] | null = null
-): Promise<unknown> {
-  return PortClient.upsertEntity(entity, identifier, title, properties, relations, team);
-}
-
-export async function createEntity(blueprint: string, entity: PortEntity): Promise<unknown> {
-  return PortClient.createEntity(blueprint, entity);
-}
-
-export async function createBulkEntities(
+/**
+ * Upsert multiple entities in bulk
+ */
+export async function upsertEntities(
   blueprint: string,
-  entities: PortEntity[]
+  entities: PortEntity[],
 ): Promise<PortBulkEntitiesResponse> {
-  return PortClient.createBulkEntities(blueprint, entities);
+  return PortClient.upsertEntities(blueprint, entities);
 }
 
 /**
- * Create multiple entities in batches using bulk ingestion
+ * Upsert multiple entities in batches using bulk ingestion
  * Automatically handles batching into chunks of 20 entities
  */
-export async function createEntitiesInBatches(
+export async function upsertEntitiesInBatches(
   blueprint: string,
-  entities: PortEntity[]
+  entities: PortEntity[],
 ): Promise<PortBulkEntitiesResponse[]> {
   const batchSize = 20;
   const results: PortBulkEntitiesResponse[] = [];
@@ -470,52 +407,59 @@ export async function createEntitiesInBatches(
   for (let i = 0; i < entities.length; i += batchSize) {
     const batch = entities.slice(i, i + batchSize);
     console.log(
-      `Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(entities.length / batchSize)} (${batch.length} entities)`
+      `Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(entities.length / batchSize)} (${batch.length} entities)`,
     );
 
     try {
-      const result = await createBulkEntities(blueprint, batch);
+      const result = await upsertEntities(blueprint, batch);
       results.push(result);
 
       // Log results - check both entities array and errors array
       const successful = result.entities.filter((r) => r.created).length;
-      const failedFromEntities = result.entities.filter((r) => !r.created).length;
+      const failedFromEntities = result.entities.filter(
+        (r) => !r.created,
+      ).length;
       const failedFromErrors = result.errors ? result.errors.length : 0;
       const totalFailed = failedFromEntities + failedFromErrors;
-      
-      console.log(`Batch completed: ${successful} successful, ${totalFailed} failed`);
+
+      console.log(
+        `Batch completed: ${successful} successful, ${totalFailed} failed`,
+      );
 
       if (totalFailed > 0) {
         // Collect failed identifiers from both sources
         const failedFromEntitiesIdentifiers = result.entities
           .filter((r) => !r.created)
           .map((r) => r.identifier);
-        const failedFromErrorsIdentifiers = result.errors 
+        const failedFromErrorsIdentifiers = result.errors
           ? result.errors.map((e) => e.identifier)
           : [];
-        const allFailedIdentifiers = [...failedFromEntitiesIdentifiers, ...failedFromErrorsIdentifiers];
-        
-        console.warn(`Failed entities in batch: ${allFailedIdentifiers.join(', ')}`);
-        
+        const allFailedIdentifiers = [
+          ...failedFromEntitiesIdentifiers,
+          ...failedFromErrorsIdentifiers,
+        ];
+
+        console.warn(
+          `Failed entities in batch: ${allFailedIdentifiers.join(", ")}`,
+        );
+
         // Log error details if available
         if (result.errors && result.errors.length > 0) {
-          console.warn('Error details:');
+          console.warn("Error details:");
           result.errors.forEach((error) => {
-            console.warn(`  - ${error.identifier}: ${error.message} (${error.statusCode})`);
+            console.warn(
+              `  - ${error.identifier}: ${error.message} (${error.statusCode})`,
+            );
           });
         }
       }
     } catch (error) {
       console.error(
-        `Failed to process batch ${Math.floor(i / batchSize) + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to process batch ${Math.floor(i / batchSize) + 1}: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
       throw error;
     }
   }
 
   return results;
-}
-
-export async function updateEntity(blueprint: string, entity: PortEntity): Promise<PortEntity> {
-  return PortClient.updateEntity(blueprint, entity);
 }

@@ -1,4 +1,4 @@
-export interface Template {
+export interface ITemplate {
   active_user_count: number;
   active_version_id: string;
   activity_bump_ms: number;
@@ -42,7 +42,7 @@ export interface Template {
   updated_at: string;
 }
 
-export interface Workspace {
+export interface IWorkspace {
   id: string;
   name: string;
   owner_id: string;
@@ -103,7 +103,7 @@ export interface Workspace {
   };
 }
 
-export interface WorkspacesResponse {
+export interface IWorkspacesResponse {
   count: number;
-  workspaces: Workspace[];
+  workspaces: IWorkspace[];
 }

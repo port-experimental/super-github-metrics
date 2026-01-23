@@ -401,7 +401,6 @@ export async function calculateWorkflowMetrics(
                 identifier: `${repository.name}-${workflowRuns[0].workflowId}`,
                 title: `${workflowRuns[0].workflowName} - ${repository.name}`,
                 properties: {
-                  repositoryName: repository.name,
                   workflowId: workflowRuns[0].workflowId,
                   workflowName: workflowRuns[0].workflowName,
                   medianDuration_last_30_days:
@@ -458,6 +457,9 @@ export async function calculateWorkflowMetrics(
                           last90DaysCompletedRuns.length) *
                         100
                       : 0,
+                },
+                relations: {
+                  service: repository.name,
                 },
               };
 

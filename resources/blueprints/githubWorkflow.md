@@ -10,7 +10,7 @@ Entity identifier example
 - Repository name + workflow ID (example: `payments-api-123456`).
 
 Relations
-- `repository` -> `githubRepository` (uses repository name as the repository identifier).
+- `service` -> `service` (uses repository name as the service identifier).
 
 Populated by
 - `workflow-metrics`
@@ -27,11 +27,6 @@ Blueprint definition
         "type": "string",
         "title": "Workflow Name",
         "description": "Name of the GitHub workflow"
-      },
-      "repository": {
-        "type": "string",
-        "title": "Repository",
-        "description": "GitHub repository where the workflow is defined"
       },
       "successRate": {
         "type": "number",
@@ -61,14 +56,14 @@ Blueprint definition
         "description": "Date and time of the most recent workflow run"
       }
     },
-    "required": ["workflowName", "repository"]
+    "required": ["workflowName"]
   },
   "mirrorProperties": {},
   "calculationProperties": {},
   "relations": {
-    "repository": {
-      "title": "Repository",
-      "target": "githubRepository",
+    "service": {
+      "title": "Service",
+      "target": "service",
       "required": true,
       "many": false
     }

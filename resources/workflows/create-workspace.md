@@ -16,6 +16,7 @@ Blueprints
 Required environment variables
 - `PORT_CLIENT_ID`
 - `PORT_CLIENT_SECRET`
+- `PORT_BASE_URL`
 - `CODER_SESSION_TOKEN`
 - `CODER_API_BASE_URL`
 - `CODER_ORGANIZATION_ID`

@@ -11,13 +11,14 @@ Command
 - `bun run workflow-metrics`
 
 Blueprints
-- [githubWorkflow](../../blueprints/githubWorkflow/README.md)
+- [githubWorkflow](../blueprints/githubWorkflow.md)
 
 Required environment variables
 - `PORT_CLIENT_ID`
 - `PORT_CLIENT_SECRET`
+- `PORT_BASE_URL`
 - `X_GITHUB_ORGS`
 - GitHub auth: set `X_GITHUB_APP_ID`, `X_GITHUB_APP_PRIVATE_KEY`, `X_GITHUB_APP_INSTALLATION_ID` together or set `X_GITHUB_TOKEN`.
 
 Optional environment variables
-- (use for GitHub Enterprise so the correct base URL is used) `X_GITHUB_ENTERPRISE`
+- `X_GITHUB_ENTERPRISE` - use for GitHub Enterprise so the correct base URL is used

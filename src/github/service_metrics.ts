@@ -14,8 +14,13 @@ import {
   CONCURRENCY_LIMITS,
 } from "./utils";
 import type { PortEntity } from "../clients/port/types";
+import { getPortBlueprintEnv } from "../env";
 
 export const BLUEPRINT_NAME = "service";
+
+export function getServiceBlueprintName(): string {
+  return getPortBlueprintEnv().serviceBlueprint;
+}
 export interface ServiceMetrics {
   repoId: string;
   repoName: string;
@@ -446,7 +451,10 @@ export async function storeServiceMetricsEntities(
     console.log(
       `Storing ${entities.length} service metrics entities using bulk ingestion...`,
     );
-    const results = await upsertEntitiesInBatches(BLUEPRINT_NAME, entities);
+    const results = await upsertEntitiesInBatches(
+      getServiceBlueprintName(),
+      entities,
+    );
 
     // Aggregate results
     const totalSuccessful = results.reduce(

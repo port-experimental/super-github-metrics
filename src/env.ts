@@ -147,3 +147,24 @@ export function getCoderEnv(): CoderEnv {
     organizationId: env.CODER_ORGANIZATION_ID,
   };
 }
+
+export type PortBlueprintEnv = {
+  serviceBlueprint: string;
+  serviceMetricsBlueprint: string;
+};
+
+export function getPortBlueprintEnv(): PortBlueprintEnv {
+  const env = cleanEnv(
+    process.env,
+    {
+      PORT_SERVICE_BLUEPRINT: str({ default: "service" }),
+      PORT_SERVICE_METRICS_BLUEPRINT: str({ default: "serviceMetrics" }),
+    },
+    { reporter: throwReporter },
+  );
+
+  return {
+    serviceBlueprint: env.PORT_SERVICE_BLUEPRINT,
+    serviceMetricsBlueprint: env.PORT_SERVICE_METRICS_BLUEPRINT,
+  };
+}

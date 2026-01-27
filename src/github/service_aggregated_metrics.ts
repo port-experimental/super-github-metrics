@@ -17,6 +17,11 @@ import {
   calculateContributionStandardDeviation,
   fetchRepositoryPRs,
 } from "./service_metrics";
+import { getPortBlueprintEnv } from "../env";
+
+export function getServiceMetricsBlueprintName(): string {
+  return getPortBlueprintEnv().serviceMetricsBlueprint;
+}
 
 export const SERVICE_METRICS_BLUEPRINT = {
   identifier: "serviceMetrics",
@@ -254,7 +259,7 @@ export async function storeServiceMetricsEntity(
   entity: ServiceMetricsEntity,
 ): Promise<void> {
   try {
-    await upsertEntities(SERVICE_METRICS_BLUEPRINT.identifier, [entity]);
+    await upsertEntities(getServiceMetricsBlueprintName(), [entity]);
     console.log(`Successfully stored service metrics entity: ${entity.title}`);
   } catch (error) {
     console.error(
@@ -377,7 +382,7 @@ export async function storeServiceMetricsEntities(
       `Storing ${entities.length} service metrics entities using bulk ingestion...`,
     );
     const results = await upsertEntitiesInBatches(
-      SERVICE_METRICS_BLUEPRINT.identifier,
+      getServiceMetricsBlueprintName(),
       entities,
     );
 

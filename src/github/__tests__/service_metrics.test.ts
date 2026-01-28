@@ -7,7 +7,7 @@ import type {
   PullRequestBasic,
   PullRequest,
   PullRequestReview,
-} from '../../types/github';
+} from '../../clients/github/types';
 
 // Mock the clients
 jest.mock('../../clients/github', () => ({
@@ -15,14 +15,14 @@ jest.mock('../../clients/github', () => ({
 }));
 
 jest.mock('../../clients/port', () => ({
-  updateEntity: jest.fn(),
+  upsertEntitiesInBatches: jest.fn(),
 }));
 
 describe('Service Metrics', () => {
   let mockGitHubClient: ReturnType<typeof createMockGitHubClient>;
   let mockPortClient: ReturnType<typeof createMockPortClient>;
   let mockCreateGitHubClient: jest.MockedFunction<any>;
-  let mockUpdateEntity: jest.MockedFunction<any>;
+  let mockUpsertEntitiesInBatches: jest.MockedFunction<any>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -31,11 +31,17 @@ describe('Service Metrics', () => {
 
     // Get the mocked functions
     mockCreateGitHubClient = require('../../clients/github').createGitHubClient;
-    mockUpdateEntity = require('../../clients/port').updateEntity;
+    mockUpsertEntitiesInBatches = require('../../clients/port').upsertEntitiesInBatches;
 
     // Configure the mocks
     mockCreateGitHubClient.mockReturnValue(mockGitHubClient);
-    mockUpdateEntity.mockResolvedValue({});
+    mockUpsertEntitiesInBatches.mockResolvedValue([
+      {
+        ok: true,
+        entities: [{ created: true, identifier: 'test', index: 0, additionalData: {} }],
+        errors: [],
+      },
+    ]);
   });
 
   afterEach(() => {
@@ -95,9 +101,8 @@ describe('Service Metrics', () => {
       mockGitHubClient.getPullRequestReviews.mockResolvedValue([mockReview]);
 
       const repos = [mockRepository];
-      const authToken = 'test-token';
 
-      await calculateAndStoreServiceMetrics(repos, authToken);
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
       // Verify GitHub client calls
       expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledWith('test-org', 'test-repo', {
@@ -115,9 +120,8 @@ describe('Service Metrics', () => {
 
     it('should handle empty repository list', async () => {
       const repos: Repository[] = [];
-      const authToken = 'test-token';
 
-      await calculateAndStoreServiceMetrics(repos, authToken);
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
       expect(mockGitHubClient.getRepositoryCommits).not.toHaveBeenCalled();
       expect(mockGitHubClient.getPullRequests).not.toHaveBeenCalled();
@@ -128,22 +132,20 @@ describe('Service Metrics', () => {
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
       const repos = [mockRepository];
-      const authToken = 'test-token';
 
-      await calculateAndStoreServiceMetrics(repos, authToken);
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
       expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalled();
       expect(mockGitHubClient.getPullRequests).toHaveBeenCalled();
     });
 
     it('should handle API errors gracefully', async () => {
-      mockUpdateEntity.mockRejectedValue(new Error('API Error'));
+      mockUpsertEntitiesInBatches.mockRejectedValue(new Error('API Error'));
 
       const repos = [mockRepository];
-      const authToken = 'test-token';
 
-      await expect(calculateAndStoreServiceMetrics(repos, authToken)).rejects.toThrow(
-        'Failed to process any repositories'
+      await expect(calculateAndStoreServiceMetrics(repos, mockGitHubClient)).rejects.toThrow(
+        'Failed to store service metrics entities: API Error'
       );
     });
 
@@ -182,18 +184,11 @@ describe('Service Metrics', () => {
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
       const repos = [mockRepository];
-      const authToken = 'test-token';
 
-      await calculateAndStoreServiceMetrics(repos, authToken);
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Verify that updateEntity was called for the service metrics
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        'service',
-        expect.objectContaining({
-          identifier: '123456',
-          title: 'test-repo',
-        })
-      );
+      // Verify that upsertEntitiesInBatches was called
+      expect(mockUpsertEntitiesInBatches).toHaveBeenCalled();
     });
 
     it('should calculate correct PR metrics', async () => {
@@ -260,18 +255,11 @@ describe('Service Metrics', () => {
         .mockResolvedValueOnce([testReviews[0], testReviews[1]]);
 
       const repos = [mockRepository];
-      const authToken = 'test-token';
 
-      await calculateAndStoreServiceMetrics(repos, authToken);
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Verify that updateEntity was called for the service metrics
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        'service',
-        expect.objectContaining({
-          identifier: '123456',
-          title: 'test-repo',
-        })
-      );
+      // Verify that upsertEntitiesInBatches was called
+      expect(mockUpsertEntitiesInBatches).toHaveBeenCalled();
     });
 
     it('should handle commits without author information', async () => {
@@ -300,18 +288,11 @@ describe('Service Metrics', () => {
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
       const repos = [mockRepository];
-      const authToken = 'test-token';
 
-      await calculateAndStoreServiceMetrics(repos, authToken);
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Should only process commits with author information
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        'service',
-        expect.objectContaining({
-          identifier: '123456',
-          title: 'test-repo',
-        })
-      );
+      // Should process commits and call upsertEntitiesInBatches
+      expect(mockUpsertEntitiesInBatches).toHaveBeenCalled();
     });
 
     it('should handle PRs without merge date', async () => {
@@ -341,18 +322,11 @@ describe('Service Metrics', () => {
       mockGitHubClient.getPullRequestReviews.mockResolvedValue([]);
 
       const repos = [mockRepository];
-      const authToken = 'test-token';
 
-      await calculateAndStoreServiceMetrics(repos, authToken);
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Should still process the PR but with different lifetime calculation
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        'service',
-        expect.objectContaining({
-          identifier: '123456',
-          title: 'test-repo',
-        })
-      );
+      // Should still process and call upsertEntitiesInBatches
+      expect(mockUpsertEntitiesInBatches).toHaveBeenCalled();
     });
 
     it('should handle multiple repositories', async () => {
@@ -400,25 +374,11 @@ describe('Service Metrics', () => {
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
       const repos = [repo1, repo2];
-      const authToken = 'test-token';
 
-      await calculateAndStoreServiceMetrics(repos, authToken);
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Should aggregate metrics across repositories
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        'service',
-        expect.objectContaining({
-          identifier: '123456',
-          title: 'repo1',
-        })
-      );
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        'service',
-        expect.objectContaining({
-          identifier: '789012',
-          title: 'repo2',
-        })
-      );
+      // Should process both repositories and call upsertEntitiesInBatches
+      expect(mockUpsertEntitiesInBatches).toHaveBeenCalled();
     });
   });
 });

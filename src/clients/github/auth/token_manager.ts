@@ -1,3 +1,12 @@
+import {
+  GITHUB_RATE_LIMIT_PER_HOUR,
+  GITHUB_RATE_LIMIT_RESET_MS,
+} from "../../../constants";
+
+/**
+ * Manages multiple Personal Access Tokens for GitHub API calls.
+ * Tracks rate limits for each token and selects the best available token.
+ */
 export class PATTokenManager {
   private tokens: string[];
   private currentTokenIndex: number = 0;
@@ -13,14 +22,17 @@ export class PATTokenManager {
     // Initialize rate limit tracking for all tokens
     this.tokens.forEach((token) => {
       this.tokenRateLimits.set(token, {
-        remaining: 5000,
-        reset: Date.now() + 3600000,
+        remaining: GITHUB_RATE_LIMIT_PER_HOUR,
+        reset: Date.now() + GITHUB_RATE_LIMIT_RESET_MS,
       });
     });
   }
 
   /**
-   * Gets the best available token based on remaining rate limits
+   * Gets the best available token based on remaining rate limits.
+   * Prioritizes tokens that have reset, then selects the token with the most remaining requests.
+   *
+   * @returns The best available token string
    */
   getBestToken(): string {
     const now = Date.now();
@@ -30,7 +42,10 @@ export class PATTokenManager {
     for (const [token, limits] of this.tokenRateLimits.entries()) {
       // If token is reset, use it
       if (limits.reset <= now) {
-        this.tokenRateLimits.set(token, { remaining: 5000, reset: now + 3600000 });
+        this.tokenRateLimits.set(token, {
+          remaining: GITHUB_RATE_LIMIT_PER_HOUR,
+          reset: now + GITHUB_RATE_LIMIT_RESET_MS,
+        });
         return token;
       }
 
@@ -86,18 +101,21 @@ export class PATTokenManager {
   }
 
   /**
-   * Gets rate limit status for all tokens
+   * Gets rate limit status for all tokens.
+   * Token strings are truncated for security.
+   *
+   * @returns Array of rate limit status objects for each token
    */
   getRateLimitStatus(): Array<{ token: string; remaining: number; reset: Date }> {
     const now = Date.now();
     return this.tokens.map((token) => {
       const limits = this.tokenRateLimits.get(token) || {
-        remaining: 5000,
-        reset: now + 3600000,
+        remaining: GITHUB_RATE_LIMIT_PER_HOUR,
+        reset: now + GITHUB_RATE_LIMIT_RESET_MS,
       };
       return {
         token: `${token.substring(0, 8)}...`,
-        remaining: limits.reset <= now ? 5000 : limits.remaining,
+        remaining: limits.reset <= now ? GITHUB_RATE_LIMIT_PER_HOUR : limits.remaining,
         reset: new Date(limits.reset),
       };
     });

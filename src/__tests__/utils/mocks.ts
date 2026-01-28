@@ -8,8 +8,8 @@ import type {
   WorkflowRun,
   AuditLogEntry,
   GitHubUser,
-} from '../../types/github';
-import type { PortEntity, PortEntitiesResponse, PortEntityResponse } from '../../types/port';
+} from '../../clients/github/types';
+import type { PortEntity, PortEntitiesResponse, PortEntityResponse } from '../../clients/port/types';
 import { createGitHubClient } from '../../clients/github';
 
 // Mock axios with simplified typing - moved to top to fix import order
@@ -115,7 +115,7 @@ export const mockAuditLogEntry: AuditLogEntry = {
   user: 'test-user',
   user_id: 123,
   created_at: '2024-01-01T00:00:00Z',
-  org_id: 177709801,
+  org: 'test-org',
 };
 
 export const mockGitHubUser: GitHubUser = {

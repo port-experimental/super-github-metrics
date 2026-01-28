@@ -1,6 +1,6 @@
 import { jest, describe, it, expect } from '@jest/globals';
 import { hasCompleteOnboardingMetrics } from '../onboarding_metrics';
-import type { PortEntity } from '../../types/port';
+import type { PortEntity } from '../../clients/port/types';
 
 describe('Onboarding Metrics - Simple Tests', () => {
   describe('hasCompleteOnboardingMetrics', () => {

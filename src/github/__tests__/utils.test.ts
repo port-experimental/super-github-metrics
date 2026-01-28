@@ -1,6 +1,6 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { filterDataForTimePeriod, filterCommitsForTimePeriod, TIME_PERIODS } from '../utils';
-import type { PullRequestBasic, Commit } from '../../types/github';
+import type { PullRequestBasic, Commit } from '../../clients/github/types';
 
 describe('GitHub Utils', () => {
   describe('filterDataForTimePeriod', () => {

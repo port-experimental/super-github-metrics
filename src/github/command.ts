@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import type { Logger } from "pino";
 import { createGitHubClient } from "../clients/github";
 import { getEntities, PortClient } from "../clients/port";
 import type {
@@ -18,6 +19,7 @@ import { calculateAndStoreTimeSeriesServiceMetrics } from "./service_aggregated_
 import { calculateWorkflowMetrics } from "./workflow_metrics";
 import { CONCURRENCY_LIMITS } from "./utils";
 import { getGithubEnv, getPortEnv } from "../env";
+import { DEFAULT_ONBOARDING_BATCH_SIZE, ONBOARDING_BATCH_DELAY_MS } from "../constants";
 
 /**
  * Custom error class for fatal errors that should cause the process to exit
@@ -33,13 +35,18 @@ class FatalError extends Error {
 }
 
 /**
- * Processes repositories for a specific organization
+ * Processes repositories for a specific organization.
+ *
+ * @param githubClient - GitHub client instance
+ * @param orgName - Organization name
+ * @param processor - Function to process the repositories
+ * @param logger - Logger instance
  */
 async function processOrganizationRepositories(
   githubClient: GitHubClient,
   orgName: string,
   processor: (repos: Repository[]) => Promise<void>,
-  logger: any,
+  logger: Logger,
 ): Promise<void> {
   logger.info(
     { orgName },
@@ -53,7 +60,13 @@ async function processOrganizationRepositories(
   await processor(repos);
 }
 
-export function registerGithubCommands(program: Command, logger: any): void {
+/**
+ * Registers GitHub-related CLI commands.
+ *
+ * @param program - Commander program instance
+ * @param logger - Logger instance
+ */
+export function registerGithubCommands(program: Command, logger: Logger): void {
   let githubClient!: GitHubClient;
   let GITHUB_ORGS: string[] = [];
   let ENTERPRISE_NAME: string | undefined;
@@ -186,8 +199,8 @@ export function registerGithubCommands(program: Command, logger: any): void {
                 );
               } else {
                 logger.warn(
-                  `Failed to fetch join records from ${orgName}, continuing without them:`,
-                  error,
+                  { err: error },
+                  `Failed to fetch join records from ${orgName}, continuing without them`,
                 );
               }
               return [];
@@ -200,8 +213,8 @@ export function registerGithubCommands(program: Command, logger: any): void {
           logger.info(`Total join records found: ${joinRecords.length}`);
         } catch (error) {
           logger.warn(
-            "Failed to fetch join records, continuing without them:",
-            error,
+            { err: error },
+            "Failed to fetch join records, continuing without them",
           );
         }
 
@@ -229,9 +242,9 @@ export function registerGithubCommands(program: Command, logger: any): void {
 
         // Process users in batches to avoid overwhelming the system
         const BATCH_SIZE = parseInt(
-          process.env.ONBOARDING_BATCH_SIZE || "3",
+          process.env.ONBOARDING_BATCH_SIZE || String(DEFAULT_ONBOARDING_BATCH_SIZE),
           10,
-        ); // Process 3 users at a time by default
+        );
         let processedCount = 0;
         let errorCount = 0;
         const usersWithErrors: string[] = [];
@@ -258,7 +271,7 @@ export function registerGithubCommands(program: Command, logger: any): void {
             try {
               // Ensure user has required properties
               if (!user.identifier) {
-                logger.error(`User missing identifier:`, user);
+                logger.error({ user }, `User missing identifier`);
                 return {
                   success: false,
                   user: user.identifier,
@@ -333,8 +346,11 @@ export function registerGithubCommands(program: Command, logger: any): void {
 
           // Add a small delay between batches to be conservative with rate limits
           if (i + BATCH_SIZE < usersToProcess.length) {
-            logger.info("Waiting 15 seconds before next batch...");
-            await new Promise((resolve) => setTimeout(resolve, 15000));
+            logger.info(
+              { delayMs: ONBOARDING_BATCH_DELAY_MS },
+              "Waiting before next batch",
+            );
+            await new Promise((resolve) => setTimeout(resolve, ONBOARDING_BATCH_DELAY_MS));
           }
         }
 
@@ -690,11 +706,11 @@ export function registerGithubCommands(program: Command, logger: any): void {
               logger.info(
                 '   Make sure the GitHub App has "Administration" read permissions',
               );
-              logger.info("Original error:", error);
+              logger.info({ err: error }, "Original error");
             } else {
               logger.error(
-                `❌ Error fetching audit logs for ${orgName}:`,
-                error,
+                { err: error },
+                `❌ Error fetching audit logs for ${orgName}`,
               );
             }
           }

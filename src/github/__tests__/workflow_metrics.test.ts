@@ -1,7 +1,7 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { calculateWorkflowMetrics } from '../workflow_metrics';
 import { createMockGitHubClient, createMockPortClient } from '../../__tests__/utils/mocks';
-import type { WorkflowRun, Repository } from '../../types/github';
+import type { WorkflowRun, Repository } from '../../clients/github/types';
 
 // Mock the clients
 jest.mock('../../clients/github', () => ({

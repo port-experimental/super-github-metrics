@@ -117,7 +117,6 @@ describe('Onboarding Metrics', () => {
 
   describe('calculateAndStoreDeveloperStats', () => {
     const testOrgs = ['test-org'];
-    const testToken = 'test-token';
     const testJoinDate = '2024-01-01T00:00:00Z';
 
     beforeEach(() => {
@@ -174,7 +173,6 @@ describe('Onboarding Metrics', () => {
 
       await calculateAndStoreDeveloperStats(
         testOrgs,
-        testToken,
         mockGitHubUser,
         testJoinDate,
         mockGitHubClient
@@ -219,7 +217,6 @@ describe('Onboarding Metrics', () => {
 
       await calculateAndStoreDeveloperStats(
         testOrgs,
-        testToken,
         mockGitHubUser,
         testJoinDate,
         mockGitHubClient
@@ -263,7 +260,6 @@ describe('Onboarding Metrics', () => {
 
       await calculateAndStoreDeveloperStats(
         testOrgs,
-        testToken,
         mockGitHubUser,
         testJoinDate,
         mockGitHubClient
@@ -298,7 +294,6 @@ describe('Onboarding Metrics', () => {
 
       await calculateAndStoreDeveloperStats(
         testOrgs,
-        testToken,
         mockGitHubUser,
         testJoinDate,
         mockGitHubClient
@@ -333,7 +328,6 @@ describe('Onboarding Metrics', () => {
 
       await calculateAndStoreDeveloperStats(
         testOrgs,
-        testToken,
         mockGitHubUser,
         testJoinDate,
         mockGitHubClient
@@ -368,7 +362,6 @@ describe('Onboarding Metrics', () => {
 
       await calculateAndStoreDeveloperStats(
         testOrgs,
-        testToken,
         mockGitHubUser,
         testJoinDate,
         mockGitHubClient
@@ -413,7 +406,6 @@ describe('Onboarding Metrics', () => {
 
       await calculateAndStoreDeveloperStats(
         testOrgs,
-        testToken,
         mockGitHubUser,
         testJoinDate,
         mockGitHubClient
@@ -457,7 +449,6 @@ describe('Onboarding Metrics', () => {
 
       await calculateAndStoreDeveloperStats(
         testOrgs,
-        testToken,
         mockGitHubUser,
         testJoinDate,
         mockGitHubClient

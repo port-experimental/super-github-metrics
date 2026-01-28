@@ -1,5 +1,12 @@
 import axios from "axios";
+import type { Logger } from "pino";
 import { getPortEnv } from "../../env";
+import { getLogger } from "../../logger";
+import {
+  TOKEN_EXPIRY_BUFFER_MS,
+  BEARER_TOKEN_DEFAULT_EXPIRY_MS,
+  PORT_BATCH_SIZE,
+} from "../../constants";
 import type {
   OAuthResponse,
   PortEntitiesResponse,
@@ -20,12 +27,14 @@ export class PortClient {
   private clientId: string;
   private clientSecret: string;
   private static instance: PortClient | null = null;
+  private logger: Logger;
 
   private constructor() {
     const portEnv = getPortEnv();
     this.baseUrl = portEnv.portBaseUrl;
     this.clientId = portEnv.portClientId;
     this.clientSecret = portEnv.portClientSecret;
+    this.logger = getLogger().child({ module: "port-client" });
   }
 
   /**
@@ -40,26 +49,29 @@ export class PortClient {
   }
 
   /**
-   * Initialize the access token
+   * Initialize the access token.
+   * Checks for a bearer token in environment first, otherwise generates an OAuth token.
    */
   private async initializeToken(): Promise<void> {
     // Check if we have a bearer token in environment
     const bearerToken = process.env.PORT_BEARER_TOKEN;
     if (bearerToken) {
       this.accessToken = bearerToken;
-      // Set a default expiry time for bearer tokens (24 hours)
-      this.tokenExpiryTime = Date.now() + 24 * 60 * 60 * 1000;
+      // Set a default expiry time for bearer tokens
+      this.tokenExpiryTime = Date.now() + BEARER_TOKEN_DEFAULT_EXPIRY_MS;
+      this.logger.info("Using bearer token from environment");
     } else {
       await this.generateNewToken();
     }
   }
 
   /**
-   * Generate a new OAuth token
+   * Generate a new OAuth token from Port API.
+   * @throws Error if token generation fails
    */
   private async generateNewToken(): Promise<void> {
     try {
-      console.log("Generating new OAuth token...");
+      this.logger.info("Generating new OAuth token");
       const response = await axios.post<OAuthResponse>(
         `${this.baseUrl}/auth/access_token`,
         {
@@ -72,19 +84,20 @@ export class PortClient {
       // Calculate expiry time based on expiresIn (seconds)
       this.tokenExpiryTime = Date.now() + response.data.expiresIn * 1000;
 
-      console.log(
-        `Token generated successfully. Expires in ${response.data.expiresIn} seconds`,
+      this.logger.info(
+        { expiresInSeconds: response.data.expiresIn },
+        "Token generated successfully",
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          "OAuth token generation failed:",
-          error.response?.data || error.message,
+        this.logger.error(
+          { error: error.response?.data || error.message },
+          "OAuth token generation failed",
         );
       } else {
-        console.error(
-          "An unexpected error occurred during token generation:",
-          error.message || "Unknown error",
+        this.logger.error(
+          { error: error instanceof Error ? error.message : "Unknown error" },
+          "Unexpected error during token generation",
         );
       }
       throw new Error("Failed to generate OAuth token");
@@ -92,17 +105,17 @@ export class PortClient {
   }
 
   /**
-   * Check if the current token is valid and regenerate if needed
+   * Check if the current token is valid and regenerate if needed.
+   * Uses a buffer time before actual expiry to prevent stale token usage.
    */
   private async ensureValidToken(): Promise<void> {
     const now = Date.now();
-    const bufferTime = 5 * 60 * 1000; // 5 minutes buffer before expiry
 
     // If no token or token is expired (with buffer), generate new one
     if (
       !this.accessToken ||
       !this.tokenExpiryTime ||
-      this.tokenExpiryTime - now < bufferTime
+      this.tokenExpiryTime - now < TOKEN_EXPIRY_BUFFER_MS
     ) {
       await this.generateNewToken();
     }
@@ -150,7 +163,7 @@ export class PortClient {
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         // Token might be invalid, try regenerating and retry once
-        console.log("Token appears invalid, regenerating...");
+        this.logger.warn("Token appears invalid, regenerating");
         await this.generateNewToken();
 
         // Retry the request with new token
@@ -287,17 +300,21 @@ export class PortClient {
   }
 
   /**
-   * Upsert multiple entities in bulk
-   * Maximum 20 entities per request as per Port API limits
-   * Uses bulk endpoint which handles both creation and updates
+   * Upsert multiple entities in bulk.
+   * Maximum entities per request is defined by PORT_BATCH_SIZE constant.
+   * Uses bulk endpoint which handles both creation and updates.
+   *
+   * @param blueprint - The blueprint identifier
+   * @param entities - Array of entities to upsert (max PORT_BATCH_SIZE)
+   * @throws Error if entities array exceeds PORT_BATCH_SIZE
    */
   async upsertEntities(
     blueprint: string,
     entities: PortEntity[],
   ): Promise<PortBulkEntitiesResponse> {
-    if (entities.length > 20) {
+    if (entities.length > PORT_BATCH_SIZE) {
       throw new Error(
-        "Cannot upsert more than 20 entities in a single bulk request",
+        `Cannot upsert more than ${PORT_BATCH_SIZE} entities in a single bulk request`,
       );
     }
 
@@ -389,20 +406,28 @@ export async function upsertEntities(
 }
 
 /**
- * Upsert multiple entities in batches using bulk ingestion
- * Automatically handles batching into chunks of 20 entities
+ * Upsert multiple entities in batches using bulk ingestion.
+ * Automatically handles batching into chunks of PORT_BATCH_SIZE entities.
+ *
+ * @param blueprint - The blueprint identifier
+ * @param entities - Array of entities to upsert
+ * @returns Array of bulk response objects, one per batch
  */
 export async function upsertEntitiesInBatches(
   blueprint: string,
   entities: PortEntity[],
 ): Promise<PortBulkEntitiesResponse[]> {
-  const batchSize = 20;
+  const logger = getLogger().child({ module: "port-client", operation: "upsertEntitiesInBatches" });
   const results: PortBulkEntitiesResponse[] = [];
+  const totalBatches = Math.ceil(entities.length / PORT_BATCH_SIZE);
 
-  for (let i = 0; i < entities.length; i += batchSize) {
-    const batch = entities.slice(i, i + batchSize);
-    console.log(
-      `Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(entities.length / batchSize)} (${batch.length} entities)`,
+  for (let i = 0; i < entities.length; i += PORT_BATCH_SIZE) {
+    const batch = entities.slice(i, i + PORT_BATCH_SIZE);
+    const batchNumber = Math.floor(i / PORT_BATCH_SIZE) + 1;
+
+    logger.info(
+      { batchNumber, totalBatches, batchSize: batch.length },
+      `Processing batch ${batchNumber}/${totalBatches}`,
     );
 
     try {
@@ -417,8 +442,9 @@ export async function upsertEntitiesInBatches(
       const failedFromErrors = result.errors ? result.errors.length : 0;
       const totalFailed = failedFromEntities + failedFromErrors;
 
-      console.log(
-        `Batch completed: ${successful} successful, ${totalFailed} failed`,
+      logger.info(
+        { batchNumber, successful, failed: totalFailed },
+        "Batch completed",
       );
 
       if (totalFailed > 0) {
@@ -434,23 +460,25 @@ export async function upsertEntitiesInBatches(
           ...failedFromErrorsIdentifiers,
         ];
 
-        console.warn(
-          `Failed entities in batch: ${allFailedIdentifiers.join(", ")}`,
+        logger.warn(
+          { failedIdentifiers: allFailedIdentifiers },
+          "Some entities failed in batch",
         );
 
         // Log error details if available
         if (result.errors && result.errors.length > 0) {
-          console.warn("Error details:");
           result.errors.forEach((error) => {
-            console.warn(
-              `  - ${error.identifier}: ${error.message} (${error.statusCode})`,
+            logger.warn(
+              { identifier: error.identifier, message: error.message, statusCode: error.statusCode },
+              "Entity upsert error",
             );
           });
         }
       }
     } catch (error) {
-      console.error(
-        `Failed to process batch ${Math.floor(i / batchSize) + 1}: ${error instanceof Error ? error.message : "Unknown error"}`,
+      logger.error(
+        { batchNumber, error: error instanceof Error ? error.message : "Unknown error" },
+        "Failed to process batch",
       );
       throw error;
     }

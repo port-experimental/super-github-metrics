@@ -12,7 +12,19 @@ import {
   filterDataForTimePeriod,
   TIME_PERIODS,
   type TimePeriod,
+  createCutoffDate,
 } from "./utils";
+import { getLogger } from "../logger";
+import { GITHUB_PAGE_SIZE, PR_METRICS_BATCH_DELAY_MS } from "../constants";
+import {
+  safePercentage,
+  safeDivide,
+  safeStandardDeviation,
+  sanitizeMetric,
+} from "../utils/metrics-validation";
+
+// Module logger
+const logger = getLogger().child({ module: "pr-metrics" });
 
 export interface PRMetrics {
   repoId: string;
@@ -48,6 +60,17 @@ export interface PRMetrics {
   numberOfCommitsAfterPRIsOpened: number | null;
 }
 
+/**
+ * Gets the number of changes made after a PR was opened.
+ * Calculates both line changes and commit counts.
+ *
+ * @param githubClient - GitHub client instance
+ * @param owner - Repository owner
+ * @param repo - Repository name
+ * @param prNumber - Pull request number
+ * @param prCreationDate - Date when the PR was created
+ * @returns Object containing line changes and commit counts after PR opened
+ */
 export const getNumberOfChangesAfterPRIsOpened = async (
   githubClient: GitHubClient,
   owner: string,
@@ -81,9 +104,9 @@ export const getNumberOfChangesAfterPRIsOpened = async (
       numberOfCommitsAfterPRIsOpened: commitsAfterPR.length,
     };
   } catch (error) {
-    console.error(
-      `Error getting changes after PR ${prNumber} is opened:`,
-      error,
+    logger.error(
+      { owner, repo, prNumber, error: error instanceof Error ? error.message : "Unknown error" },
+      "Error getting changes after PR is opened",
     );
     return {
       numberOfLineChangesAfterPRIsOpened: null,
@@ -92,14 +115,22 @@ export const getNumberOfChangesAfterPRIsOpened = async (
   }
 };
 
+/**
+ * Fetches all PRs for a repository within the specified time period.
+ *
+ * @param githubClient - GitHub client instance
+ * @param owner - Repository owner
+ * @param repoName - Repository name
+ * @param daysBack - Number of days to look back
+ * @returns Array of basic PR data within the time period
+ */
 export async function fetchRepositoryPRs(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
   daysBack: number,
 ): Promise<PullRequestBasic[]> {
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+  const cutoffDate = createCutoffDate(daysBack);
 
   const allPRs: PullRequestBasic[] = [];
   let page = 1;
@@ -111,7 +142,7 @@ export async function fetchRepositoryPRs(
         state: "closed",
         sort: "created",
         direction: "desc",
-        per_page: 100,
+        per_page: GITHUB_PAGE_SIZE,
         page: page,
       });
 
@@ -123,16 +154,16 @@ export async function fetchRepositoryPRs(
 
       allPRs.push(...filteredPRs);
 
-      // If we got less than 100 PRs or all PRs are before the cutoff date, we've reached the end
-      if (prs.length < 100 || filteredPRs.length === 0) {
+      // If we got less than page size PRs or all PRs are before the cutoff date, we've reached the end
+      if (prs.length < GITHUB_PAGE_SIZE || filteredPRs.length === 0) {
         hasMore = false;
       } else {
         page++;
       }
     } catch (error) {
-      console.error(
-        `Error fetching PRs for ${owner}/${repoName} page ${page}:`,
-        error,
+      logger.error(
+        { owner, repoName, page, error: error instanceof Error ? error.message : "Unknown error" },
+        "Error fetching PRs",
       );
       hasMore = false;
     }
@@ -153,6 +184,14 @@ interface AggregatedMetrics {
   contributionStandardDeviation: number;
 }
 
+/**
+ * Calculates aggregated metrics from individual PR metrics.
+ * Uses safe math operations to prevent NaN/Infinity results.
+ *
+ * @param prMetrics - Array of individual PR metrics
+ * @param period - Time period in days (unused but kept for API compatibility)
+ * @returns Aggregated metrics with validated values
+ */
 function calculateAggregatedMetrics(
   prMetrics: PRMetrics[],
   period: number,
@@ -164,34 +203,29 @@ function calculateAggregatedMetrics(
   const numberOfPRsReviewed = prMetrics.filter(
     (pr) => pr.reviewParticipation > 0,
   ).length;
-  const numberOfPRsMergedWithoutReview = totalMergedPRs - numberOfPRsReviewed;
+  const numberOfPRsMergedWithoutReview = Math.max(0, totalMergedPRs - numberOfPRsReviewed);
 
-  const percentageOfPRsReviewed =
-    totalPRs > 0 ? (numberOfPRsReviewed / totalPRs) * 100 : 0;
-  const percentageOfPRsMergedWithoutReview =
-    totalMergedPRs > 0
-      ? (numberOfPRsMergedWithoutReview / totalMergedPRs) * 100
-      : 0;
+  const percentageOfPRsReviewed = safePercentage(numberOfPRsReviewed, totalPRs);
+  const percentageOfPRsMergedWithoutReview = safePercentage(
+    numberOfPRsMergedWithoutReview,
+    totalMergedPRs
+  );
 
   const validPickupTimes = prMetrics
     .filter((pr) => pr.prPickupTime !== null)
     .map((pr) => pr.prPickupTime!);
-  const averageTimeToFirstReview =
-    validPickupTimes.length > 0
-      ? validPickupTimes.reduce((sum, time) => sum + time, 0) /
-        validPickupTimes.length
-      : 0;
+  const averageTimeToFirstReview = sanitizeMetric(
+    safeDivide(
+      validPickupTimes.reduce((sum, time) => sum + time, 0),
+      validPickupTimes.length
+    )
+  );
 
-  const prSuccessRate = totalPRs > 0 ? (totalMergedPRs / totalPRs) * 100 : 0;
+  const prSuccessRate = safePercentage(totalMergedPRs, totalPRs);
 
   // Calculate standard deviation of contributions (PR sizes)
   const prSizes = prMetrics.map((pr) => pr.prSize);
-  const meanSize =
-    prSizes.reduce((sum, size) => sum + size, 0) / prSizes.length;
-  const variance =
-    prSizes.reduce((sum, size) => sum + (size - meanSize) ** 2, 0) /
-    prSizes.length;
-  const contributionStandardDeviation = Math.sqrt(variance);
+  const contributionStandardDeviation = safeStandardDeviation(prSizes);
 
   return {
     totalPRs,
@@ -206,6 +240,12 @@ function calculateAggregatedMetrics(
   };
 }
 
+/**
+ * Main function to calculate and store PR metrics for multiple repositories.
+ *
+ * @param repos - Array of repositories to process
+ * @param githubClient - GitHub client instance
+ */
 export async function calculateAndStorePRMetrics(
   repos: Repository[],
   githubClient: GitHubClient,
@@ -215,38 +255,47 @@ export async function calculateAndStorePRMetrics(
   const allEntities: PortEntity[] = [];
 
   // Process repositories concurrently with a reasonable concurrency limit
-  const concurrencyLimit = CONCURRENCY_LIMITS.REPOSITORIES; // Use the global constant
+  const concurrencyLimit = CONCURRENCY_LIMITS.REPOSITORIES;
   const results: Array<{
     success: boolean;
     repoName: string;
-    error?: any;
+    error?: unknown;
     entities?: PortEntity[];
   }> = [];
+  const totalBatches = Math.ceil(repos.length / concurrencyLimit);
 
   for (let i = 0; i < repos.length; i += concurrencyLimit) {
     const batch = repos.slice(i, i + concurrencyLimit);
-    console.log(
-      `Processing PR metrics batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`,
+    const batchNumber = Math.floor(i / concurrencyLimit) + 1;
+
+    logger.info(
+      { batchNumber, totalBatches, batchSize: batch.length },
+      "Processing PR metrics batch",
     );
 
     const batchPromises = batch.map(async (repo, batchIndex) => {
       const repoIndex = i + batchIndex;
       try {
-        console.log(
-          `Processing repo ${repo.name} (${repoIndex + 1}/${repos.length})`,
+        logger.info(
+          { repoName: repo.name, repoIndex: repoIndex + 1, totalRepos: repos.length },
+          "Processing repository",
         );
 
         // Fetch all PRs for the maximum time period (90 days) once
         const maxPeriod = TIME_PERIODS.NINETY_DAYS;
-        console.log(`  Fetching PRs for ${maxPeriod} day period...`);
+        logger.debug(
+          { repoName: repo.name, maxPeriod },
+          "Fetching PRs for maximum period",
+        );
         const allPRs = await fetchRepositoryPRs(
           githubClient,
           repo.owner.login,
           repo.name,
           maxPeriod,
         );
-        console.log(
-          `  Found ${allPRs.length} PRs in the last ${maxPeriod} days`,
+        logger.debug(
+          { repoName: repo.name, prCount: allPRs.length, maxPeriod },
+          "Found PRs",
         );
 
         // Process each time period by filtering the already-fetched data
@@ -261,12 +310,16 @@ export async function calculateAndStorePRMetrics(
 
         // Process all time periods concurrently
         const timePeriodPromises = timePeriods.map(async (period) => {
-          console.log(`  Processing ${period} day period...`);
+          logger.debug(
+            { repoName: repo.name, period },
+            "Processing time period",
+          );
 
           // Filter PRs for this time period
           const periodPRs = filterDataForTimePeriod(allPRs, period);
-          console.log(
-            `  Filtered to ${periodPRs.length} PRs for ${period} day period`,
+          logger.debug(
+            { repoName: repo.name, period, prCount: periodPRs.length },
+            "Filtered PRs for period",
           );
 
           // Process PRs concurrently within each time period
@@ -348,9 +401,9 @@ export async function calculateAndStorePRMetrics(
 
               return record;
             } catch (error) {
-              console.error(
-                `Error processing PR ${pr.number} in ${repo.name}:`,
-                error,
+              logger.error(
+                { repoName: repo.name, prNumber: pr.number, error: error instanceof Error ? error.message : "Unknown error" },
+                "Error processing PR",
               );
               return null;
             }
@@ -363,7 +416,10 @@ export async function calculateAndStorePRMetrics(
           ) as PRMetrics[];
 
           if (validPRResults.length === 0) {
-            console.log(`  No valid PR metrics for ${period} day period`);
+            logger.debug(
+              { repoName: repo.name, period },
+              "No valid PR metrics for period",
+            );
             return;
           }
 
@@ -409,7 +465,10 @@ export async function calculateAndStorePRMetrics(
 
         return { success: true, repoName: repo.name, entities: repoEntities };
       } catch (error) {
-        console.error(`Error processing repo ${repo.name}:`, error);
+        logger.error(
+          { repoName: repo.name, error: error instanceof Error ? error.message : "Unknown error" },
+          "Error processing repository",
+        );
         return { success: false, repoName: repo.name, error };
       }
     });
@@ -419,7 +478,7 @@ export async function calculateAndStorePRMetrics(
 
     // Add a small delay between batches to be conservative with rate limits
     if (i + concurrencyLimit < repos.length) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, PR_METRICS_BATCH_DELAY_MS));
     }
   }
 
@@ -435,21 +494,28 @@ export async function calculateAndStorePRMetrics(
 
   // Store all entities in batches
   if (allEntities.length > 0) {
-    console.log(`Storing ${allEntities.length} PR metrics entities...`);
+    logger.info(
+      { entityCount: allEntities.length },
+      "Storing PR metrics entities",
+    );
     await storePRMetricsEntities(allEntities);
-    console.log("Successfully stored PR metrics entities");
+    logger.info("Successfully stored PR metrics entities");
   }
 
   // Print summary
-  console.log("\n=== PR Metrics Processing Summary ===");
-  console.log(`Total repositories processed: ${results.length}`);
-  console.log(`Successful: ${results.filter((r) => r.success).length}`);
-  console.log(`Failed: ${failedRepos.length}`);
-  console.log(`Total entities created: ${allEntities.length}`);
+  const successCount = results.filter((r) => r.success).length;
+  logger.info(
+    {
+      totalRepositories: results.length,
+      successful: successCount,
+      failed: failedRepos.length,
+      totalEntities: allEntities.length,
+    },
+    "PR Metrics Processing Summary",
+  );
 
   if (failedRepos.length > 0) {
-    console.log("\nFailed repositories:");
-    failedRepos.forEach((repoName) => console.log(`- ${repoName}`));
+    logger.warn({ failedRepos }, "Failed repositories");
   }
 
   if (hasFatalError) {
@@ -460,19 +526,22 @@ export async function calculateAndStorePRMetrics(
 }
 
 /**
- * Stores multiple PR metrics entities in Port using bulk ingestion
+ * Stores multiple PR metrics entities in Port using bulk ingestion.
+ *
+ * @param entities - Array of Port entities to store
  */
 export async function storePRMetricsEntities(
   entities: PortEntity[],
 ): Promise<void> {
   if (entities.length === 0) {
-    console.log("No PR metrics entities to store");
+    logger.info("No PR metrics entities to store");
     return;
   }
 
   try {
-    console.log(
-      `Storing ${entities.length} PR metrics entities using bulk ingestion...`,
+    logger.info(
+      { entityCount: entities.length },
+      "Storing PR metrics entities using bulk ingestion",
     );
     const results = await upsertEntitiesInBatches(
       "githubPullRequest",
@@ -492,8 +561,9 @@ export async function storePRMetricsEntities(
       return sum + failedFromEntities + failedFromErrors;
     }, 0);
 
-    console.log(
-      `Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`,
+    logger.info(
+      { successful: totalSuccessful, failed: totalFailed },
+      "Bulk ingestion completed",
     );
 
     if (totalFailed > 0) {
@@ -505,22 +575,23 @@ export async function storePRMetricsEntities(
       });
 
       const failedIdentifiers = allFailed.map((r) => r.identifier);
-      console.warn(`Failed entities: ${failedIdentifiers.join(", ")}`);
+      logger.warn({ failedIdentifiers }, "Some entities failed to store");
 
       // Log detailed error information
       const errors = results.flatMap((result) => result.errors || []);
       if (errors.length > 0) {
-        console.warn("Detailed error information:");
         errors.forEach((error) => {
-          console.warn(
-            `  - ${error.identifier}: ${error.message} (${error.statusCode})`,
+          logger.warn(
+            { identifier: error.identifier, message: error.message, statusCode: error.statusCode },
+            "Entity upsert error",
           );
         });
       }
     }
   } catch (error) {
-    console.error(
-      `Failed to store PR metrics entities: ${error instanceof Error ? error.message : "Unknown error"}`,
+    logger.error(
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      "Failed to store PR metrics entities",
     );
     throw error;
   }

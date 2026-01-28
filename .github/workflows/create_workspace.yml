@@ -4,15 +4,15 @@ on:
     # Inputs the workflow accepts.
     inputs:
       template_id:
-        description: 'the id of the workspace template'
+        description: "the id of the workspace template"
         required: true
         type: string
       name:
-        description: 'the name of the workspace'
+        description: "the name of the workspace"
         required: true
         type: string
       ttl:
-        description: 'the time to live for the workspace, in milliseconds'
+        description: "the time to live for the workspace, in milliseconds"
         required: true
         type: string
 jobs:
@@ -23,10 +23,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun run create-workspace --template ${{ inputs.template_id }} --name ${{ inputs.name }} --ttl ${{ inputs.ttl }}
-        env: # Or as an environment variable
+        env:
           PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
           PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+          PORT_BASE_URL: ${{ secrets.PORT_BASE_URL }}
           CODER_SESSION_TOKEN: ${{ secrets.CODER_SESSION_TOKEN }}
           CODER_API_BASE_URL: ${{ secrets.CODER_API_BASE_URL }}
           CODER_ORGANIZATION_ID: ${{ secrets.CODER_ORGANIZATION_ID }}
-

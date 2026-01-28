@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       debug_output:
-        description: 'Enable debug output'
+        description: "Enable debug output"
         required: false
-        default: 'true'
+        default: "true"
         type: boolean
 
 jobs:
   list_user_additions:
     runs-on: ubuntu-latest
     name: List User Addition Events
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -36,6 +36,7 @@ jobs:
           X_GITHUB_APP_INSTALLATION_ID: ${{ vars.X_GITHUB_APP_INSTALLATION_ID_FMGL_INTERNAL }}
           PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
           PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+          PORT_BASE_URL: ${{ secrets.PORT_BASE_URL }}
           DEBUG: ${{ inputs.debug_output && 'true' || 'false' }}
 
       - name: Upload logs as artifact
@@ -45,4 +46,4 @@ jobs:
           name: user-additions-log-${{ github.run_number }}
           path: |
             *.log
-          retention-days: 7 
+          retention-days: 7

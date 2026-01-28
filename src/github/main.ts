@@ -2,10 +2,11 @@
 
 import { Command } from "commander";
 import pino from "pino";
+import pinoCaller from "pino-caller";
 import { registerGithubCommands } from "./command";
 import pinoConfig from "../pino.config";
 
-const logger = pino(pinoConfig);
+const logger = pinoCaller(pino(pinoConfig));
 
 async function main() {
   try {

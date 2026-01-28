@@ -1,13 +1,14 @@
 import { Command } from "commander";
 import dotenv from "dotenv";
 import pino from "pino";
+import pinoCaller from "pino-caller";
 import { registerCoderCommands } from "./coder.ts/command";
 import { registerGithubCommands } from "./github/command";
 import pinoConfig from "./pino.config";
 
 dotenv.config();
 
-const logger = pino(pinoConfig);
+const logger = pinoCaller(pino(pinoConfig));
 
 async function main() {
   try {

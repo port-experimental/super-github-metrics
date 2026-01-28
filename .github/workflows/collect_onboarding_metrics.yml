@@ -1,22 +1,23 @@
 name: Collect Onboarding Metrics
 on:
-    workflow_dispatch:
-    # schedule:
-    #   - cron: '0 0 * * *'
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '0 0 * * *'
 jobs:
-    onboarding:
-      name: onboarding_metrics
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
-        - uses: oven-sh/setup-bun@v2
-        - run: bun run onboarding-metrics
-          env: # Or as an environment variable
-            X_GITHUB_ORGS: ${{ secrets.X_GITHUB_ORGS }}
-            X_GITHUB_ENTERPRISE: ${{ secrets.X_GITHUB_ENTERPRISE }}
-            X_GITHUB_APP_ID: ${{ secrets.X_GITHUB_APP_ID }}
-            X_GITHUB_APP_PRIVATE_KEY: ${{ secrets.X_GITHUB_APP_CLIENT_PRIVATE_KEY }}
-            X_GITHUB_APP_INSTALLATION_ID: ${{ vars.X_GITHUB_APP_INSTALLATION_ID_FMGL_INTERNAL }}
-            PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
-            PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
-            FORCE_ONBOARDING_METRICS: true
+  onboarding:
+    name: onboarding_metrics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun run onboarding-metrics
+        env:
+          X_GITHUB_ORGS: ${{ secrets.X_GITHUB_ORGS }}
+          X_GITHUB_ENTERPRISE: ${{ secrets.X_GITHUB_ENTERPRISE }}
+          X_GITHUB_APP_ID: ${{ secrets.X_GITHUB_APP_ID }}
+          X_GITHUB_APP_PRIVATE_KEY: ${{ secrets.X_GITHUB_APP_CLIENT_PRIVATE_KEY }}
+          X_GITHUB_APP_INSTALLATION_ID: ${{ vars.X_GITHUB_APP_INSTALLATION_ID_FMGL_INTERNAL }}
+          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+          PORT_BASE_URL: ${{ secrets.PORT_BASE_URL }}
+          FORCE_ONBOARDING_METRICS: true

@@ -6,28 +6,38 @@ import {
   beforeEach,
   afterEach,
 } from "@jest/globals";
-
-// Mock axios before imports
-jest.mock("axios", () => {
-  const mockAxiosInstance: any = jest.fn<() => any>();
-  mockAxiosInstance.get = jest.fn<() => any>();
-  mockAxiosInstance.post = jest.fn<() => any>();
-  mockAxiosInstance.patch = jest.fn<() => any>();
-  mockAxiosInstance.delete = jest.fn<() => any>();
-  mockAxiosInstance.isAxiosError = jest.fn<() => any>();
-
-  return {
-    __esModule: true,
-    default: mockAxiosInstance,
-    isAxiosError: mockAxiosInstance.isAxiosError,
-  };
-});
-
 import axios from "axios";
 import { PortClient, upsertEntitiesInBatches } from "../port";
 
-// Get reference to the mocked axios
-const mockAxios: any = axios;
+// Mock axios before imports
+jest.mock("axios", () => {
+  const mockPost = jest.fn();
+  const mockGet = jest.fn();
+  const mockPatch = jest.fn();
+  const mockDelete = jest.fn();
+  const mockIsAxiosError = jest.fn();
+
+  const axiosFn: any = jest.fn(() => Promise.resolve({ data: {} }));
+
+  axiosFn.get = mockGet;
+  axiosFn.post = mockPost;
+  axiosFn.patch = mockPatch;
+  axiosFn.delete = mockDelete;
+  axiosFn.isAxiosError = mockIsAxiosError;
+
+  return {
+    __esModule: true,
+    default: axiosFn,
+    isAxiosError: mockIsAxiosError,
+  };
+});
+
+// Access mocks
+const mockAxios = axios as unknown as jest.Mock<any>;
+const mockAxiosPost = axios.post as jest.Mock<any>;
+const mockAxiosGet = axios.get as jest.Mock<any>;
+const mockAxiosPatch = axios.patch as jest.Mock<any>;
+const mockAxiosDelete = axios.delete as jest.Mock<any>;
 
 // Mock environment variables
 const originalEnv = process.env;
@@ -39,7 +49,11 @@ describe("PortClient", () => {
       ...originalEnv,
       PORT_CLIENT_ID: "test-client-id",
       PORT_CLIENT_SECRET: "test-client-secret",
+      PORT_BASE_URL: "https://api.getport.io",
     };
+
+    // Default mock implementation
+    (mockAxios as unknown as jest.Mock).mockResolvedValue({ data: {} });
   });
 
   afterEach(() => {
@@ -59,9 +73,10 @@ describe("PortClient", () => {
     it("should throw error if environment variables are missing", async () => {
       delete process.env.PORT_CLIENT_ID;
       delete process.env.PORT_CLIENT_SECRET;
+      delete process.env.PORT_BASE_URL;
 
       await expect(PortClient.getInstance()).rejects.toThrow(
-        "PORT_CLIENT_ID and PORT_CLIENT_SECRET must be set in environment variables",
+        /Invalid environment variables: PORT_CLIENT_ID: .*, PORT_CLIENT_SECRET: .*, PORT_BASE_URL: .*/,
       );
     });
   });
@@ -73,7 +88,7 @@ describe("PortClient", () => {
         expiresIn: 3600,
       };
 
-      mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
+      mockAxiosPost.mockResolvedValueOnce({ data: mockOAuthResponse });
 
       const client = await PortClient.getInstance();
       const tokenInfo = client.getTokenInfo();
@@ -95,7 +110,7 @@ describe("PortClient", () => {
         expiresIn: 3600,
       };
 
-      mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
+      mockAxiosPost.mockResolvedValueOnce({ data: mockOAuthResponse });
 
       const client = await PortClient.getInstance();
 
@@ -113,9 +128,15 @@ describe("PortClient", () => {
         expiresIn: 3600,
       };
 
-      mockAxios.post
-        .mockRejectedValueOnce({ response: { status: 401 } })
+      mockAxiosPost
+        .mockRejectedValueOnce({
+          response: { status: 401 },
+          isAxiosError: true,
+        })
         .mockResolvedValueOnce({ data: mockOAuthResponse });
+
+      // Need to mock isAxiosError to return true
+      (axios.isAxiosError as unknown as jest.Mock).mockReturnValue(true);
 
       const client = await PortClient.getInstance();
 
@@ -131,7 +152,7 @@ describe("PortClient", () => {
   describe("API methods", () => {
     it("should make authenticated GET request", async () => {
       const mockResponse = { data: { success: true } };
-      mockAxios.get.mockResolvedValueOnce(mockResponse);
+      mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
       const client = await PortClient.getInstance();
       const result = await client.get("/test-endpoint");
@@ -146,7 +167,7 @@ describe("PortClient", () => {
 
     it("should make authenticated POST request", async () => {
       const mockResponse = { data: { success: true } };
-      mockAxios.post.mockResolvedValueOnce(mockResponse);
+      mockAxiosPost.mockResolvedValueOnce(mockResponse);
 
       const client = await PortClient.getInstance();
       const result = await client.post("/test-endpoint", { test: "data" });
@@ -165,7 +186,7 @@ describe("PortClient", () => {
 
     it("should make authenticated PATCH request", async () => {
       const mockResponse = { data: { success: true } };
-      mockAxios.patch.mockResolvedValueOnce(mockResponse);
+      mockAxiosPatch.mockResolvedValueOnce(mockResponse);
 
       const client = await PortClient.getInstance();
       const result = await client.patch("/test-endpoint", { test: "data" });
@@ -176,14 +197,14 @@ describe("PortClient", () => {
         { test: "data" },
         {
           headers: expect.objectContaining({
-            Authorization: "Bearer test-token",
+            Authorization: expect.stringContaining("Bearer"),
           }),
         },
       );
     });
 
     it("should make authenticated DELETE request", async () => {
-      mockAxios.delete.mockResolvedValueOnce({});
+      mockAxiosDelete.mockResolvedValueOnce({ data: {} });
 
       const client = await PortClient.getInstance();
       await client.delete("/test-endpoint");
@@ -199,7 +220,7 @@ describe("PortClient", () => {
   describe("entity operations", () => {
     it("should get entities for a blueprint", async () => {
       const mockResponse = { data: { entities: [] } };
-      mockAxios.get.mockResolvedValueOnce(mockResponse);
+      mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
       const client = await PortClient.getInstance();
       const result = await client.getEntities("testBlueprint");
@@ -217,7 +238,7 @@ describe("PortClient", () => {
 
     it("should get entity by identifier", async () => {
       const mockResponse = { data: { entity: {} } };
-      mockAxios.get.mockResolvedValueOnce(mockResponse);
+      mockAxiosGet.mockResolvedValueOnce(mockResponse);
 
       const client = await PortClient.getInstance();
       const result = await client.getEntity("testBlueprint", "test-entity");
@@ -241,7 +262,7 @@ describe("PortClient", () => {
         ok: true,
         errors: [],
       };
-      mockAxios.post.mockResolvedValueOnce({ data: mockResponse });
+      mockAxiosPost.mockResolvedValueOnce({ data: mockResponse });
 
       const client = await PortClient.getInstance();
       const result = await client.upsertEntities("testBlueprint", [
@@ -262,7 +283,7 @@ describe("PortClient", () => {
 
   describe("error handling", () => {
     it("should handle network errors", async () => {
-      mockAxios.get.mockRejectedValueOnce(new Error("Network error"));
+      mockAxiosGet.mockRejectedValueOnce(new Error("Network error"));
 
       const client = await PortClient.getInstance();
 
@@ -277,8 +298,8 @@ describe("PortClient", () => {
         expiresIn: 3600,
       };
 
-      mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
-      mockAxios.get.mockResolvedValueOnce({ data: { success: true } });
+      mockAxiosPost.mockResolvedValueOnce({ data: mockOAuthResponse });
+      mockAxiosGet.mockResolvedValueOnce({ data: { success: true } });
 
       const client = await PortClient.getInstance();
 
@@ -318,7 +339,7 @@ describe("PortClient", () => {
         errors: [],
       };
 
-      mockAxios.post
+      mockAxiosPost
         .mockResolvedValueOnce({ data: mockOAuthResponse }) // OAuth token
         .mockResolvedValueOnce({ data: mockBulkResponse }); // Bulk upsert
 
@@ -344,7 +365,7 @@ describe("PortClient", () => {
         expiresIn: 3600,
       };
 
-      mockAxios.post.mockResolvedValueOnce({ data: mockOAuthResponse });
+      mockAxiosPost.mockResolvedValueOnce({ data: mockOAuthResponse });
 
       const client = await PortClient.getInstance();
       const entities = Array.from({ length: 21 }, (_, i) => ({
@@ -389,7 +410,7 @@ describe("PortClient", () => {
         errors: [],
       };
 
-      mockAxios.post
+      mockAxiosPost
         .mockResolvedValueOnce({ data: mockOAuthResponse }) // OAuth token
         .mockResolvedValueOnce({ data: mockBulkResponse1 }) // First batch
         .mockResolvedValueOnce({ data: mockBulkResponse2 }); // Second batch

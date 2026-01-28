@@ -19,4 +19,5 @@ jobs:
           X_GITHUB_APP_PRIVATE_KEY: ${{ secrets.X_GITHUB_APP_CLIENT_PRIVATE_KEY }}
           X_GITHUB_APP_INSTALLATION_ID: ${{ vars.X_GITHUB_APP_INSTALLATION_ID_FMGL_INTERNAL }}
           PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
-          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }} 
+          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+          PORT_BASE_URL: ${{ secrets.PORT_BASE_URL }}

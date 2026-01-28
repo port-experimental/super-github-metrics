@@ -21,10 +21,12 @@ describe("env", () => {
   it("accepts Port credentials when present", () => {
     process.env.PORT_CLIENT_ID = "port-id";
     process.env.PORT_CLIENT_SECRET = "port-secret";
+    process.env.PORT_BASE_URL = "https://api.getport.io/v1";
 
     expect(getPortEnv()).toEqual({
       portClientId: "port-id",
       portClientSecret: "port-secret",
+      portBaseUrl: "https://api.getport.io/v1",
     });
   });
 

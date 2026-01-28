@@ -6,6 +6,7 @@ import {
   beforeEach,
   afterEach,
 } from "@jest/globals";
+import axios from "axios";
 import { PortClient } from "../port";
 
 // Types for axios mock
@@ -21,46 +22,32 @@ interface AxiosResponse<T = unknown> {
   status?: number;
 }
 
-// Mock axios with proper typing
-const mockAxiosInstance = jest.fn<() => Promise<AxiosResponse>>();
-const mockAxiosPost = jest.fn<() => Promise<AxiosResponse>>();
-const mockAxiosGet = jest.fn<() => Promise<AxiosResponse>>();
-const mockAxiosPatch = jest.fn<() => Promise<AxiosResponse>>();
-const mockAxiosDelete = jest.fn<() => Promise<AxiosResponse>>();
-const mockIsAxiosError = jest.fn<() => boolean>();
-
-// Setup the axios mock implementation
-mockAxiosInstance.mockImplementation((config: AxiosRequestConfig) => {
-  if (config.method === "GET") {
-    return mockAxiosGet(config.url, config);
-  } else if (config.method === "POST") {
-    return mockAxiosPost(config.url, config.data, config);
-  } else if (config.method === "PATCH") {
-    return mockAxiosPatch(config.url, config.data, config);
-  } else if (config.method === "DELETE") {
-    return mockAxiosDelete(config.url, config);
-  }
-  throw new Error(`Unsupported method: ${config.method}`);
-});
-
 jest.mock("axios", () => {
-  const axiosFn = (config: AxiosRequestConfig) => {
+  const mockPost = jest.fn();
+  const mockGet = jest.fn();
+  const mockPatch = jest.fn();
+  const mockDelete = jest.fn();
+  const mockIsAxiosError = jest.fn();
+
+  const axiosFn: any = jest.fn((config: AxiosRequestConfig) => {
     if (config.method === "GET") {
-      return mockAxiosGet(config.url, config);
+      return mockGet(config.url, config);
     } else if (config.method === "POST") {
-      return mockAxiosPost(config.url, config.data, config);
+      return mockPost(config.url, config.data, config);
     } else if (config.method === "PATCH") {
-      return mockAxiosPatch(config.url, config.data, config);
+      return mockPatch(config.url, config.data, config);
     } else if (config.method === "DELETE") {
-      return mockAxiosDelete(config.url, config);
+      return mockDelete(config.url, config);
     }
     throw new Error(`Unsupported method: ${config.method}`);
-  };
-  axiosFn.post = mockAxiosPost;
-  axiosFn.get = mockAxiosGet;
-  axiosFn.patch = mockAxiosPatch;
-  axiosFn.delete = mockAxiosDelete;
+  });
+
+  axiosFn.post = mockPost;
+  axiosFn.get = mockGet;
+  axiosFn.patch = mockPatch;
+  axiosFn.delete = mockDelete;
   axiosFn.isAxiosError = mockIsAxiosError;
+  axiosFn.create = jest.fn(() => axiosFn);
 
   return {
     __esModule: true,
@@ -68,6 +55,13 @@ jest.mock("axios", () => {
     isAxiosError: mockIsAxiosError,
   };
 });
+
+// Access mocks through the imported module
+const mockAxiosPost = axios.post as jest.Mock<any>;
+const mockAxiosGet = axios.get as jest.Mock<any>;
+const mockAxiosPatch = axios.patch as jest.Mock<any>;
+const mockAxiosDelete = axios.delete as jest.Mock<any>;
+const mockIsAxiosError = axios.isAxiosError as jest.Mock<any>;
 
 // Mock environment variables
 const originalEnv = process.env;
@@ -461,7 +455,7 @@ describe("Port Client Integration", () => {
       };
 
       mockAxiosPost.mockResolvedValueOnce({ data: mockOAuthResponse });
-      mockAxiosGet.mockResolvedValueOnce({}); // No data property
+      mockAxiosGet.mockResolvedValueOnce({} as any); // No data property
 
       const client = await PortClient.getInstance();
       const result = await client.get("/entities");

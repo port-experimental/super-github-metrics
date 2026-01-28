@@ -31,4 +31,7 @@ async function main() {
 // Export main function for testing
 export { main };
 
-main();
+// Check if this module is being run directly
+if (typeof require !== "undefined" && require.main === module) {
+  main();
+}

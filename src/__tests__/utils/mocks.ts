@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { jest } from "@jest/globals";
 import type {
   Repository,
   PullRequestBasic,
@@ -8,9 +8,12 @@ import type {
   WorkflowRun,
   AuditLogEntry,
   GitHubUser,
-} from '../../types/github';
-import type { PortEntity, PortEntitiesResponse, PortEntityResponse } from '../../types/port';
-import { createGitHubClient } from '../../clients/github';
+} from "../../clients/github/types";
+import type {
+  PortEntity,
+  PortEntitiesResponse,
+  PortEntityResponse,
+} from "../../clients/port/types";
 
 // Mock axios with simplified typing - moved to top to fix import order
 export const mockAxios: any = {
@@ -50,21 +53,21 @@ export const mockOctokit: any = {
 // Mock GitHub API responses
 export const mockRepository: Repository = {
   id: 123456,
-  name: 'test-repo',
+  name: "test-repo",
   owner: {
-    login: 'test-owner',
+    login: "test-owner",
   },
-  default_branch: 'main',
+  default_branch: "main",
 };
 
 export const mockPullRequestBasic: PullRequestBasic = {
   id: 789,
   number: 1,
-  created_at: '2024-01-01T10:00:00Z',
-  closed_at: '2024-01-02T10:00:00Z',
-  merged_at: '2024-01-02T10:00:00Z',
+  created_at: "2024-01-01T10:00:00Z",
+  closed_at: "2024-01-02T10:00:00Z",
+  merged_at: "2024-01-02T10:00:00Z",
   user: {
-    login: 'test-user',
+    login: "test-user",
   },
 };
 
@@ -79,21 +82,21 @@ export const mockPullRequest: PullRequest = {
 
 export const mockPullRequestReview: PullRequestReview = {
   id: 456,
-  state: 'APPROVED',
-  submitted_at: '2024-01-01T15:00:00Z',
+  state: "APPROVED",
+  submitted_at: "2024-01-01T15:00:00Z",
   user: {
-    login: 'reviewer',
+    login: "reviewer",
   },
 };
 
 export const mockCommit: Commit = {
   commit: {
     author: {
-      date: '2024-01-01T12:00:00Z',
+      date: "2024-01-01T12:00:00Z",
     },
   },
   author: {
-    login: 'test-user',
+    login: "test-user",
   },
   stats: {
     total: 150,
@@ -103,34 +106,34 @@ export const mockCommit: Commit = {
 export const mockWorkflowRun: WorkflowRun = {
   id: 123,
   workflow_id: 456,
-  name: 'test-workflow',
-  conclusion: 'success',
+  name: "test-workflow",
+  conclusion: "success",
   run_number: 1,
-  run_started_at: '2024-01-01T10:00:00Z',
-  updated_at: '2024-01-01T10:05:00Z',
-  event: 'push',
+  run_started_at: "2024-01-01T10:00:00Z",
+  updated_at: "2024-01-01T10:05:00Z",
+  event: "push",
 };
 
 export const mockAuditLogEntry: AuditLogEntry = {
-  user: 'test-user',
+  user: "test-user",
   user_id: 123,
-  created_at: '2024-01-01T00:00:00Z',
-  org_id: 177709801,
+  created_at: "2024-01-01T00:00:00Z",
+  org: "test-org",
 };
 
 export const mockGitHubUser: GitHubUser = {
-  identifier: 'test-user',
-  title: 'Test User',
+  identifier: "test-user",
+  title: "Test User",
   properties: {
-    join_date: '2024-01-01T00:00:00Z',
+    join_date: "2024-01-01T00:00:00Z",
   },
 };
 
 export const mockPortEntity: PortEntity = {
-  identifier: 'test-user',
-  title: 'Test User',
+  identifier: "test-user",
+  title: "Test User",
   properties: {
-    join_date: '2024-01-01T00:00:00Z',
+    join_date: "2024-01-01T00:00:00Z",
   },
 };
 
@@ -148,15 +151,14 @@ export const mockPortEntityResponse: PortEntityResponse = {
 export const createMockGitHubClient = (): any => {
   const mockClient = {
     checkRateLimits: jest.fn<() => Promise<void>>(),
-    getRateLimitStatus:
-      jest.fn<
-        () => Promise<{
-          remaining: number;
-          limit: number;
-          resetTime: Date;
-          secondsUntilReset: number;
-        }>
-      >(),
+    getRateLimitStatus: jest.fn<
+      () => Promise<{
+        remaining: number;
+        limit: number;
+        resetTime: Date;
+        secondsUntilReset: number;
+      }>
+    >(),
     fetchOrganizationRepositories: jest.fn<() => Promise<Repository[]>>(),
     getPullRequests: jest.fn<() => Promise<PullRequestBasic[]>>(),
     getPullRequest: jest.fn<() => Promise<PullRequest>>(),
@@ -213,7 +215,10 @@ export const createMockPortClient = (): any => {
     deleteAllEntities: jest.fn<() => Promise<void>>(),
     getUsers: jest.fn<() => Promise<PortEntitiesResponse>>(),
     getUser: jest.fn<() => Promise<PortEntityResponse>>(),
-    getTokenInfo: jest.fn<() => { hasToken: boolean; expiresAt: Date; isExpired: boolean }>(),
+    getTokenInfo:
+      jest.fn<
+        () => { hasToken: boolean; expiresAt: Date; isExpired: boolean }
+      >(),
   };
 
   // Set default return values
@@ -233,7 +238,9 @@ export const createMockPortClient = (): any => {
   });
 
   return {
-    getInstance: jest.fn<() => Promise<typeof mockInstance>>().mockResolvedValue(mockInstance),
+    getInstance: jest
+      .fn<() => Promise<typeof mockInstance>>()
+      .mockResolvedValue(mockInstance),
     ...mockInstance,
   };
 };

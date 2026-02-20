@@ -547,7 +547,7 @@ export async function processRepositoryServiceMetrics(
     const maxPeriod = getMaxTimePeriod(timePeriods); // 90 days
     const allTimePeriodMetrics: Record<string, number> = {};
 
-    // Fetch all data once for the maximum time period (90 days)
+    // Fetch all PRs once for the maximum time period (90 days), then filter per period
     console.log(
       `  Fetching PRs for ${maxPeriod} day period (will filter for shorter periods)...`,
     );
@@ -561,15 +561,7 @@ export async function processRepositoryServiceMetrics(
       `  Found ${allPRs.length} PRs in the last ${maxPeriod} days for ${repo.name}`,
     );
 
-    console.log(`  Fetching contributions for ${maxPeriod} day period...`);
-    const allContributions = await fetchRepositoryContributions(
-      githubClient,
-      repo.owner.login,
-      repo.name,
-      maxPeriod,
-    );
-
-    // Process each time period by filtering the already-fetched data
+    // Process each time period
     for (const period of timePeriods) {
       console.log(`  Processing ${period} day period...`);
 
@@ -592,15 +584,13 @@ export async function processRepositoryServiceMetrics(
         period,
       );
 
-      // Calculate contribution standard deviation for this period
-      const periodContributions = new Map<string, number>();
-
-      for (const [contributor, count] of allContributions.entries()) {
-        // Note: We can't filter contributions by date since we don't have individual commit dates
-        // This is a limitation of the current API approach, but we're still optimizing the PR fetching
-        periodContributions.set(contributor, count);
-      }
-
+      // Fetch contributions for this specific period (each period needs its own data)
+      const periodContributions = await fetchRepositoryContributions(
+        githubClient,
+        repo.owner.login,
+        repo.name,
+        period,
+      );
       const contributionCounts = Array.from(periodContributions.values());
       const contributionStdDev =
         calculateContributionStandardDeviation(contributionCounts);

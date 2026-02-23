@@ -5,9 +5,11 @@ import type {
   PullRequestBasic,
   Repository,
   GitHubAppConfig,
+  Commit,
 } from "../clients/github/types";
 import {
   filterDataForTimePeriod,
+  filterCommitsForTimePeriod,
   TIME_PERIODS,
   type TimePeriod,
   getMaxTimePeriod,
@@ -159,6 +161,73 @@ export async function fetchRepositoryContributions(
     );
   }
 
+  return contributions;
+}
+
+/**
+ * Fetches all commits for a repository within the specified time period.
+ * Returns raw commits so callers can filter by period in memory (avoids extra API calls).
+ */
+export async function fetchRepositoryCommitsForPeriod(
+  githubClient: GitHubClient,
+  owner: string,
+  repoName: string,
+  daysBack: number,
+): Promise<Commit[]> {
+  const allCommits: Commit[] = [];
+  const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+  try {
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const commits = await githubClient.getRepositoryCommits(owner, repoName, {
+        per_page: 100,
+        page,
+      });
+
+      if (commits.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      for (const commit of commits) {
+        if (commit.commit.author?.date) {
+          const commitDate = new Date(commit.commit.author.date);
+          if (commitDate >= cutoffDate) {
+            allCommits.push(commit);
+          } else {
+            hasMore = false;
+            break;
+          }
+        }
+      }
+
+      page++;
+    }
+  } catch (error) {
+    console.error(
+      `Error fetching commits for ${owner}/${repoName}: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
+
+  return allCommits;
+}
+
+/**
+ * Aggregates commits into a map of author -> contribution count.
+ * Same aggregation logic as fetchRepositoryContributions, for use on filtered commit lists.
+ */
+export function contributionMapFromCommits(
+  commits: Commit[],
+): Map<string, number> {
+  const contributions = new Map<string, number>();
+  for (const commit of commits) {
+    const author =
+      commit.author?.login || commit.commit.author?.name || "Unknown";
+    contributions.set(author, (contributions.get(author) || 0) + 1);
+  }
   return contributions;
 }
 
@@ -561,6 +630,20 @@ export async function processRepositoryServiceMetrics(
       `  Found ${allPRs.length} PRs in the last ${maxPeriod} days for ${repo.name}`,
     );
 
+    // Fetch all commits once for the max period, then filter per period in memory
+    console.log(
+      `  Fetching commits for ${maxPeriod} day period (will filter for shorter periods)...`,
+    );
+    const allCommits = await fetchRepositoryCommitsForPeriod(
+      githubClient,
+      repo.owner.login,
+      repo.name,
+      maxPeriod,
+    );
+    console.log(
+      `  Found ${allCommits.length} commits in the last ${maxPeriod} days for ${repo.name}`,
+    );
+
     // Process each time period
     for (const period of timePeriods) {
       console.log(`  Processing ${period} day period...`);
@@ -584,13 +667,9 @@ export async function processRepositoryServiceMetrics(
         period,
       );
 
-      // Fetch contributions for this specific period (each period needs its own data)
-      const periodContributions = await fetchRepositoryContributions(
-        githubClient,
-        repo.owner.login,
-        repo.name,
-        period,
-      );
+      // Filter commits for this period and aggregate to contribution counts (no extra API calls)
+      const periodCommits = filterCommitsForTimePeriod(allCommits, period);
+      const periodContributions = contributionMapFromCommits(periodCommits);
       const contributionCounts = Array.from(periodContributions.values());
       const contributionStdDev =
         calculateContributionStandardDeviation(contributionCounts);

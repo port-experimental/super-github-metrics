@@ -399,10 +399,9 @@ describe("Service Metrics", () => {
         },
       ];
 
-      mockGitHubClient.getRepositoryCommits.mockImplementation(
-        (_owner: string, repo: string) =>
-          Promise.resolve(repo === "repo1" ? commits1 : commits2),
-      );
+      mockGitHubClient.getRepositoryCommits
+        .mockResolvedValueOnce(commits1)
+        .mockResolvedValueOnce(commits2);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
       const repos = [repo1, repo2];

@@ -245,10 +245,13 @@ describe("PR Metrics", () => {
         "githubPullRequest",
         expect.arrayContaining([
           expect.objectContaining({
-            identifier: expect.stringContaining("test-repo"),
+            identifier: "test-repo1",
             properties: expect.objectContaining({
-              total_prs: expect.any(Number),
-              total_merged_prs: expect.any(Number),
+              pr_size: 150,
+              pr_lifetime: expect.any(Number),
+              pr_pickup_time: expect.any(Number),
+              pr_success_rate: 100,
+              review_participation: 2,
             }),
             relations: {
               service: "test-repo",
@@ -305,16 +308,54 @@ describe("PR Metrics", () => {
         "githubPullRequest",
         expect.arrayContaining([
           expect.objectContaining({
-            identifier: expect.stringContaining("test-repo"),
+            identifier: "test-repo1",
             properties: expect.objectContaining({
-              total_prs: 1,
-              number_of_prs_reviewed: 0,
+              pr_size: 0,
+              review_participation: 0,
+              pr_maturity: null,
             }),
             relations: {
               service: "test-repo",
             },
           }),
         ]),
+      );
+    });
+
+    it("should dedupe entities that appear in overlapping periods", async () => {
+      const now = new Date();
+      const recentPR: PullRequestBasic = {
+        ...mockPullRequestBasic,
+        number: 7,
+        created_at: new Date(
+          now.getTime() - 10 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+        closed_at: new Date(
+          now.getTime() - 9 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+        merged_at: new Date(
+          now.getTime() - 9 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+      };
+
+      mockGitHubClient.getPullRequests
+        .mockResolvedValueOnce([recentPR])
+        .mockResolvedValueOnce([]);
+      mockGitHubClient.getPullRequest.mockResolvedValue({
+        ...mockPullRequest,
+        number: 7,
+      });
+      mockGitHubClient.getPullRequestReviews.mockResolvedValue([]);
+      mockGitHubClient.getPullRequestCommits.mockResolvedValue([]);
+
+      await calculateAndStorePRMetrics([mockRepository], mockGitHubClient);
+
+      const { upsertEntitiesInBatches } = require("../../clients/port");
+      const [, entities] = upsertEntitiesInBatches.mock.calls[0];
+      const identifiers = entities.map((entity: any) => entity.identifier);
+
+      expect(identifiers.filter((id: string) => id === "test-repo7")).toHaveLength(
+        1,
       );
     });
   });

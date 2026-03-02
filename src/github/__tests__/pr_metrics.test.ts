@@ -248,6 +248,8 @@ describe("PR Metrics", () => {
             identifier: "test-repo1",
             properties: expect.objectContaining({
               pr_size: 150,
+              total_prs: 1,
+              total_merged_prs: 1,
               pr_lifetime: expect.any(Number),
               pr_pickup_time: expect.any(Number),
               pr_success_rate: 100,
@@ -311,6 +313,8 @@ describe("PR Metrics", () => {
             identifier: "test-repo1",
             properties: expect.objectContaining({
               pr_size: 0,
+              total_prs: 1,
+              total_merged_prs: 1,
               review_participation: 0,
               pr_maturity: null,
             }),

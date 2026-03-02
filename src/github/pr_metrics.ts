@@ -184,6 +184,8 @@ export async function calculateAndStorePRMetrics(
         console.log(
           `  Found ${allPRs.length} PRs in the last ${maxPeriod} days`,
         );
+        const repoTotalPRs = allPRs.length;
+        const repoTotalMergedPRs = allPRs.filter((pr) => !!pr.merged_at).length;
 
         // Process each time period by filtering the already-fetched data
         const timePeriods: TimePeriod[] = [
@@ -310,6 +312,8 @@ export async function calculateAndStorePRMetrics(
             title: `${repo.name} #${prMetric.prNumber}`,
             properties: {
               pr_size: prMetric.prSize,
+              total_prs: repoTotalPRs,
+              total_merged_prs: repoTotalMergedPRs,
               pr_lifetime: prMetric.prLifetime,
               pr_pickup_time: prMetric.prPickupTime,
               pr_approve_time: prMetric.prApproveTime,

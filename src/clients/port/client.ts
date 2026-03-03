@@ -60,9 +60,6 @@ export class PortClient {
   private async generateNewToken(): Promise<void> {
     try {
       console.log('Generating new OAuth token...');
-      console.log(
-        `Port credentials check - clientId length: ${this.clientId.length}, clientSecret length: ${this.clientSecret.length}, baseUrl: ${this.baseUrl}`
-      );
       const response = await axios.post<OAuthResponse>(`${this.baseUrl}/auth/access_token`, {
         clientId: this.clientId,
         clientSecret: this.clientSecret,

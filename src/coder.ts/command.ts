@@ -1,30 +1,24 @@
-import { Command } from "commander";
-import type { Logger } from "pino";
-import { upsertEntitiesInBatches } from "../clients/port/client";
-import {
-  createWorkspace,
-  getTemplates,
-  getWorkspaces,
-} from "../clients/coder/client";
-import { getPortEnv } from "../env";
+import type { Command } from 'commander';
+import type { Logger } from 'pino';
+import { createWorkspace, getTemplates, getWorkspaces } from '../clients/coder/client';
+import { upsertEntitiesInBatches } from '../clients/port/client';
+import { getPortEnv } from '../env';
 
 export function registerCoderCommands(command: Command, logger: Logger): void {
-  command.hook("preAction", () => {
+  command.hook('preAction', () => {
     try {
       getPortEnv();
     } catch (error) {
-      logger.error(
-        error instanceof Error ? error.message : "Missing Port credentials",
-      );
+      logger.error(error instanceof Error ? error.message : 'Missing Port credentials');
       process.exit(0);
     }
   });
 
   command
-    .command("fetch-templates")
-    .description("Get Coder templates")
+    .command('fetch-templates')
+    .description('Get Coder templates')
     .action(async () => {
-      logger.info("fetching templates");
+      logger.info('fetching templates');
       const templates = await getTemplates();
       const entities = templates.map((template) => ({
         identifier: `${template.organization_id}-${template.id}-${template.active_version_id}`,
@@ -33,16 +27,16 @@ export function registerCoderCommands(command: Command, logger: Logger): void {
         relations: {},
       }));
 
-      await upsertEntitiesInBatches("coder_template", entities);
+      await upsertEntitiesInBatches('coder_template', entities);
       // get the data
       // write the data to port
     });
 
   command
-    .command("fetch-workspaces")
-    .description("Get Coder workspaces")
+    .command('fetch-workspaces')
+    .description('Get Coder workspaces')
     .action(async () => {
-      logger.info("fetching workspaces");
+      logger.info('fetching workspaces');
       const resp = await getWorkspaces();
       const entities = resp.workspaces.map((workspace) => ({
         identifier: workspace.id,
@@ -70,22 +64,19 @@ export function registerCoderCommands(command: Command, logger: Logger): void {
         },
       }));
 
-      await upsertEntitiesInBatches("coder_workspace", entities);
+      await upsertEntitiesInBatches('coder_workspace', entities);
       // get the data
       // write the data to port
     });
 
   command
-    .command("create-workspace")
-    .option("--name <workspace name>", "The name of the workspace")
-    .option("--template <template id>", "The id of the template")
-    .option(
-      "--ttl <ttl in ms>",
-      "The time to live for the workspace, in milliseconds",
-    )
-    .description("Create a Coder workspace for a given template")
+    .command('create-workspace')
+    .option('--name <workspace name>', 'The name of the workspace')
+    .option('--template <template id>', 'The id of the template')
+    .option('--ttl <ttl in ms>', 'The time to live for the workspace, in milliseconds')
+    .description('Create a Coder workspace for a given template')
     .action(async (options) => {
-      logger.info("Creating a workspace");
+      logger.info('Creating a workspace');
       await createWorkspace(options.template, options.name, options.ttl);
       // get the data
       // write the data to port

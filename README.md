@@ -37,11 +37,29 @@ For GitHub integrations, you'll also need:
 **Additional Configuration:**
 - `X_GITHUB_ENTERPRISE` - GitHub Enterprise name (use for enterprise instances so the correct base URL is used)
 - `X_GITHUB_ORGS` - Comma-separated list of GitHub organizations to monitor
+- `X_GITHUB_REPOS` - Optional comma-separated list of repository names to filter processing (by default all accessible repositories are processed)
 
 ### Optional Variables
 
 - `FORCE_ONBOARDING_METRICS` - Set to 'true' to process all users regardless of existing metrics
 - `ONBOARDING_BATCH_SIZE` - Number of users to process concurrently (default: 3)
+- `X_GITHUB_REPOS` - Comma-separated list of specific repositories to process (e.g., `repo1,repo2,repo3`)
+
+When `X_GITHUB_REPOS` is set, only repositories matching the specified names will be processed. This is useful for:
+
+- Testing on a subset of repositories
+- Running targeted metrics collection
+- Reducing processing time for large organizations
+
+Example:
+
+```bash
+# Process only specific repositories
+X_GITHUB_REPOS="my-service,my-api,my-frontend" npm run service-metrics
+
+# Without the filter, all accessible repositories are processed
+npm run service-metrics
+```
 
 ### Coder-Specific Variables
 
@@ -582,12 +600,40 @@ Track CI/CD workflow performance and reliability metrics across your repositorie
 
 ## Data Collected
 
+### Basic Information
+
+- **Workflow ID**: GitHub workflow identifier
 - **Workflow Name**: Name of the GitHub workflow
 - **Repository**: GitHub repository where the workflow is defined
-- **Success Rate**: Percentage of successful workflow runs in the last 30 days
-- **Average Duration**: Average execution time of the workflow in minutes
-- **Total Runs**: Total number of workflow runs in the last 30 days
-- **Last Run Status**: Status of the most recent workflow run
+- **Path**: Workflow file path
+- **State**: Workflow state (active, disabled_manually, disabled_inactivity)
+- **URL**: Link to the workflow in GitHub
+- **Created At**: Workflow creation timestamp
+- **Updated At**: Workflow last update timestamp
+
+### 30-Day Metrics
+
+- **Median Duration (30 days)**: Median execution time in seconds
+- **Max Duration (30 days)**: Maximum execution time in seconds
+- **Min Duration (30 days)**: Minimum execution time in seconds
+- **Mean Duration (30 days)**: Average execution time in seconds
+- **Total Runs (30 days)**: Total number of workflow runs
+- **Total Failures (30 days)**: Total number of failed workflow runs
+- **Success Rate (30 days)**: Percentage of successful workflow runs
+
+### 90-Day Metrics
+
+- **Median Duration (90 days)**: Median execution time in seconds
+- **Max Duration (90 days)**: Maximum execution time in seconds
+- **Min Duration (90 days)**: Minimum execution time in seconds
+- **Mean Duration (90 days)**: Average execution time in seconds
+- **Total Runs (90 days)**: Total number of workflow runs
+- **Total Failures (90 days)**: Total number of failed workflow runs
+- **Success Rate (90 days)**: Percentage of successful workflow runs
+
+### Recent Activity
+
+- **Last Run Status**: Status of the most recent workflow run (success, failure, cancelled, skipped, in_progress)
 - **Last Run Date**: Date and time of the most recent workflow run
 
 ## Blueprints to Create
@@ -596,9 +642,14 @@ Track CI/CD workflow performance and reliability metrics across your repositorie
 {
   "identifier": "githubWorkflow",
   "title": "GitHub Workflow",
-  "icon": "Github",
+  "icon": "GithubActions",
   "schema": {
     "properties": {
+      "workflowId": {
+        "type": "string",
+        "title": "Workflow ID",
+        "description": "GitHub workflow identifier"
+      },
       "workflowName": {
         "type": "string",
         "title": "Workflow Name",
@@ -609,20 +660,99 @@ Track CI/CD workflow performance and reliability metrics across your repositorie
         "title": "Repository",
         "description": "GitHub repository where the workflow is defined"
       },
-      "successRate": {
+      "path": {
+        "type": "string",
+        "title": "Workflow Path"
+      },
+      "state": {
+        "type": "string",
+        "enum": ["active", "disabled_manually", "disabled_inactivity"],
+        "title": "State"
+      },
+      "url": {
+        "type": "string",
+        "format": "url",
+        "title": "Workflow URL"
+      },
+      "createdAt": {
+        "type": "string",
+        "format": "date-time",
+        "title": "Created At"
+      },
+      "updatedAt": {
+        "type": "string",
+        "format": "date-time",
+        "title": "Updated At"
+      },
+      "medianDuration_last_30_days": {
+        "type": "number",
+        "title": "Median Duration (30 days)",
+        "description": "Median execution time in seconds for the last 30 days"
+      },
+      "maxDuration_last_30_days": {
+        "type": "number",
+        "title": "Max Duration (30 days)",
+        "description": "Maximum execution time in seconds for the last 30 days"
+      },
+      "minDuration_last_30_days": {
+        "type": "number",
+        "title": "Min Duration (30 days)",
+        "description": "Minimum execution time in seconds for the last 30 days"
+      },
+      "meanDuration_last_30_days": {
+        "type": "number",
+        "title": "Mean Duration (30 days)",
+        "description": "Average execution time in seconds for the last 30 days"
+      },
+      "totalRuns_last_30_days": {
+        "type": "number",
+        "title": "Total Runs (30 days)",
+        "description": "Total number of workflow runs in the last 30 days"
+      },
+      "totalFailures_last_30_days": {
+        "type": "number",
+        "title": "Total Failures (30 days)",
+        "description": "Total number of failed workflow runs in the last 30 days"
+      },
+      "successRate_last_30_days": {
         "type": "number",
         "title": "Success Rate (30 days)",
         "description": "Percentage of successful workflow runs in the last 30 days"
       },
-      "averageDuration": {
+      "medianDuration_last_90_days": {
         "type": "number",
-        "title": "Average Duration (minutes)",
-        "description": "Average execution time of the workflow in minutes"
+        "title": "Median Duration (90 days)",
+        "description": "Median execution time in seconds for the last 90 days"
       },
-      "totalRuns": {
+      "maxDuration_last_90_days": {
         "type": "number",
-        "title": "Total Runs (30 days)",
-        "description": "Total number of workflow runs in the last 30 days"
+        "title": "Max Duration (90 days)",
+        "description": "Maximum execution time in seconds for the last 90 days"
+      },
+      "minDuration_last_90_days": {
+        "type": "number",
+        "title": "Min Duration (90 days)",
+        "description": "Minimum execution time in seconds for the last 90 days"
+      },
+      "meanDuration_last_90_days": {
+        "type": "number",
+        "title": "Mean Duration (90 days)",
+        "description": "Average execution time in seconds for the last 90 days"
+      },
+      "totalRuns_last_90_days": {
+        "type": "number",
+        "title": "Total Runs (90 days)",
+        "description": "Total number of workflow runs in the last 90 days"
+      },
+      "totalFailures_last_90_days": {
+        "type": "number",
+        "title": "Total Failures (90 days)",
+        "description": "Total number of failed workflow runs in the last 90 days"
+      },
+      "successRate_last_90_days": {
+        "type": "number",
+        "title": "Success Rate (90 days)",
+        "description": "Percentage of successful workflow runs in the last 90 days"
       },
       "lastRunStatus": {
         "type": "string",
@@ -642,17 +772,21 @@ Track CI/CD workflow performance and reliability metrics across your repositorie
   "mirrorProperties": {},
   "calculationProperties": {},
   "relations": {
-    "repository": {
-      "title": "Repository",
+    "github_repository": {
+      "title": "GitHub Repository",
       "target": "githubRepository",
-      "required": true,
+      "required": false,
       "many": false
     }
   }
 }
 ```
 
-*Note*: The `repository` relation uses the repository name as the repository identifier.
+**Notes:**
+
+- The relation key is configurable via the `PORT_REPOSITORY_RELATION_KEY` environment variable. By default it uses `github_repository` but can be changed to `repository` or `service` depending on your Port blueprint configuration.
+- All duration metrics are measured in **seconds**, not minutes.
+- The blueprint captures both 30-day and 90-day metrics for comprehensive trend analysis.
 
 ## How to Run It
 
@@ -995,6 +1129,80 @@ To migrate from the old aggregated metrics to the new time-series approach:
 4. Optionally clean up old aggregated metrics: `npm run migrate-to-timeseries cleanup`
 
 For detailed migration instructions, see [docs/timeseries_migration_workflow.md](./docs/timeseries_migration_workflow.md).
+
+## Kubernetes Deployment
+
+For production deployments, this project includes a complete Kubernetes CronJob implementation that runs metrics collection daily at midnight UTC.
+
+### Quick Start
+
+See the [Kubernetes Quickstart Guide](k8s/QUICKSTART.md) for a fast-track deployment.
+
+### Features
+
+- **Automated Daily Collection**: CronJob runs 4 metrics commands sequentially
+- **Multi-Environment Support**: Sandbox, dev, and staging configurations
+- **Secure Secret Management**: AWS Secrets Manager via CSI Driver with IRSA
+- **GitOps Ready**: ArgoCD ApplicationSet for multi-environment deployment
+- **TR Compliant**: Follows all Thomson Reuters security best practices
+
+### What Gets Executed
+
+The CronJob runs these commands in sequence daily:
+
+1. `service-metrics` - Repository-level code review metrics
+2. `timeseries-service-metrics` - Historical trend data
+3. `pr-metrics` - Pull request performance metrics
+4. `workflow-metrics` - CI/CD pipeline metrics
+
+### Documentation
+
+**Deployment Guides:**
+- **[Deployment Guide](docs/DEPLOYMENT.md)** - Complete end-to-end deployment guide ⭐ START HERE
+- **[Deployment Status](docs/DEPLOYMENT_STATUS.md)** - Current deployment status and next steps
+- **[Build Status](docs/BUILD_STATUS.md)** - Container build status and troubleshooting
+- **[Kubernetes Architecture](docs/KUBERNETES_DEPLOYMENT.md)** - Implementation details and design decisions
+- **[Implementation Summary](docs/IMPLEMENTATION_COMPLETE.md)** - Complete implementation overview
+
+**Infrastructure:**
+- **[CloudFormation](cloudformation/README.md)** - AWS infrastructure as code
+- **[GitHub Actions](.github/workflows/README.md)** - CI/CD pipeline documentation
+- **[Helm Charts](k8s/github-metrics/README.md)** - Kubernetes deployment charts
+- **[Quick Start](k8s/QUICKSTART.md)** - Get deployed in 25 minutes (legacy)
+
+### Container Image
+
+The container uses:
+
+- Chainguard Node.js base image (minimal attack surface)
+- Bun runtime (fast JavaScript/TypeScript execution)
+- Non-root user (UID 65532)
+- Security contexts enforced
+
+### Prerequisites
+
+- AWS account with ECR, Secrets Manager, and IAM access
+- Kubernetes cluster with AWS Secrets Manager CSI Driver
+- Helm 3.x
+- kubectl configured for your cluster
+
+### Deployment Options
+
+**Option 1: Manual Helm Deployment**
+
+```bash
+helm upgrade --install github-metrics k8s/github-metrics \
+  -f k8s/github-metrics/values-sandbox.yaml \
+  -n github-metrics-sandbox \
+  --create-namespace
+```
+
+**Option 2: ArgoCD GitOps**
+
+```bash
+helm upgrade --install github-metrics-apps k8s/argocd/applications \
+  -n argocd
+```
 
 ## Caveats
 

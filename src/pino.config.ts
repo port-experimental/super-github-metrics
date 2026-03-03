@@ -1,15 +1,15 @@
-const isPretty = process.env.PINO_LOG_FORMAT === "pretty";
+const isPretty = process.env.PINO_LOG_FORMAT === 'pretty';
 
 const pinoConfig = {
-  level: process.env.PINO_LOG_LEVEL || "info",
+  level: process.env.PINO_LOG_LEVEL || 'info',
   ...(isPretty
     ? {
         transport: {
-          target: "pino-pretty",
+          target: 'pino-pretty',
           options: {
             colorize: true,
-            translateTime: "SYS:standard",
-            ignore: "pid,hostname",
+            translateTime: 'SYS:standard',
+            ignore: 'pid,hostname',
           },
         },
       }

@@ -15,13 +15,6 @@ export interface GitHubAppConfig {
   installationId: string;
 }
 
-/**
- * Personal Access Token authentication configuration
- */
-interface PATConfig {
-  token: string;
-}
-
 export interface GitHubUser {
   identifier: string;
   title?: string;
@@ -195,7 +188,7 @@ export interface AuditLogEntry {
 
 export interface TimeSeriesMetrics {
   period: string;
-  periodType: "daily" | "weekly" | "monthly";
+  periodType: 'daily' | 'weekly' | 'monthly';
   totalPRs: number;
   totalMergedPRs: number;
   numberOfPRsReviewed: number;
@@ -212,7 +205,7 @@ export interface ServiceMetricsEntity {
   title: string;
   properties: {
     period: string;
-    period_type: "daily" | "weekly" | "monthly";
+    period_type: 'daily' | 'weekly' | 'monthly';
     total_prs: number;
     total_merged_prs: number;
     number_of_prs_reviewed: number;
@@ -226,7 +219,7 @@ export interface ServiceMetricsEntity {
     data_source: string;
   };
   relations: {
-    service: string; // Service entity identifier
+    [key: string]: string; // Dynamic relation key for repository entity
   };
   [key: string]: unknown; // Index signature to match PortEntity interface
 }

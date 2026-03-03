@@ -1,0 +1,39 @@
+# Multi-stage build for GitHub Metrics
+FROM oven/bun:1.1.42-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json bun.lockb* ./
+
+# Install dependencies
+RUN bun install --frozen-lockfile --production
+
+# Copy application source
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+
+# Final stage
+FROM oven/bun:1.1.42-alpine
+
+WORKDIR /app
+
+# Install bash (required by run-metrics.sh)
+RUN apk add --no-cache bash
+
+# Copy application from builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/scripts ./scripts
+
+# Change ownership to bun user and set permissions
+RUN chown -R bun:bun /app && \
+    chmod -R 755 /app
+
+# Bun image already has a bun user (uid 1000), use that
+USER bun
+
+# Override the base image's entrypoint and set our command
+ENTRYPOINT []
+CMD ["/bin/bash", "/app/scripts/run-metrics.sh"]

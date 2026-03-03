@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 
-import { Command } from "commander";
-import pino from "pino";
-import pinoCaller from "pino-caller";
-import { registerGithubCommands } from "./command";
-import pinoConfig from "../pino.config";
+import { Command } from 'commander';
+import dotenv from 'dotenv';
+import pino from 'pino';
+import pinoConfig from '../pino.config';
+import { registerGithubCommands } from './command';
 
-const logger = pinoCaller(pino(pinoConfig));
+dotenv.config();
+
+const logger = pino(pinoConfig);
 
 async function main() {
   try {
     const program = new Command();
 
-    program
-      .name("github-sync")
-      .description("CLI to pull metrics from GitHub to Port");
+    program.name('github-sync').description('CLI to pull metrics from GitHub to Port');
 
     registerGithubCommands(program, logger);
 
@@ -22,7 +22,7 @@ async function main() {
   } catch (error) {
     logger.error(
       { err: error },
-      `Fatal error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Fatal error: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
     process.exit(1);
   }
@@ -31,7 +31,4 @@ async function main() {
 // Export main function for testing
 export { main };
 
-// Check if this module is being run directly
-if (typeof require !== "undefined" && require.main === module) {
-  main();
-}
+main();

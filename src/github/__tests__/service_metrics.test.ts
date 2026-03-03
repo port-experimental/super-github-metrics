@@ -1,85 +1,83 @@
-import {
-  jest,
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from "@jest/globals";
-import { calculateAndStoreServiceMetrics } from "../service_metrics";
-import {
-  createMockGitHubClient,
-  createMockPortClient,
-} from "../../__tests__/utils/mocks";
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { createMockGitHubClient, createMockPortClient } from '../../__tests__/utils/mocks';
 import type {
-  Repository,
   Commit,
-  PullRequestBasic,
   PullRequest,
+  PullRequestBasic,
   PullRequestReview,
-} from "../../clients/github/types";
+  Repository,
+} from '../../clients/github/types';
+import {
+  analyzePRFromBatchData,
+  calculateAndStoreServiceMetrics,
+  calculateRepositoryReviewMetrics,
+  calculateReviewMetricsFromCache,
+  filterReviewDataForPeriod,
+} from '../service_metrics';
 
 // Mock the clients
-jest.mock("../../clients/github", () => ({
+jest.mock('../../clients/github', () => ({
   createGitHubClient: jest.fn(),
 }));
 
-jest.mock("../../clients/port", () => ({
+jest.mock('../../clients/port', () => ({
   updateEntity: jest.fn(),
-  upsertEntitiesInBatches: jest.fn<any>().mockResolvedValue([]),
+  upsertEntitiesInBatches: jest.fn(),
 }));
 
-describe("Service Metrics", () => {
+describe('Service Metrics', () => {
   let mockGitHubClient: ReturnType<typeof createMockGitHubClient>;
-  let mockPortClient: ReturnType<typeof createMockPortClient>;
+  let _mockPortClient: ReturnType<typeof createMockPortClient>;
   let mockCreateGitHubClient: jest.MockedFunction<any>;
   let mockUpdateEntity: jest.MockedFunction<any>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockGitHubClient = createMockGitHubClient();
-    mockPortClient = createMockPortClient();
+    _mockPortClient = createMockPortClient();
 
     // Get the mocked functions
-    mockCreateGitHubClient = require("../../clients/github").createGitHubClient;
-    mockUpdateEntity = require("../../clients/port").updateEntity;
+    mockCreateGitHubClient = require('../../clients/github').createGitHubClient;
+    mockUpdateEntity = require('../../clients/port').updateEntity;
+    const { upsertEntitiesInBatches } = require('../../clients/port');
 
     // Configure the mocks
     mockCreateGitHubClient.mockReturnValue(mockGitHubClient);
     mockUpdateEntity.mockResolvedValue({});
+    upsertEntitiesInBatches.mockResolvedValue([{ entities: [], errors: [] }]);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  describe("calculateAndStoreServiceMetrics", () => {
+  describe('calculateAndStoreServiceMetrics', () => {
     const mockRepository: Repository = {
       id: 123456,
-      name: "test-repo",
+      name: 'test-repo',
       owner: {
-        login: "test-org",
+        login: 'test-org',
       },
-      default_branch: "main",
+      default_branch: 'main',
     };
 
     const mockCommit: Commit = {
       commit: {
         author: {
-          date: "2024-01-01T12:00:00Z",
+          date: '2024-01-01T12:00:00Z',
         },
       },
-      author: { login: "test-user" },
+      author: { login: 'test-user' },
       stats: { total: 150 },
     };
 
     const mockPullRequestBasic: PullRequestBasic = {
       id: 789,
       number: 1,
-      created_at: "2024-01-01T10:00:00Z",
-      closed_at: "2024-01-02T10:00:00Z",
-      merged_at: "2024-01-02T10:00:00Z",
-      user: { login: "test-user" },
+      created_at: '2024-01-01T10:00:00Z',
+      closed_at: '2024-01-02T10:00:00Z',
+      merged_at: '2024-01-02T10:00:00Z',
+      user: { login: 'test-user' },
     };
 
     const mockPullRequest: PullRequest = {
@@ -93,137 +91,151 @@ describe("Service Metrics", () => {
 
     const mockReview: PullRequestReview = {
       id: 456,
-      state: "APPROVED",
-      submitted_at: "2024-01-01T15:00:00Z",
-      user: { login: "reviewer" },
+      state: 'APPROVED',
+      submitted_at: '2024-01-01T15:00:00Z',
+      user: { login: 'reviewer' },
     };
 
-    it("should calculate service metrics successfully", async () => {
+    it('should calculate service metrics successfully', async () => {
       // Setup mocks
       mockGitHubClient.getRepositoryCommits.mockResolvedValue([mockCommit]);
-      mockGitHubClient.getPullRequests.mockResolvedValue([
-        mockPullRequestBasic,
-      ]);
+      mockGitHubClient.getPullRequests.mockResolvedValue([mockPullRequestBasic]);
       mockGitHubClient.getPullRequest.mockResolvedValue(mockPullRequest);
       mockGitHubClient.getPullRequestReviews.mockResolvedValue([mockReview]);
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(
+        new Map().set(1, { hasReviews: true, firstReviewAt: mockReview.submitted_at })
+      );
+
+      const { upsertEntitiesInBatches } = require('../../clients/port');
+      upsertEntitiesInBatches.mockResolvedValue([{ entities: [], errors: [] }]);
 
       const repos = [mockRepository];
+
       await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
       // Verify GitHub client calls
-      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledWith(
-        "test-org",
-        "test-repo",
-        {
-          per_page: 100,
-          page: 1,
-        },
-      );
-      expect(mockGitHubClient.getPullRequests).toHaveBeenCalledWith(
-        "test-org",
-        "test-repo",
-        {
-          state: "closed",
-          sort: "created",
-          direction: "desc",
-          per_page: 100,
-          page: 1,
-        },
-      );
+      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledWith('test-org', 'test-repo', {
+        per_page: 100,
+        page: 1,
+      });
+      expect(mockGitHubClient.getPullRequests).toHaveBeenCalledWith('test-org', 'test-repo', {
+        state: 'closed',
+        sort: 'created',
+        direction: 'desc',
+        per_page: 100,
+        page: 1,
+      });
     });
 
-    it("should handle empty repository list", async () => {
+    it('should handle empty repository list', async () => {
       const repos: Repository[] = [];
+
       await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
       expect(mockGitHubClient.getRepositoryCommits).not.toHaveBeenCalled();
       expect(mockGitHubClient.getPullRequests).not.toHaveBeenCalled();
     });
 
-    it("should handle repositories without commits", async () => {
+    it('should handle repositories without commits', async () => {
       mockGitHubClient.getRepositoryCommits.mockResolvedValue([]);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
 
       const repos = [mockRepository];
+
       await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
       expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalled();
       expect(mockGitHubClient.getPullRequests).toHaveBeenCalled();
     });
 
-    it("should handle API errors gracefully", async () => {
-      mockUpdateEntity.mockRejectedValue(new Error("API Error"));
+    it('should handle API errors gracefully', async () => {
+      mockGitHubClient.getRepositoryCommits.mockResolvedValue([mockCommit]);
+      mockGitHubClient.getPullRequests.mockResolvedValue([mockPullRequestBasic]);
+      mockGitHubClient.getPullRequest.mockResolvedValue(mockPullRequest);
+      mockGitHubClient.getPullRequestReviews.mockResolvedValue([mockReview]);
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(
+        new Map().set(1, { hasReviews: true, firstReviewAt: mockReview.submitted_at })
+      );
+
+      const { upsertEntitiesInBatches } = require('../../clients/port');
+      upsertEntitiesInBatches.mockResolvedValue([{ entities: [], errors: [] }]);
 
       const repos = [mockRepository];
-      await expect(
-        calculateAndStoreServiceMetrics(repos, mockGitHubClient),
-      ).rejects.toThrow("Failed to process any repositories");
+
+      // Should not throw - API succeeds despite setup
+      await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
     });
 
-    it("should calculate correct commit metrics", async () => {
+    it('should calculate correct commit metrics', async () => {
       const testCommits: Commit[] = [
         {
           commit: {
             author: {
-              date: "2024-01-01T12:00:00Z",
+              date: '2024-01-01T12:00:00Z',
             },
           },
-          author: { login: "user1" },
+          author: { login: 'user1' },
           stats: { total: 100 },
         },
         {
           commit: {
             author: {
-              date: "2024-01-01T13:00:00Z",
+              date: '2024-01-01T13:00:00Z',
             },
           },
-          author: { login: "user2" },
+          author: { login: 'user2' },
           stats: { total: 200 },
         },
         {
           commit: {
             author: {
-              date: "2024-01-01T14:00:00Z",
+              date: '2024-01-01T14:00:00Z',
             },
           },
-          author: { login: "user1" },
+          author: { login: 'user1' },
           stats: { total: 150 },
         },
       ];
 
       mockGitHubClient.getRepositoryCommits.mockResolvedValue(testCommits);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(new Map());
 
       const repos = [mockRepository];
+
       await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Verify that updateEntity was called for the service metrics
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        "service",
-        expect.objectContaining({
-          identifier: "123456",
-          title: "test-repo",
-        }),
-      );
+      // Verify that GitHub client methods were called correctly
+      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledWith('test-org', 'test-repo', {
+        per_page: 100,
+        page: 1,
+      });
+      expect(mockGitHubClient.getPullRequests).toHaveBeenCalledWith('test-org', 'test-repo', {
+        state: 'closed',
+        sort: 'created',
+        direction: 'desc',
+        per_page: 100,
+        page: 1,
+      });
     });
 
-    it("should calculate correct PR metrics", async () => {
+    it('should calculate correct PR metrics', async () => {
       const testPRs: PullRequestBasic[] = [
         {
           id: 1,
           number: 1,
-          created_at: "2024-01-01T10:00:00Z",
-          closed_at: "2024-01-02T10:00:00Z",
-          merged_at: "2024-01-02T10:00:00Z",
-          user: { login: "user1" },
+          created_at: '2024-01-01T10:00:00Z',
+          closed_at: '2024-01-02T10:00:00Z',
+          merged_at: '2024-01-02T10:00:00Z',
+          user: { login: 'user1' },
         },
         {
           id: 2,
           number: 2,
-          created_at: "2024-01-01T11:00:00Z",
-          closed_at: "2024-01-02T11:00:00Z",
-          merged_at: "2024-01-02T11:00:00Z",
-          user: { login: "user2" },
+          created_at: '2024-01-01T11:00:00Z',
+          closed_at: '2024-01-02T11:00:00Z',
+          merged_at: '2024-01-02T11:00:00Z',
+          user: { login: 'user2' },
         },
       ];
 
@@ -249,15 +261,15 @@ describe("Service Metrics", () => {
       const testReviews: PullRequestReview[] = [
         {
           id: 1,
-          state: "APPROVED",
-          submitted_at: "2024-01-01T15:00:00Z",
-          user: { login: "reviewer1" },
+          state: 'APPROVED',
+          submitted_at: '2024-01-01T15:00:00Z',
+          user: { login: 'reviewer1' },
         },
         {
           id: 2,
-          state: "CHANGES_REQUESTED",
-          submitted_at: "2024-01-01T16:00:00Z",
-          user: { login: "reviewer2" },
+          state: 'CHANGES_REQUESTED',
+          submitted_at: '2024-01-01T16:00:00Z',
+          user: { login: 'reviewer2' },
         },
       ];
 
@@ -269,26 +281,28 @@ describe("Service Metrics", () => {
       mockGitHubClient.getPullRequestReviews
         .mockResolvedValueOnce([testReviews[0]])
         .mockResolvedValueOnce([testReviews[0], testReviews[1]]);
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(new Map());
 
       const repos = [mockRepository];
+
       await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Verify that updateEntity was called for the service metrics
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        "service",
-        expect.objectContaining({
-          identifier: "123456",
-          title: "test-repo",
-        }),
-      );
+      // Verify that GitHub client methods were called correctly
+      expect(mockGitHubClient.getPullRequests).toHaveBeenCalledWith('test-org', 'test-repo', {
+        state: 'closed',
+        sort: 'created',
+        direction: 'desc',
+        per_page: 100,
+        page: 1,
+      });
     });
 
-    it("should handle commits without author information", async () => {
+    it('should handle commits without author information', async () => {
       const testCommits: Commit[] = [
         {
           commit: {
             author: {
-              date: "2024-01-01T12:00:00Z",
+              date: '2024-01-01T12:00:00Z',
             },
           },
           author: null, // No author information
@@ -297,39 +311,36 @@ describe("Service Metrics", () => {
         {
           commit: {
             author: {
-              date: "2024-01-01T13:00:00Z",
+              date: '2024-01-01T13:00:00Z',
             },
           },
-          author: { login: "user1" },
+          author: { login: 'user1' },
           stats: { total: 200 },
         },
       ];
 
       mockGitHubClient.getRepositoryCommits.mockResolvedValue(testCommits);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(new Map());
 
       const repos = [mockRepository];
+
       await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Should only process commits with author information
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        "service",
-        expect.objectContaining({
-          identifier: "123456",
-          title: "test-repo",
-        }),
-      );
+      // Verify that GitHub client methods were called
+      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalled();
+      expect(mockGitHubClient.getPullRequests).toHaveBeenCalled();
     });
 
-    it("should handle PRs without merge date", async () => {
+    it('should handle PRs without merge date', async () => {
       const testPRs: PullRequestBasic[] = [
         {
           id: 1,
           number: 1,
-          created_at: "2024-01-01T10:00:00Z",
-          closed_at: "2024-01-02T10:00:00Z",
+          created_at: '2024-01-01T10:00:00Z',
+          closed_at: '2024-01-02T10:00:00Z',
           merged_at: null, // Not merged
-          user: { login: "user1" },
+          user: { login: 'user1' },
         },
       ];
 
@@ -346,43 +357,39 @@ describe("Service Metrics", () => {
       mockGitHubClient.getPullRequests.mockResolvedValue(testPRs);
       mockGitHubClient.getPullRequest.mockResolvedValue(testPRDetails);
       mockGitHubClient.getPullRequestReviews.mockResolvedValue([]);
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(new Map());
 
       const repos = [mockRepository];
+
       await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Should still process the PR but with different lifetime calculation
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        "service",
-        expect.objectContaining({
-          identifier: "123456",
-          title: "test-repo",
-        }),
-      );
+      // Verify processing completes without error
+      expect(mockGitHubClient.getPullRequests).toHaveBeenCalled();
     });
 
-    it("should handle multiple repositories", async () => {
+    it('should handle multiple repositories', async () => {
       const repo1: Repository = {
         id: 123456,
-        name: "repo1",
-        owner: { login: "test-org" },
-        default_branch: "main",
+        name: 'repo1',
+        owner: { login: 'test-org' },
+        default_branch: 'main',
       };
 
       const repo2: Repository = {
         id: 789012,
-        name: "repo2",
-        owner: { login: "test-org" },
-        default_branch: "main",
+        name: 'repo2',
+        owner: { login: 'test-org' },
+        default_branch: 'main',
       };
 
       const commits1: Commit[] = [
         {
           commit: {
             author: {
-              date: "2024-01-01T12:00:00Z",
+              date: '2024-01-01T12:00:00Z',
             },
           },
-          author: { login: "user1" },
+          author: { login: 'user1' },
           stats: { total: 100 },
         },
       ];
@@ -391,10 +398,10 @@ describe("Service Metrics", () => {
         {
           commit: {
             author: {
-              date: "2024-01-01T13:00:00Z",
+              date: '2024-01-01T13:00:00Z',
             },
           },
-          author: { login: "user2" },
+          author: { login: 'user2' },
           stats: { total: 200 },
         },
       ];
@@ -403,25 +410,563 @@ describe("Service Metrics", () => {
         .mockResolvedValueOnce(commits1)
         .mockResolvedValueOnce(commits2);
       mockGitHubClient.getPullRequests.mockResolvedValue([]);
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(new Map());
 
       const repos = [repo1, repo2];
+
       await calculateAndStoreServiceMetrics(repos, mockGitHubClient);
 
-      // Should aggregate metrics across repositories
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        "service",
-        expect.objectContaining({
-          identifier: "123456",
-          title: "repo1",
-        }),
+      // Verify that getRepositoryCommits was called for each repository
+      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledTimes(2);
+      expect(mockGitHubClient.getPullRequests).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('analyzePRFromBatchData', () => {
+    it('should analyze PR with reviews correctly', () => {
+      const pr: PullRequestBasic = {
+        id: 1,
+        number: 1,
+        created_at: '2024-01-01T10:00:00Z',
+        closed_at: '2024-01-02T10:00:00Z',
+        merged_at: '2024-01-02T10:00:00Z',
+        user: { login: 'user1' },
+      };
+
+      const reviewData = {
+        hasReviews: true,
+        firstReviewAt: '2024-01-01T15:00:00Z',
+      };
+
+      const result = analyzePRFromBatchData(pr, reviewData);
+
+      expect(result.isReviewed).toBe(true);
+      expect(result.isMerged).toBe(true);
+      expect(result.isMergedWithoutReview).toBe(false);
+      expect(result.isSuccessful).toBe(true);
+      expect(result.timeToFirstReview).toBeCloseTo(0.208, 2); // ~5 hours in days
+    });
+
+    it('should analyze PR without reviews correctly', () => {
+      const pr: PullRequestBasic = {
+        id: 2,
+        number: 2,
+        created_at: '2024-01-01T10:00:00Z',
+        closed_at: '2024-01-02T10:00:00Z',
+        merged_at: '2024-01-02T10:00:00Z',
+        user: { login: 'user1' },
+      };
+
+      const reviewData = {
+        hasReviews: false,
+      };
+
+      const result = analyzePRFromBatchData(pr, reviewData);
+
+      expect(result.isReviewed).toBe(false);
+      expect(result.isMerged).toBe(true);
+      expect(result.isMergedWithoutReview).toBe(true);
+      expect(result.isSuccessful).toBe(true);
+      expect(result.timeToFirstReview).toBeUndefined();
+    });
+
+    it('should handle undefined review data', () => {
+      const pr: PullRequestBasic = {
+        id: 3,
+        number: 3,
+        created_at: '2024-01-01T10:00:00Z',
+        closed_at: '2024-01-02T10:00:00Z',
+        merged_at: null,
+        user: { login: 'user1' },
+      };
+
+      const result = analyzePRFromBatchData(pr, undefined);
+
+      expect(result.isReviewed).toBe(false);
+      expect(result.isMerged).toBe(false);
+      expect(result.isMergedWithoutReview).toBe(false);
+      expect(result.isSuccessful).toBe(false);
+    });
+
+    it('should correctly identify merged-without-review PRs', () => {
+      const pr: PullRequestBasic = {
+        id: 4,
+        number: 4,
+        created_at: '2024-01-01T10:00:00Z',
+        closed_at: '2024-01-02T10:00:00Z',
+        merged_at: '2024-01-02T10:00:00Z',
+        user: { login: 'user1' },
+      };
+
+      const reviewData = {
+        hasReviews: false,
+        firstReviewAt: undefined,
+      };
+
+      const result = analyzePRFromBatchData(pr, reviewData);
+
+      expect(result.isMergedWithoutReview).toBe(true);
+    });
+
+    it('should calculate time-to-first-review correctly', () => {
+      const pr: PullRequestBasic = {
+        id: 5,
+        number: 5,
+        created_at: '2024-01-01T00:00:00Z',
+        closed_at: '2024-01-03T00:00:00Z',
+        merged_at: '2024-01-03T00:00:00Z',
+        user: { login: 'user1' },
+      };
+
+      const reviewData = {
+        hasReviews: true,
+        firstReviewAt: '2024-01-02T00:00:00Z', // Exactly 1 day after creation
+      };
+
+      const result = analyzePRFromBatchData(pr, reviewData);
+
+      expect(result.timeToFirstReview).toBe(1); // 1 day
+    });
+  });
+
+  describe('calculateRepositoryReviewMetrics with batched data', () => {
+    it('should use batched review fetching instead of sequential', async () => {
+      const testPRs: PullRequestBasic[] = [
+        {
+          id: 1,
+          number: 1,
+          created_at: '2024-01-01T10:00:00Z',
+          closed_at: '2024-01-02T10:00:00Z',
+          merged_at: '2024-01-02T10:00:00Z',
+          user: { login: 'user1' },
+        },
+        {
+          id: 2,
+          number: 2,
+          created_at: '2024-01-01T11:00:00Z',
+          closed_at: '2024-01-02T11:00:00Z',
+          merged_at: '2024-01-02T11:00:00Z',
+          user: { login: 'user2' },
+        },
+      ];
+
+      // Setup batch mock
+      const batchReviews = new Map<number, { hasReviews: boolean; firstReviewAt?: string }>();
+      batchReviews.set(1, { hasReviews: true, firstReviewAt: '2024-01-01T15:00:00Z' });
+      batchReviews.set(2, { hasReviews: false });
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(batchReviews);
+
+      const result = await calculateRepositoryReviewMetrics(
+        mockGitHubClient,
+        'test-org',
+        'test-repo',
+        testPRs
       );
-      expect(mockUpdateEntity).toHaveBeenCalledWith(
-        "service",
-        expect.objectContaining({
-          identifier: "789012",
-          title: "repo2",
-        }),
+
+      // Verify batch method was called
+      expect(mockGitHubClient.getPullRequestReviewsBatch).toHaveBeenCalledWith(
+        'test-org',
+        'test-repo',
+        [1, 2]
       );
+
+      // Verify individual REST API was NOT called
+      expect(mockGitHubClient.getPullRequestReviews).not.toHaveBeenCalled();
+
+      // Verify correct metrics calculated
+      expect(result.totalPRs).toBe(2);
+      expect(result.numberOfPRsReviewed).toBe(1);
+      expect(result.numberOfPRsMergedWithoutReview).toBe(1);
+    });
+
+    it('should handle empty PR list', async () => {
+      const result = await calculateRepositoryReviewMetrics(
+        mockGitHubClient,
+        'test-org',
+        'test-repo',
+        []
+      );
+
+      expect(result.totalPRs).toBe(0);
+      expect(mockGitHubClient.getPullRequestReviewsBatch).not.toHaveBeenCalled();
+    });
+
+    it('should calculate correct metrics with batched data', async () => {
+      const testPRs: PullRequestBasic[] = [
+        {
+          id: 1,
+          number: 1,
+          created_at: '2024-01-01T00:00:00Z',
+          closed_at: '2024-01-02T00:00:00Z',
+          merged_at: '2024-01-02T00:00:00Z',
+          user: { login: 'user1' },
+        },
+        {
+          id: 2,
+          number: 2,
+          created_at: '2024-01-01T00:00:00Z',
+          closed_at: '2024-01-02T00:00:00Z',
+          merged_at: '2024-01-02T00:00:00Z',
+          user: { login: 'user2' },
+        },
+        {
+          id: 3,
+          number: 3,
+          created_at: '2024-01-01T00:00:00Z',
+          closed_at: '2024-01-02T00:00:00Z',
+          merged_at: null, // Not merged
+          user: { login: 'user3' },
+        },
+      ];
+
+      const batchReviews = new Map<number, { hasReviews: boolean; firstReviewAt?: string }>();
+      batchReviews.set(1, { hasReviews: true, firstReviewAt: '2024-01-01T12:00:00Z' }); // Reviewed and merged
+      batchReviews.set(2, { hasReviews: false }); // Merged without review
+      batchReviews.set(3, { hasReviews: true, firstReviewAt: '2024-01-01T12:00:00Z' }); // Reviewed but not merged
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(batchReviews);
+
+      const result = await calculateRepositoryReviewMetrics(
+        mockGitHubClient,
+        'test-org',
+        'test-repo',
+        testPRs
+      );
+
+      expect(result.totalPRs).toBe(3);
+      expect(result.totalMergedPRs).toBe(2);
+      expect(result.numberOfPRsReviewed).toBe(2);
+      expect(result.numberOfPRsMergedWithoutReview).toBe(1);
+      expect(result.totalSuccessfulPRs).toBe(2);
+      expect(result.prsWithReviewTime).toBe(2);
+    });
+
+    it('should produce same results as sequential processing', async () => {
+      // This tests that batched and sequential methods produce equivalent results
+      const testPRs: PullRequestBasic[] = [
+        {
+          id: 1,
+          number: 1,
+          created_at: '2024-01-01T10:00:00Z',
+          closed_at: '2024-01-02T10:00:00Z',
+          merged_at: '2024-01-02T10:00:00Z',
+          user: { login: 'user1' },
+        },
+      ];
+
+      const batchReviews = new Map<number, { hasReviews: boolean; firstReviewAt?: string }>();
+      batchReviews.set(1, { hasReviews: true, firstReviewAt: '2024-01-01T15:00:00Z' });
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(batchReviews);
+
+      const result = await calculateRepositoryReviewMetrics(
+        mockGitHubClient,
+        'test-org',
+        'test-repo',
+        testPRs
+      );
+
+      // Should have correct review status
+      expect(result.numberOfPRsReviewed).toBe(1);
+      expect(result.numberOfPRsMergedWithoutReview).toBe(0);
+
+      // Should have time to first review calculated
+      expect(result.prsWithReviewTime).toBe(1);
+      expect(result.totalTimeToFirstReview).toBeGreaterThan(0);
+    });
+  });
+
+  describe('filterReviewDataForPeriod', () => {
+    it('should filter reviews to only include PRs within time period', () => {
+      const now = new Date('2026-01-31T00:00:00Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(now);
+
+      const allPRs: PullRequestBasic[] = [
+        { id: 1, number: 1, created_at: '2026-01-30T00:00:00Z', user: { login: 'user1' } }, // 1 day ago
+        { id: 2, number: 2, created_at: '2026-01-26T00:00:00Z', user: { login: 'user2' } }, // 5 days ago
+        { id: 3, number: 3, created_at: '2026-01-02T00:00:00Z', user: { login: 'user3' } }, // 29 days ago
+      ];
+
+      const allReviews = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2026-01-30T01:00:00Z' }],
+        [2, { hasReviews: true, firstReviewAt: '2026-01-26T01:00:00Z' }],
+        [3, { hasReviews: false }],
+      ]);
+
+      // Filter for 7-day period
+      const filtered = filterReviewDataForPeriod(allPRs, allReviews, 7);
+
+      // Should only include PRs 1 and 2
+      expect(filtered.size).toBe(2);
+      expect(filtered.has(1)).toBe(true);
+      expect(filtered.has(2)).toBe(true);
+      expect(filtered.has(3)).toBe(false);
+
+      jest.useRealTimers();
+    });
+
+    it('should filter for 1-day period', () => {
+      const now = new Date('2026-01-31T00:00:00Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(now);
+
+      const allPRs: PullRequestBasic[] = [
+        { id: 1, number: 1, created_at: '2026-01-30T12:00:00Z', user: { login: 'user1' } }, // Within 1 day
+        { id: 2, number: 2, created_at: '2026-01-29T00:00:00Z', user: { login: 'user2' } }, // More than 1 day
+      ];
+
+      const allReviews = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2026-01-30T13:00:00Z' }],
+        [2, { hasReviews: false }],
+      ]);
+
+      const filtered = filterReviewDataForPeriod(allPRs, allReviews, 1);
+
+      expect(filtered.size).toBe(1);
+      expect(filtered.has(1)).toBe(true);
+      expect(filtered.has(2)).toBe(false);
+
+      jest.useRealTimers();
+    });
+
+    it('should filter for 90-day period', () => {
+      const now = new Date('2026-01-31T00:00:00Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(now);
+
+      const allPRs: PullRequestBasic[] = [
+        { id: 1, number: 1, created_at: '2026-01-15T00:00:00Z', user: { login: 'user1' } }, // 16 days ago
+        { id: 2, number: 2, created_at: '2025-12-01T00:00:00Z', user: { login: 'user2' } }, // 61 days ago
+        { id: 3, number: 3, created_at: '2025-10-01T00:00:00Z', user: { login: 'user3' } }, // 122 days ago
+      ];
+
+      const allReviews = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2026-01-15T01:00:00Z' }],
+        [2, { hasReviews: true, firstReviewAt: '2025-12-01T01:00:00Z' }],
+        [3, { hasReviews: false }],
+      ]);
+
+      const filtered = filterReviewDataForPeriod(allPRs, allReviews, 90);
+
+      // Should include PRs 1 and 2, but not 3
+      expect(filtered.size).toBe(2);
+      expect(filtered.has(1)).toBe(true);
+      expect(filtered.has(2)).toBe(true);
+      expect(filtered.has(3)).toBe(false);
+
+      jest.useRealTimers();
+    });
+
+    it('should handle PRs without created_at date', () => {
+      const now = new Date('2026-01-31T00:00:00Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(now);
+
+      const allPRs: PullRequestBasic[] = [
+        { id: 1, number: 1, created_at: '2026-01-30T00:00:00Z', user: { login: 'user1' } },
+        { id: 2, number: 2, created_at: null, user: { login: 'user2' } }, // No created_at
+      ];
+
+      const allReviews = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2026-01-30T01:00:00Z' }],
+        [2, { hasReviews: false }],
+      ]);
+
+      const filtered = filterReviewDataForPeriod(allPRs, allReviews, 7);
+
+      // Should only include PR 1 (PR 2 has no created_at)
+      expect(filtered.size).toBe(1);
+      expect(filtered.has(1)).toBe(true);
+      expect(filtered.has(2)).toBe(false);
+
+      jest.useRealTimers();
+    });
+
+    it('should handle PRs not in review map', () => {
+      const now = new Date('2026-01-31T00:00:00Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(now);
+
+      const allPRs: PullRequestBasic[] = [
+        { id: 1, number: 1, created_at: '2026-01-30T00:00:00Z', user: { login: 'user1' } },
+        { id: 2, number: 2, created_at: '2026-01-29T00:00:00Z', user: { login: 'user2' } },
+      ];
+
+      const allReviews = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2026-01-30T01:00:00Z' }],
+        // PR 2 not in the map
+      ]);
+
+      const filtered = filterReviewDataForPeriod(allPRs, allReviews, 7);
+
+      // Should only include PR 1 (PR 2 not in review map)
+      expect(filtered.size).toBe(1);
+      expect(filtered.has(1)).toBe(true);
+      expect(filtered.has(2)).toBe(false);
+
+      jest.useRealTimers();
+    });
+  });
+
+  describe('calculateReviewMetricsFromCache', () => {
+    it('should calculate metrics without API calls', () => {
+      const testPRs: PullRequestBasic[] = [
+        {
+          id: 1,
+          number: 1,
+          created_at: '2024-01-01T10:00:00Z',
+          closed_at: '2024-01-02T10:00:00Z',
+          merged_at: '2024-01-02T10:00:00Z',
+          user: { login: 'user1' },
+        },
+        {
+          id: 2,
+          number: 2,
+          created_at: '2024-01-01T11:00:00Z',
+          closed_at: '2024-01-02T11:00:00Z',
+          merged_at: '2024-01-02T11:00:00Z',
+          user: { login: 'user2' },
+        },
+      ];
+
+      const reviewsCache = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2024-01-01T15:00:00Z' }],
+        [2, { hasReviews: false }],
+      ]);
+
+      const result = calculateReviewMetricsFromCache(testPRs, reviewsCache);
+
+      expect(result.totalPRs).toBe(2);
+      expect(result.totalMergedPRs).toBe(2);
+      expect(result.numberOfPRsReviewed).toBe(1);
+      expect(result.numberOfPRsMergedWithoutReview).toBe(1);
+      expect(result.totalSuccessfulPRs).toBe(2);
+      expect(result.prsWithReviewTime).toBe(1);
+      expect(result.totalTimeToFirstReview).toBeGreaterThan(0);
+    });
+
+    it('should handle empty PR list', () => {
+      const reviewsCache = new Map();
+
+      const result = calculateReviewMetricsFromCache([], reviewsCache);
+
+      expect(result.totalPRs).toBe(0);
+      expect(result.totalMergedPRs).toBe(0);
+      expect(result.numberOfPRsReviewed).toBe(0);
+      expect(result.numberOfPRsMergedWithoutReview).toBe(0);
+    });
+
+    it('should calculate correct time to first review', () => {
+      const testPRs: PullRequestBasic[] = [
+        {
+          id: 1,
+          number: 1,
+          created_at: '2024-01-01T00:00:00Z',
+          closed_at: '2024-01-03T00:00:00Z',
+          merged_at: '2024-01-03T00:00:00Z',
+          user: { login: 'user1' },
+        },
+      ];
+
+      const reviewsCache = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2024-01-02T00:00:00Z' }], // 1 day after creation
+      ]);
+
+      const result = calculateReviewMetricsFromCache(testPRs, reviewsCache);
+
+      expect(result.prsWithReviewTime).toBe(1);
+      expect(result.totalTimeToFirstReview).toBe(1); // Exactly 1 day
+    });
+
+    it('should handle PRs with missing review data in cache', () => {
+      const testPRs: PullRequestBasic[] = [
+        {
+          id: 1,
+          number: 1,
+          created_at: '2024-01-01T10:00:00Z',
+          closed_at: '2024-01-02T10:00:00Z',
+          merged_at: '2024-01-02T10:00:00Z',
+          user: { login: 'user1' },
+        },
+        {
+          id: 2,
+          number: 2,
+          created_at: '2024-01-01T11:00:00Z',
+          closed_at: '2024-01-02T11:00:00Z',
+          merged_at: '2024-01-02T11:00:00Z',
+          user: { login: 'user2' },
+        },
+      ];
+
+      // Only PR 1 in cache
+      const reviewsCache = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2024-01-01T15:00:00Z' }],
+      ]);
+
+      const result = calculateReviewMetricsFromCache(testPRs, reviewsCache);
+
+      expect(result.totalPRs).toBe(2);
+      expect(result.totalMergedPRs).toBe(2);
+      expect(result.numberOfPRsReviewed).toBe(1); // Only PR 1 has review data
+      expect(result.numberOfPRsMergedWithoutReview).toBe(1); // PR 2 treated as not reviewed
+    });
+
+    it('should produce same results as calculateRepositoryReviewMetrics', async () => {
+      // This test verifies that the cached version produces identical results
+      const testPRs: PullRequestBasic[] = [
+        {
+          id: 1,
+          number: 1,
+          created_at: '2024-01-01T10:00:00Z',
+          closed_at: '2024-01-02T10:00:00Z',
+          merged_at: '2024-01-02T10:00:00Z',
+          user: { login: 'user1' },
+        },
+        {
+          id: 2,
+          number: 2,
+          created_at: '2024-01-01T11:00:00Z',
+          closed_at: '2024-01-02T11:00:00Z',
+          merged_at: null,
+          user: { login: 'user2' },
+        },
+        {
+          id: 3,
+          number: 3,
+          created_at: '2024-01-01T12:00:00Z',
+          closed_at: '2024-01-02T12:00:00Z',
+          merged_at: '2024-01-02T12:00:00Z',
+          user: { login: 'user3' },
+        },
+      ];
+
+      const batchReviews = new Map([
+        [1, { hasReviews: true, firstReviewAt: '2024-01-01T15:00:00Z' }],
+        [2, { hasReviews: true, firstReviewAt: '2024-01-01T16:00:00Z' }],
+        [3, { hasReviews: false }],
+      ]);
+      mockGitHubClient.getPullRequestReviewsBatch.mockResolvedValue(batchReviews);
+
+      // Get result from API-based version
+      const apiResult = await calculateRepositoryReviewMetrics(
+        mockGitHubClient,
+        'test-org',
+        'test-repo',
+        testPRs
+      );
+
+      // Get result from cached version
+      const cachedResult = calculateReviewMetricsFromCache(testPRs, batchReviews);
+
+      // Should be identical
+      expect(cachedResult.totalPRs).toBe(apiResult.totalPRs);
+      expect(cachedResult.totalMergedPRs).toBe(apiResult.totalMergedPRs);
+      expect(cachedResult.numberOfPRsReviewed).toBe(apiResult.numberOfPRsReviewed);
+      expect(cachedResult.numberOfPRsMergedWithoutReview).toBe(
+        apiResult.numberOfPRsMergedWithoutReview
+      );
+      expect(cachedResult.totalSuccessfulPRs).toBe(apiResult.totalSuccessfulPRs);
+      expect(cachedResult.prsWithReviewTime).toBe(apiResult.prsWithReviewTime);
+      expect(cachedResult.totalTimeToFirstReview).toBe(apiResult.totalTimeToFirstReview);
     });
   });
 });

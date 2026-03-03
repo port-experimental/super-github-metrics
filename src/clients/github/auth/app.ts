@@ -1,8 +1,8 @@
-import { createAppAuth } from "@octokit/auth-app";
-import type { Logger } from "pino";
-import { GitHubAppConfig } from "../types";
-import { GitHubAuth } from "./base";
-import { Octokit } from "@octokit/rest";
+import { createAppAuth } from '@octokit/auth-app';
+import { Octokit } from '@octokit/rest';
+import type { Logger } from 'pino';
+import type { GitHubAppConfig } from '../types';
+import { GitHubAuth } from './base';
 
 export class GitHubAppAuth extends GitHubAuth {
   private appId: string;
@@ -40,19 +40,19 @@ export class GitHubAppAuth extends GitHubAuth {
     });
 
     const { token } = await auth({
-      type: "installation",
+      type: 'installation',
       installationId: this.installationId,
     });
 
     if (!token) {
-      throw new Error("Failed to generate installation access token");
+      throw new Error('Failed to generate installation access token');
     }
 
     this.currentToken = token;
     // GitHub App tokens typically expire in 1 hour
     this.tokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
 
-    this.logger.info("Generated new GitHub App installation access token");
+    this.logger.info('Generated new GitHub App installation access token');
     return token;
   }
 
@@ -82,10 +82,7 @@ export class GitHubAppAuth extends GitHubAuth {
     const waitTime = secondsUntilReset || 3600; // Default to 1 hour if not specified
 
     if (waitTime > 0) {
-      this.logger.info(
-        { waitTime },
-        `Waiting ${waitTime} seconds for rate limit reset...`,
-      );
+      this.logger.info({ waitTime }, `Waiting ${waitTime} seconds for rate limit reset...`);
 
       // Wait in chunks to allow for early termination
       const chunkSize = Math.min(waitTime, 60); // Wait in 1-minute chunks
@@ -96,31 +93,26 @@ export class GitHubAppAuth extends GitHubAuth {
         const currentChunk = Math.min(chunkSize, remainingTime);
 
         if (currentChunk > 0) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, currentChunk * 1000),
-          );
+          await new Promise((resolve) => setTimeout(resolve, currentChunk * 1000));
 
           // Log progress every 5 minutes
           if (i % 5 === 0 && remainingTime > 60) {
             this.logger.info(
               { remainingMinutes: Math.ceil(remainingTime / 60) },
-              `Rate limit reset in progress: ${Math.ceil(remainingTime / 60)} minutes remaining...`,
+              `Rate limit reset in progress: ${Math.ceil(remainingTime / 60)} minutes remaining...`
             );
           }
         }
       }
 
-      this.logger.info("Rate limit reset complete. Continuing...");
+      this.logger.info('Rate limit reset complete. Continuing...');
     }
   }
 
   /**
    * Makes a request with retry logic and rate limit handling
    */
-  async makeRequest<T>(
-    requestFn: (octokit: Octokit) => Promise<T>,
-    logger: Logger,
-  ): Promise<T> {
+  async makeRequest<T>(requestFn: (octokit: Octokit) => Promise<T>, logger: Logger): Promise<T> {
     let lastError: Error | null = null;
     const maxRetries = 3;
 
@@ -132,30 +124,27 @@ export class GitHubAppAuth extends GitHubAuth {
         lastError = error;
 
         // Check if it's a rate limit error
-        if (
-          error.status === 403 &&
-          error.response?.headers?.["x-ratelimit-remaining"] === "0"
-        ) {
-          const resetTime = error.response?.headers?.["x-ratelimit-reset"];
+        if (error.status === 403 && error.response?.headers?.['x-ratelimit-remaining'] === '0') {
+          const resetTime = error.response?.headers?.['x-ratelimit-reset'];
           const secondsUntilReset = resetTime
             ? parseInt(resetTime, 10) - Math.floor(Date.now() / 1000)
             : 0;
 
           logger.warn(
             { secondsUntilReset },
-            `Rate limit exceeded. Reset in ${secondsUntilReset} seconds.`,
+            `Rate limit exceeded. Reset in ${secondsUntilReset} seconds.`
           );
-          logger.info("Waiting for rate limit reset...");
+          logger.info('Waiting for rate limit reset...');
           await this.waitForRateLimitReset(secondsUntilReset);
           continue;
         }
 
         // For other errors, implement exponential backoff
         if (attempt < maxRetries - 1) {
-          const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+          const delay = Math.min(1000 * 2 ** attempt, 30000);
           logger.warn(
             { attempt: attempt + 1, maxRetries, delay },
-            `Request failed (attempt ${attempt + 1}/${maxRetries}). Retrying in ${delay}ms...`,
+            `Request failed (attempt ${attempt + 1}/${maxRetries}). Retrying in ${delay}ms...`
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
@@ -165,6 +154,6 @@ export class GitHubAppAuth extends GitHubAuth {
       }
     }
 
-    throw lastError || new Error("Request failed after all attempts");
+    throw lastError || new Error('Request failed after all attempts');
   }
 }

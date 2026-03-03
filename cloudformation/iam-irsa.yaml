@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: IAM Roles with IRSA for GitHub Metrics (one per environment)
+
+Parameters:
+  OIDCProviderArn:
+    Type: String
+    Description: ARN of the EKS OIDC Provider
+  PermissionsBoundaryArn:
+    Type: String
+    Description: ARN of the TR Permissions Boundary policy
+  ApplicationId:
+    Type: String
+    Default: "209530"
+    Description: TR Application Asset Insight ID
+  ResourceOwner:
+    Type: String
+    Default: eamon.mason@thomsonreuters.com
+    Description: TR Resource Owner email
+  SandboxSecretArn:
+    Type: String
+    Description: ARN of the sandbox environment secret
+  DevSecretArn:
+    Type: String
+    Description: ARN of the dev environment secret
+  StagingSecretArn:
+    Type: String
+    Description: ARN of the staging environment secret
+
+Resources:
+  SandboxRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: a209530-github-metrics-secrets-sandbox
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref OIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                oidc.eks.us-east-1.amazonaws.com/id/4239CFFD07D919F3031538ECD4E5D2D3:sub: system:serviceaccount:209530-idp-sandbox:github-metrics
+                oidc.eks.us-east-1.amazonaws.com/id/4239CFFD07D919F3031538ECD4E5D2D3:aud: sts.amazonaws.com
+      Policies:
+        - PolicyName: secrets-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: !Ref SandboxSecretArn
+      Tags:
+        - Key: tr:application-asset-insight-id
+          Value: !Ref ApplicationId
+        - Key: tr:resource-owner
+          Value: !Ref ResourceOwner
+        - Key: Environment
+          Value: sandbox
+
+  DevRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: a209530-github-metrics-secrets-dev
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref OIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                oidc.eks.us-east-1.amazonaws.com/id/4239CFFD07D919F3031538ECD4E5D2D3:sub: system:serviceaccount:209530-idp-dev:github-metrics
+                oidc.eks.us-east-1.amazonaws.com/id/4239CFFD07D919F3031538ECD4E5D2D3:aud: sts.amazonaws.com
+      Policies:
+        - PolicyName: secrets-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: !Ref DevSecretArn
+      Tags:
+        - Key: tr:application-asset-insight-id
+          Value: !Ref ApplicationId
+        - Key: tr:resource-owner
+          Value: !Ref ResourceOwner
+        - Key: Environment
+          Value: dev
+
+  StagingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: a209530-github-metrics-secrets-staging
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref OIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                oidc.eks.us-east-1.amazonaws.com/id/4239CFFD07D919F3031538ECD4E5D2D3:sub: system:serviceaccount:209530-idp-staging:github-metrics
+                oidc.eks.us-east-1.amazonaws.com/id/4239CFFD07D919F3031538ECD4E5D2D3:aud: sts.amazonaws.com
+      Policies:
+        - PolicyName: secrets-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: !Ref StagingSecretArn
+      Tags:
+        - Key: tr:application-asset-insight-id
+          Value: !Ref ApplicationId
+        - Key: tr:resource-owner
+          Value: !Ref ResourceOwner
+        - Key: Environment
+          Value: staging
+
+Outputs:
+  SandboxRoleArn:
+    Description: ARN of the sandbox IAM role
+    Value: !GetAtt SandboxRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-SandboxRoleArn'
+
+  DevRoleArn:
+    Description: ARN of the dev IAM role
+    Value: !GetAtt DevRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DevRoleArn'
+
+  StagingRoleArn:
+    Description: ARN of the staging IAM role
+    Value: !GetAtt StagingRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-StagingRoleArn'

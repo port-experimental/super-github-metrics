@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "github-metrics.configMapName" . }}
+  labels:
+    {{- include "github-metrics.labels" . | nindent 4 }}
+  annotations:
+    {{- include "github-metrics.trAnnotations" . | nindent 4 }}
+data:
+  # Port configuration
+  PORT_BASE_URL: {{ .Values.port.baseUrl | quote }}
+
+  # GitHub configuration
+  X_GITHUB_ORGS: {{ .Values.github.orgs | quote }}
+  {{- if .Values.github.repos }}
+  X_GITHUB_REPOS: {{ .Values.github.repos | quote }}
+  {{- end }}
+  {{- if .Values.github.enterprise }}
+  X_GITHUB_ENTERPRISE: {{ .Values.github.enterprise | quote }}
+  {{- end }}
+
+  # Port blueprint configuration
+  PORT_SERVICE_BLUEPRINT: {{ .Values.blueprints.service | quote }}
+  PORT_SERVICE_METRICS_BLUEPRINT: {{ .Values.blueprints.serviceMetrics | quote }}
+  PORT_REPOSITORY_RELATION_KEY: {{ .Values.blueprints.repositoryRelationKey | quote }}
+  PORT_REPOSITORY_RELATION_TARGET: {{ .Values.blueprints.repositoryRelationTarget | quote }}
+
+  # Logging configuration
+  PINO_LOG_LEVEL: {{ .Values.logging.level | quote }}
+  PINO_LOG_FORMAT: {{ .Values.logging.format | quote }}

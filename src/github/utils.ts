@@ -66,7 +66,7 @@ export type TimePeriod = (typeof TIME_PERIODS)[keyof typeof TIME_PERIODS];
 export const CONCURRENCY_LIMITS = {
   // Repository processing limits
   REPOSITORIES: 5, // Number of repositories to process concurrently
-  TIME_SERIES_REPOSITORIES: 3, // Lower limit for time-series due to more intensive processing
+  TIME_SERIES_REPOSITORIES: 5, // Increased from 3 - now safe with review caching optimization
 
   // PR processing limits (within each time period)
   PRS_PER_TIME_PERIOD: 10, // Number of PRs to process concurrently within a time period

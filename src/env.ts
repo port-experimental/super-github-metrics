@@ -1,4 +1,4 @@
-import { cleanEnv, makeValidator, str } from "envalid";
+import { cleanEnv, makeValidator, str } from 'envalid';
 
 type ReporterOptions = {
   errors: Record<string, { message: string }>;
@@ -10,24 +10,22 @@ const throwReporter = ({ errors }: ReporterOptions) => {
     return;
   }
 
-  const message = errorEntries
-    .map(([key, error]) => `${key}: ${error.message}`)
-    .join(", ");
+  const message = errorEntries.map(([key, error]) => `${key}: ${error.message}`).join(', ');
   throw new Error(`Invalid environment variables: ${message}`);
 };
 
 const commaSeparatedList = makeValidator((input: string) => {
   const value = input.trim();
   if (!value) {
-    throw new Error("Must be a comma-separated list with at least one value");
+    throw new Error('Must be a comma-separated list with at least one value');
   }
 
   const items = value
-    .split(",")
+    .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
   if (items.length === 0) {
-    throw new Error("Must be a comma-separated list with at least one value");
+    throw new Error('Must be a comma-separated list with at least one value');
   }
 
   return items;
@@ -45,7 +43,7 @@ const parseOptionalList = (value: string) => {
   }
 
   const items = trimmed
-    .split(",")
+    .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
   return items.length > 0 ? items : undefined;
@@ -64,6 +62,7 @@ export type GithubEnv = {
   enterpriseName?: string;
   orgs: string[];
   patTokens?: string[];
+  repos?: string[];
 };
 
 export type CoderEnv = {
@@ -80,7 +79,7 @@ export function getPortEnv(): PortEnv {
       PORT_CLIENT_SECRET: str(),
       PORT_BASE_URL: str(),
     },
-    { reporter: throwReporter },
+    { reporter: throwReporter }
   );
 
   return {
@@ -95,13 +94,14 @@ export function getGithubEnv(): GithubEnv {
     process.env,
     {
       X_GITHUB_ORGS: commaSeparatedList(),
-      X_GITHUB_TOKEN: str({ default: "" }),
-      X_GITHUB_APP_ID: str({ default: "" }),
-      X_GITHUB_APP_PRIVATE_KEY: str({ default: "" }),
-      X_GITHUB_APP_INSTALLATION_ID: str({ default: "" }),
-      X_GITHUB_ENTERPRISE: str({ default: "" }),
+      X_GITHUB_TOKEN: str({ default: '' }),
+      X_GITHUB_APP_ID: str({ default: '' }),
+      X_GITHUB_APP_PRIVATE_KEY: str({ default: '' }),
+      X_GITHUB_APP_INSTALLATION_ID: str({ default: '' }),
+      X_GITHUB_ENTERPRISE: str({ default: '' }),
+      X_GITHUB_REPOS: str({ default: '' }),
     },
-    { reporter: throwReporter },
+    { reporter: throwReporter }
   );
 
   const appId = optionalString(env.X_GITHUB_APP_ID);
@@ -109,6 +109,7 @@ export function getGithubEnv(): GithubEnv {
   const installationId = optionalString(env.X_GITHUB_APP_INSTALLATION_ID);
   const enterpriseName = optionalString(env.X_GITHUB_ENTERPRISE);
   const patTokens = parseOptionalList(env.X_GITHUB_TOKEN);
+  const repos = parseOptionalList(env.X_GITHUB_REPOS);
 
   const appValues = [appId, privateKey, installationId];
   const hasAnyAppValue = appValues.some(Boolean);
@@ -116,7 +117,7 @@ export function getGithubEnv(): GithubEnv {
 
   if (hasAnyAppValue && !hasAllAppValues) {
     throw new Error(
-      "X_GITHUB_APP_ID, X_GITHUB_APP_PRIVATE_KEY, and X_GITHUB_APP_INSTALLATION_ID must be set together",
+      'X_GITHUB_APP_ID, X_GITHUB_APP_PRIVATE_KEY, and X_GITHUB_APP_INSTALLATION_ID must be set together'
     );
   }
 
@@ -127,6 +128,7 @@ export function getGithubEnv(): GithubEnv {
     enterpriseName,
     orgs: env.X_GITHUB_ORGS,
     patTokens,
+    repos,
   };
 }
 
@@ -138,7 +140,7 @@ export function getCoderEnv(): CoderEnv {
       CODER_API_BASE_URL: str(),
       CODER_ORGANIZATION_ID: str(),
     },
-    { reporter: throwReporter },
+    { reporter: throwReporter }
   );
 
   return {
@@ -151,20 +153,45 @@ export function getCoderEnv(): CoderEnv {
 export type PortBlueprintEnv = {
   serviceBlueprint: string;
   serviceMetricsBlueprint: string;
+  repositoryRelationKey: string;
+  repositoryRelationTarget: string;
 };
 
 export function getPortBlueprintEnv(): PortBlueprintEnv {
   const env = cleanEnv(
     process.env,
     {
-      PORT_SERVICE_BLUEPRINT: str({ default: "service" }),
-      PORT_SERVICE_METRICS_BLUEPRINT: str({ default: "serviceMetrics" }),
+      PORT_SERVICE_BLUEPRINT: str({ default: 'service' }),
+      PORT_SERVICE_METRICS_BLUEPRINT: str({ default: 'serviceMetrics' }),
+      // Configurable relation key and target for repository-related metrics
+      // This allows using a different blueprint (e.g., 'githubRepository') instead of 'service'
+      PORT_REPOSITORY_RELATION_KEY: str({ default: 'service' }),
+      PORT_REPOSITORY_RELATION_TARGET: str({ default: 'service' }),
     },
-    { reporter: throwReporter },
+    { reporter: throwReporter }
   );
 
   return {
     serviceBlueprint: env.PORT_SERVICE_BLUEPRINT,
     serviceMetricsBlueprint: env.PORT_SERVICE_METRICS_BLUEPRINT,
+    repositoryRelationKey: env.PORT_REPOSITORY_RELATION_KEY,
+    repositoryRelationTarget: env.PORT_REPOSITORY_RELATION_TARGET,
   };
+}
+
+/**
+ * Get the relation key to use for repository-related entities (e.g., PR metrics, workflow metrics)
+ * Defaults to 'service' but can be configured via PORT_REPOSITORY_RELATION_KEY
+ */
+export function getRepositoryRelationKey(): string {
+  return getPortBlueprintEnv().repositoryRelationKey;
+}
+
+/**
+ * Get the relation target blueprint for repository-related entities
+ * Defaults to 'service' but can be configured via PORT_REPOSITORY_RELATION_TARGET
+ * to use 'githubRepository' or another blueprint
+ */
+export function getRepositoryRelationTarget(): string {
+  return getPortBlueprintEnv().repositoryRelationTarget;
 }

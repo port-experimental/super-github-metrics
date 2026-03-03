@@ -12,6 +12,8 @@ import {
   calculateAndStoreServiceMetrics,
   calculateRepositoryReviewMetrics,
   calculateReviewMetricsFromCache,
+  contributionMapFromCommits,
+  fetchRepositoryCommitsForPeriod,
   filterReviewDataForPeriod,
 } from '../service_metrics';
 
@@ -967,6 +969,158 @@ describe('Service Metrics', () => {
       expect(cachedResult.totalSuccessfulPRs).toBe(apiResult.totalSuccessfulPRs);
       expect(cachedResult.prsWithReviewTime).toBe(apiResult.prsWithReviewTime);
       expect(cachedResult.totalTimeToFirstReview).toBe(apiResult.totalTimeToFirstReview);
+    });
+  });
+
+  describe('contributionMapFromCommits', () => {
+    it('should group commits by author.login when present', () => {
+      const commits: Commit[] = [
+        {
+          commit: { author: { date: '2024-01-01T10:00:00Z' } },
+          author: { login: 'alice' },
+        },
+        {
+          commit: { author: { date: '2024-01-02T10:00:00Z' } },
+          author: { login: 'bob' },
+        },
+      ];
+
+      const result = contributionMapFromCommits(commits);
+
+      expect(result.get('alice')).toBe(1);
+      expect(result.get('bob')).toBe(1);
+      expect(result.size).toBe(2);
+    });
+
+    it('should fall back to commit.author.name when author.login is absent', () => {
+      const commits: Commit[] = [
+        {
+          commit: { author: { date: '2024-01-01T10:00:00Z', name: 'Carol Smith' } },
+          author: null,
+        },
+        {
+          commit: { author: { date: '2024-01-02T10:00:00Z', name: 'Dave Jones' } },
+          author: null,
+        },
+      ];
+
+      const result = contributionMapFromCommits(commits);
+
+      expect(result.get('Carol Smith')).toBe(1);
+      expect(result.get('Dave Jones')).toBe(1);
+      expect(result.size).toBe(2);
+    });
+
+    it('should use "Unknown" when neither author.login nor commit.author.name is available', () => {
+      const commits: Commit[] = [
+        {
+          commit: { author: { date: '2024-01-01T10:00:00Z' } },
+          author: null,
+        },
+        {
+          commit: { author: null },
+          author: null,
+        },
+      ];
+
+      const result = contributionMapFromCommits(commits);
+
+      expect(result.get('Unknown')).toBe(2);
+      expect(result.size).toBe(1);
+    });
+
+    it('should accumulate counts correctly when multiple commits have the same author', () => {
+      const commits: Commit[] = [
+        {
+          commit: { author: { date: '2024-01-01T10:00:00Z' } },
+          author: { login: 'alice' },
+        },
+        {
+          commit: { author: { date: '2024-01-02T10:00:00Z' } },
+          author: { login: 'alice' },
+        },
+        {
+          commit: { author: { date: '2024-01-03T10:00:00Z' } },
+          author: { login: 'alice' },
+        },
+        {
+          commit: { author: { date: '2024-01-04T10:00:00Z' } },
+          author: { login: 'bob' },
+        },
+      ];
+
+      const result = contributionMapFromCommits(commits);
+
+      expect(result.get('alice')).toBe(3);
+      expect(result.get('bob')).toBe(1);
+      expect(result.size).toBe(2);
+    });
+  });
+
+  describe('fetchRepositoryCommitsForPeriod', () => {
+    it('should return commits within the cutoff date and stop early when it encounters one older than the cutoff', async () => {
+      // Use fake timers so the cutoff is deterministic (cutoff = now - 7 days)
+      const now = new Date('2024-01-10T00:00:00Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(now);
+
+      const withinCutoff: Commit = {
+        commit: { author: { date: '2024-01-08T00:00:00Z' } }, // 2 days ago — within 7 days
+        author: { login: 'alice' },
+      };
+      const beforeCutoff: Commit = {
+        commit: { author: { date: '2024-01-01T00:00:00Z' } }, // 9 days ago — older than 7 days
+        author: { login: 'bob' },
+      };
+
+      // First page returns one commit within cutoff and one before cutoff
+      mockGitHubClient.getRepositoryCommits.mockResolvedValueOnce([withinCutoff, beforeCutoff]);
+
+      const result = await fetchRepositoryCommitsForPeriod(
+        mockGitHubClient,
+        'test-org',
+        'test-repo',
+        7
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBe(withinCutoff);
+      // Only one page should have been fetched because we stopped early
+      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledTimes(1);
+
+      jest.useRealTimers();
+    });
+
+    it('should return empty array when API returns no commits', async () => {
+      mockGitHubClient.getRepositoryCommits.mockResolvedValueOnce([]);
+
+      const result = await fetchRepositoryCommitsForPeriod(
+        mockGitHubClient,
+        'test-org',
+        'test-repo',
+        30
+      );
+
+      expect(result).toEqual([]);
+      expect(mockGitHubClient.getRepositoryCommits).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return empty array and log error when API throws', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockGitHubClient.getRepositoryCommits.mockRejectedValueOnce(new Error('API failure'));
+
+      const result = await fetchRepositoryCommitsForPeriod(
+        mockGitHubClient,
+        'test-org',
+        'test-repo',
+        7
+      );
+
+      expect(result).toEqual([]);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Error fetching commits for test-org/test-repo')
+      );
+      consoleSpy.mockRestore();
     });
   });
 });

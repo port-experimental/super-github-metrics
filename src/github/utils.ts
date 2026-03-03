@@ -19,7 +19,7 @@ export function filterDataForTimePeriod<T extends { created_at: string }>(
 /**
  * Filters commits for a specific time period based on commit.author.date
  */
-export function filterCommitsForTimePeriod<T extends { commit?: { author?: { date?: string } } }>(
+export function filterCommitsForTimePeriod<T extends { commit?: { author?: { date?: string } | null } }>(
   data: T[],
   daysBack: number
 ): T[] {

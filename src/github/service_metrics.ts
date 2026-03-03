@@ -1,11 +1,12 @@
 import _ from 'lodash';
 import type { GitHubClient } from '../clients/github';
-import type { PullRequestBasic, Repository } from '../clients/github/types';
+import type { Commit, PullRequestBasic, Repository } from '../clients/github/types';
 import { upsertEntitiesInBatches } from '../clients/port';
 import type { PortEntity } from '../clients/port/types';
 import { getPortBlueprintEnv } from '../env';
 import {
   CONCURRENCY_LIMITS,
+  filterCommitsForTimePeriod,
   filterDataForTimePeriod,
   getMaxTimePeriod,
   TIME_PERIODS,
@@ -149,6 +150,70 @@ export async function fetchRepositoryContributions(
     );
   }
 
+  return contributions;
+}
+
+/**
+ * Fetches all commits for a repository within the specified time period.
+ * Returns raw commits so callers can filter by period in memory (avoids extra API calls).
+ */
+export async function fetchRepositoryCommitsForPeriod(
+  githubClient: GitHubClient,
+  owner: string,
+  repoName: string,
+  daysBack: number
+): Promise<Commit[]> {
+  const allCommits: Commit[] = [];
+  const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+  try {
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const commits = await githubClient.getRepositoryCommits(owner, repoName, {
+        per_page: 100,
+        page,
+      });
+
+      if (commits.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      for (const commit of commits) {
+        if (commit.commit.author?.date) {
+          const commitDate = new Date(commit.commit.author.date);
+          if (commitDate >= cutoffDate) {
+            allCommits.push(commit);
+          } else {
+            hasMore = false;
+            break;
+          }
+        }
+      }
+
+      page++;
+    }
+  } catch (error) {
+    console.error(
+      `Error fetching commits for ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+
+  return allCommits;
+}
+
+/**
+ * Aggregates commits into a map of author -> contribution count.
+ * Same aggregation logic as fetchRepositoryContributions, for use on filtered commit lists.
+ */
+export function contributionMapFromCommits(commits: Commit[]): Map<string, number> {
+  const contributions = new Map<string, number>();
+  for (const commit of commits) {
+    const author = commit.author?.login || commit.commit.author?.name || 'Unknown';
+    contributions.set(author, (contributions.get(author) || 0) + 1);
+  }
   return contributions;
 }
 
@@ -644,12 +709,18 @@ export async function processRepositoryServiceMetrics(
     const allPRs = await fetchRepositoryPRs(githubClient, repo.owner.login, repo.name, maxPeriod);
     console.log(`  Found ${allPRs.length} PRs in the last ${maxPeriod} days for ${repo.name}`);
 
-    console.log(`  Fetching contributions for ${maxPeriod} day period...`);
-    const allContributions = await fetchRepositoryContributions(
+    // Fetch all commits once for the max period, then filter per period in memory
+    console.log(
+      `  Fetching commits for ${maxPeriod} day period (will filter for shorter periods)...`
+    );
+    const allCommits = await fetchRepositoryCommitsForPeriod(
       githubClient,
       repo.owner.login,
       repo.name,
       maxPeriod
+    );
+    console.log(
+      `  Found ${allCommits.length} commits in the last ${maxPeriod} days for ${repo.name}`
     );
 
     // Fetch ALL review data once for all PRs (optimization to avoid redundant API calls)
@@ -676,15 +747,9 @@ export async function processRepositoryServiceMetrics(
       const finalMetrics = calculateFinalMetrics(reviewData);
       const periodMetrics = createTimePeriodMetrics(reviewData, finalMetrics, period);
 
-      // Calculate contribution standard deviation for this period
-      const periodContributions = new Map<string, number>();
-
-      for (const [contributor, count] of allContributions.entries()) {
-        // Note: We can't filter contributions by date since we don't have individual commit dates
-        // This is a limitation of the current API approach, but we're still optimizing the PR fetching
-        periodContributions.set(contributor, count);
-      }
-
+      // Filter commits for this period and aggregate to contribution counts (no extra API calls)
+      const periodCommits = filterCommitsForTimePeriod(allCommits, period);
+      const periodContributions = contributionMapFromCommits(periodCommits);
       const contributionCounts = Array.from(periodContributions.values());
       const contributionStdDev = calculateContributionStandardDeviation(contributionCounts);
       periodMetrics[`contributionStandardDeviation_${period}d`] = contributionStdDev;

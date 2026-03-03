@@ -49,3 +49,6 @@ temp/
 .devenv.flake.nix
 .devenv/
 .direnv/
+
+# Git worktrees
+.worktrees/

@@ -197,8 +197,6 @@ describe('PR Metrics', () => {
           expect.objectContaining({
             identifier: `test-repo${mockPullRequestBasic.number}`,
             properties: expect.objectContaining({
-              total_prs: 1,
-              total_merged_prs: 1,
               review_participation: 2,
               pr_success_rate: 100,
             }),
@@ -259,8 +257,6 @@ describe('PR Metrics', () => {
           expect.objectContaining({
             identifier: `test-repo${mockPullRequestBasic.number}`,
             properties: expect.objectContaining({
-              total_prs: 1,
-              total_merged_prs: 1,
               review_participation: 0, // no reviews
               pr_success_rate: 100,
             }),

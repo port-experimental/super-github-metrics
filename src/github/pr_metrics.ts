@@ -4,12 +4,7 @@ import type { PullRequestBasic, Repository } from '../clients/github/types';
 import { upsertEntitiesInBatches } from '../clients/port';
 import type { PortEntity } from '../clients/port/types';
 import { getRepositoryRelationKey } from '../env';
-import {
-  CONCURRENCY_LIMITS,
-  filterDataForTimePeriod,
-  TIME_PERIODS,
-  type TimePeriod,
-} from './utils';
+import { CONCURRENCY_LIMITS, TIME_PERIODS } from './utils';
 
 export interface PRMetrics {
   repoId: string;
@@ -269,9 +264,6 @@ export async function calculateAndStorePRMetrics(
         );
         console.log(`  Found ${allPRs.length} PRs in the last ${maxPeriod} days`);
 
-        const repoTotalPRs = allPRs.length;
-        const repoTotalMergedPRs = allPRs.filter((pr) => !!pr.merged_at).length;
-
         if (allPRs.length === 0) {
           console.log(`  No PRs found for ${repo.name}, skipping...`);
           return { success: true, repoName: repo.name, entities: [] };
@@ -291,82 +283,47 @@ export async function calculateAndStorePRMetrics(
           `  Fetched full data for ${prFullDataMap.size} PRs, commits for ${prCommitsMap.size} PRs`
         );
 
-        // Process each time period by filtering the already-fetched data
-        const timePeriods: TimePeriod[] = [
-          TIME_PERIODS.ONE_DAY,
-          TIME_PERIODS.SEVEN_DAYS,
-          TIME_PERIODS.THIRTY_DAYS,
-          TIME_PERIODS.NINETY_DAYS,
-        ];
-
+        // Create Port entities for each PR (matches githubPullRequest schema)
         const repoEntities: PortEntity[] = [];
         const seenEntityIdentifiers = new Set<string>();
 
-        // Process all time periods (no API calls needed - using pre-fetched data)
-        for (const period of timePeriods) {
-          console.log(`  Processing ${period} day period...`);
+        for (const pr of allPRs) {
+          const prFullData = prFullDataMap.get(pr.number);
+          const commitsData = prCommitsMap.get(pr.number);
 
-          // Filter PRs for this time period
-          const periodPRs = filterDataForTimePeriod(allPRs, period);
-          console.log(`  Filtered to ${periodPRs.length} PRs for ${period} day period`);
+          const metrics = buildPRMetricsFromBatchData(
+            pr,
+            prFullData,
+            commitsData,
+            repo.id.toString(),
+            repo.name
+          );
 
-          // Process PRs using pre-fetched batch data (no API calls)
-          const validPRResults: PRMetrics[] = [];
+          if (!metrics) continue;
 
-          for (const pr of periodPRs) {
-            const prFullData = prFullDataMap.get(pr.number);
-            const commitsData = prCommitsMap.get(pr.number);
+          const identifier = `${repo.name}${metrics.prNumber}`;
+          if (seenEntityIdentifiers.has(identifier)) continue;
+          seenEntityIdentifiers.add(identifier);
 
-            const metrics = buildPRMetricsFromBatchData(
-              pr,
-              prFullData,
-              commitsData,
-              repo.id.toString(),
-              repo.name
-            );
-
-            if (metrics) {
-              validPRResults.push(metrics);
-            }
-          }
-
-          if (validPRResults.length === 0) {
-            console.log(`  No valid PR metrics for ${period} day period`);
-            continue;
-          }
-
-          // Create Port entities for each PR (matches githubPullRequest schema)
-          const entities: PortEntity[] = validPRResults.map((prMetric) => ({
-            identifier: `${repo.name}${prMetric.prNumber}`,
-            title: `${repo.name} #${prMetric.prNumber}`,
+          repoEntities.push({
+            identifier,
+            title: `${repo.name} #${metrics.prNumber}`,
             properties: {
-              pr_size: prMetric.prSize,
-              total_prs: repoTotalPRs,
-              total_merged_prs: repoTotalMergedPRs,
-              pr_lifetime: prMetric.prLifetime,
-              pr_pickup_time: prMetric.prPickupTime,
-              pr_approve_time: prMetric.prApproveTime,
-              pr_merge_time: prMetric.prMergeTime,
-              pr_maturity: prMetric.prMaturity,
-              pr_success_rate: prMetric.prSuccessRate,
-              review_participation: prMetric.reviewParticipation,
-              number_of_line_changes_after_pr_is_opened:
-                prMetric.numberOfLineChangesAfterPRIsOpened,
-              number_of_commits_after_pr_is_opened: prMetric.numberOfCommitsAfterPRIsOpened,
+              pr_size: metrics.prSize,
+              pr_lifetime: metrics.prLifetime,
+              pr_pickup_time: metrics.prPickupTime,
+              pr_approve_time: metrics.prApproveTime,
+              pr_merge_time: metrics.prMergeTime,
+              pr_maturity: metrics.prMaturity,
+              pr_success_rate: metrics.prSuccessRate,
+              review_participation: metrics.reviewParticipation,
+              number_of_line_changes_after_pr_is_opened: metrics.numberOfLineChangesAfterPRIsOpened,
+              number_of_commits_after_pr_is_opened: metrics.numberOfCommitsAfterPRIsOpened,
             },
             relations: {
               [getRepositoryRelationKey()]: repo.name,
             },
-          }));
-
-          const uniqueEntities = entities.filter((entity) => {
-            if (!entity.identifier || seenEntityIdentifiers.has(entity.identifier)) {
-              return false;
-            }
-            seenEntityIdentifiers.add(entity.identifier);
-            return true;
           });
-          repoEntities.push(...uniqueEntities);
         }
 
         return { success: true, repoName: repo.name, entities: repoEntities };

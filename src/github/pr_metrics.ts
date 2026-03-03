@@ -14,6 +14,7 @@ import {
 export interface PRMetrics {
   repoId: string;
   repoName: string;
+  prNumber: number;
   pullRequestId: string;
   // PR Size: Sum(lines added + lines deleted)
   prSize: number;
@@ -142,6 +143,7 @@ export function buildPRMetricsFromBatchData(
   return {
     repoId,
     repoName,
+    prNumber: pr.number,
     pullRequestId: pr.id.toString(),
     prSize,
     prAdditions: prFullData.additions,
@@ -228,57 +230,6 @@ export async function fetchRepositoryPRs(
   return allPRs;
 }
 
-interface AggregatedMetrics {
-  totalPRs: number;
-  totalMergedPRs: number;
-  numberOfPRsReviewed: number;
-  numberOfPRsMergedWithoutReview: number;
-  percentageOfPRsReviewed: number;
-  percentageOfPRsMergedWithoutReview: number;
-  averageTimeToFirstReview: number;
-  prSuccessRate: number;
-  contributionStandardDeviation: number;
-}
-
-function calculateAggregatedMetrics(prMetrics: PRMetrics[], _period: number): AggregatedMetrics {
-  const totalPRs = prMetrics.length;
-  const totalMergedPRs = prMetrics.filter((pr) => pr.prSuccessRate === 100).length;
-  const numberOfPRsReviewed = prMetrics.filter((pr) => pr.reviewParticipation > 0).length;
-  const numberOfPRsMergedWithoutReview = totalMergedPRs - numberOfPRsReviewed;
-
-  const percentageOfPRsReviewed = totalPRs > 0 ? (numberOfPRsReviewed / totalPRs) * 100 : 0;
-  const percentageOfPRsMergedWithoutReview =
-    totalMergedPRs > 0 ? (numberOfPRsMergedWithoutReview / totalMergedPRs) * 100 : 0;
-
-  const validPickupTimes = prMetrics
-    .filter((pr) => pr.prPickupTime !== null)
-    .map((pr) => pr.prPickupTime!);
-  const averageTimeToFirstReview =
-    validPickupTimes.length > 0
-      ? validPickupTimes.reduce((sum, time) => sum + time, 0) / validPickupTimes.length
-      : 0;
-
-  const prSuccessRate = totalPRs > 0 ? (totalMergedPRs / totalPRs) * 100 : 0;
-
-  // Calculate standard deviation of contributions (PR sizes)
-  const prSizes = prMetrics.map((pr) => pr.prSize);
-  const meanSize = prSizes.reduce((sum, size) => sum + size, 0) / prSizes.length;
-  const variance = prSizes.reduce((sum, size) => sum + (size - meanSize) ** 2, 0) / prSizes.length;
-  const contributionStandardDeviation = Math.sqrt(variance);
-
-  return {
-    totalPRs,
-    totalMergedPRs,
-    numberOfPRsReviewed,
-    numberOfPRsMergedWithoutReview,
-    percentageOfPRsReviewed,
-    percentageOfPRsMergedWithoutReview,
-    averageTimeToFirstReview,
-    prSuccessRate,
-    contributionStandardDeviation,
-  };
-}
-
 export async function calculateAndStorePRMetrics(
   repos: Repository[],
   githubClient: GitHubClient
@@ -318,6 +269,9 @@ export async function calculateAndStorePRMetrics(
         );
         console.log(`  Found ${allPRs.length} PRs in the last ${maxPeriod} days`);
 
+        const repoTotalPRs = allPRs.length;
+        const repoTotalMergedPRs = allPRs.filter((pr) => !!pr.merged_at).length;
+
         if (allPRs.length === 0) {
           console.log(`  No PRs found for ${repo.name}, skipping...`);
           return { success: true, repoName: repo.name, entities: [] };
@@ -346,6 +300,7 @@ export async function calculateAndStorePRMetrics(
         ];
 
         const repoEntities: PortEntity[] = [];
+        const seenEntityIdentifiers = new Set<string>();
 
         // Process all time periods (no API calls needed - using pre-fetched data)
         for (const period of timePeriods) {
@@ -380,35 +335,38 @@ export async function calculateAndStorePRMetrics(
             continue;
           }
 
-          // Calculate aggregated metrics for this time period
-          const aggregatedMetrics = calculateAggregatedMetrics(validPRResults, period);
-
-          // Create Port entity for this time period
-          const entity: PortEntity = {
-            identifier: `${repo.name}-${period}-pr-metrics`,
-            title: `${repo.name} PR Metrics (${period} days)`,
+          // Create Port entities for each PR (matches githubPullRequest schema)
+          const entities: PortEntity[] = validPRResults.map((prMetric) => ({
+            identifier: `${repo.name}${prMetric.prNumber}`,
+            title: `${repo.name} #${prMetric.prNumber}`,
             properties: {
-              period: period.toString(),
-              period_type: 'daily',
-              total_prs: aggregatedMetrics.totalPRs,
-              total_merged_prs: aggregatedMetrics.totalMergedPRs,
-              number_of_prs_reviewed: aggregatedMetrics.numberOfPRsReviewed,
-              number_of_prs_merged_without_review: aggregatedMetrics.numberOfPRsMergedWithoutReview,
-              percentage_of_prs_reviewed: aggregatedMetrics.percentageOfPRsReviewed,
-              percentage_of_prs_merged_without_review:
-                aggregatedMetrics.percentageOfPRsMergedWithoutReview,
-              average_time_to_first_review: aggregatedMetrics.averageTimeToFirstReview,
-              pr_success_rate: aggregatedMetrics.prSuccessRate,
-              contribution_standard_deviation: aggregatedMetrics.contributionStandardDeviation,
-              calculated_at: new Date().toISOString(),
-              data_source: 'github',
+              pr_size: prMetric.prSize,
+              total_prs: repoTotalPRs,
+              total_merged_prs: repoTotalMergedPRs,
+              pr_lifetime: prMetric.prLifetime,
+              pr_pickup_time: prMetric.prPickupTime,
+              pr_approve_time: prMetric.prApproveTime,
+              pr_merge_time: prMetric.prMergeTime,
+              pr_maturity: prMetric.prMaturity,
+              pr_success_rate: prMetric.prSuccessRate,
+              review_participation: prMetric.reviewParticipation,
+              number_of_line_changes_after_pr_is_opened:
+                prMetric.numberOfLineChangesAfterPRIsOpened,
+              number_of_commits_after_pr_is_opened: prMetric.numberOfCommitsAfterPRIsOpened,
             },
             relations: {
               [getRepositoryRelationKey()]: repo.name,
             },
-          };
+          }));
 
-          repoEntities.push(entity);
+          const uniqueEntities = entities.filter((entity) => {
+            if (!entity.identifier || seenEntityIdentifiers.has(entity.identifier)) {
+              return false;
+            }
+            seenEntityIdentifiers.add(entity.identifier);
+            return true;
+          });
+          repoEntities.push(...uniqueEntities);
         }
 
         return { success: true, repoName: repo.name, entities: repoEntities };

@@ -189,16 +189,17 @@ describe('PR Metrics', () => {
 
       await calculateAndStorePRMetrics([mockRepository], mockGitHubClient);
 
-      // Verify upsertEntitiesInBatches was called with correct aggregated metrics
+      // Verify upsertEntitiesInBatches was called with correct per-PR metrics
       const { upsertEntitiesInBatches } = require('../../clients/port');
       expect(upsertEntitiesInBatches).toHaveBeenCalledWith(
         'githubPullRequest',
         expect.arrayContaining([
           expect.objectContaining({
+            identifier: `test-repo${mockPullRequestBasic.number}`,
             properties: expect.objectContaining({
               total_prs: 1,
               total_merged_prs: 1,
-              number_of_prs_reviewed: 1,
+              review_participation: 2,
               pr_success_rate: 100,
             }),
           }),
@@ -256,10 +257,11 @@ describe('PR Metrics', () => {
         'githubPullRequest',
         expect.arrayContaining([
           expect.objectContaining({
+            identifier: `test-repo${mockPullRequestBasic.number}`,
             properties: expect.objectContaining({
               total_prs: 1,
               total_merged_prs: 1,
-              number_of_prs_reviewed: 0, // no reviews
+              review_participation: 0, // no reviews
               pr_success_rate: 100,
             }),
           }),

@@ -19,10 +19,9 @@ export function filterDataForTimePeriod<T extends { created_at: string }>(
 /**
  * Filters commits for a specific time period based on commit.author.date
  */
-export function filterCommitsForTimePeriod<T extends { commit?: { author?: { date?: string } | null } }>(
-  data: T[],
-  daysBack: number
-): T[] {
+export function filterCommitsForTimePeriod<
+  T extends { commit?: { author?: { date?: string } | null } },
+>(data: T[], daysBack: number): T[] {
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
   return data.filter((item) => {
     const dateValue = item.commit?.author?.date;

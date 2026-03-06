@@ -52,3 +52,6 @@ temp/
 
 # Git worktrees
 .worktrees/
+
+# Plans
+docs/plans/

@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "github-metrics.fullname" . }}
+  labels:
+    {{- include "github-metrics.labels" . | nindent 4 }}
+  annotations:
+    {{- include "github-metrics.trAnnotations" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cronjob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.cronjob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronjob.failedJobsHistoryLimit }}
+  suspend: {{ .Values.cronjob.suspend }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "github-metrics.labels" . | nindent 8 }}
+      annotations:
+        {{- include "github-metrics.trAnnotations" . | nindent 8 }}
+    spec:
+      backoffLimit: {{ .Values.job.backoffLimit }}
+      ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+      template:
+        metadata:
+          annotations:
+            checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+            {{- include "github-metrics.trAnnotations" . | nindent 12 }}
+          labels:
+            {{- include "github-metrics.selectorLabels" . | nindent 12 }}
+        spec:
+          {{- if .Values.serviceAccount.create }}
+          serviceAccountName: {{ include "github-metrics.serviceAccountName" . }}
+          {{- end }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          restartPolicy: {{ .Values.job.restartPolicy }}
+          containers:
+            - name: {{ .Chart.Name }}
+              image: {{ include "github-metrics.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- toYaml .Values.containerSecurityContext | nindent 16 }}
+              envFrom:
+                - configMapRef:
+                    name: {{ include "github-metrics.configMapName" . }}
+                - secretRef:
+                    name: {{ include "github-metrics.secretName" . }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                {{- if .Values.secretProviderClass.enabled }}
+                - name: secrets-store
+                  mountPath: "/mnt/secrets-store"
+                  readOnly: true
+                {{- end }}
+          volumes:
+            {{- if .Values.secretProviderClass.enabled }}
+            - name: secrets-store
+              csi:
+                driver: secrets-store.csi.k8s.io
+                readOnly: true
+                volumeAttributes:
+                  secretProviderClass: {{ include "github-metrics.fullname" . }}-spc
+            {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "OIDCProviderArn",
+    "ParameterValue": "arn:aws:iam::992398098861:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/4239CFFD07D919F3031538ECD4E5D2D3"
+  },
+  {
+    "ParameterKey": "PermissionsBoundaryArn",
+    "ParameterValue": "arn:aws:iam::992398098861:policy/tr-permission-boundary"
+  },
+  {
+    "ParameterKey": "ApplicationId",
+    "ParameterValue": "209530"
+  },
+  {
+    "ParameterKey": "ResourceOwner",
+    "ParameterValue": "eamon.mason@thomsonreuters.com"
+  }
+]

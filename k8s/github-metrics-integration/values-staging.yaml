@@ -1,0 +1,52 @@
+# Staging environment configuration
+# Account: 992398098861 (tr-idp-preprod)
+# Cluster: a209567-preprod-idp-useast1-plexus-cluster
+# Namespace: 209530-idp-staging
+
+image:
+  repository: "992398098861.dkr.ecr.us-east-1.amazonaws.com/github-metrics"
+  tag: "latest"  # Override with specific SHA in CI/CD
+
+# Port configuration
+port:
+  baseUrl: "https://api.us.getport.io/v1"
+
+# GitHub configuration
+github:
+  orgs: "tr"
+  enterprise: ""
+
+# Port blueprint configuration
+blueprints:
+  service: "githubRepository"
+  serviceMetrics: "serviceMetrics"
+  repositoryRelationKey: "github_repository"
+  repositoryRelationTarget: "githubRepository"
+
+# Logging
+logging:
+  level: "info"
+  format: "pretty"
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::992398098861:role/a209530-github-metrics-secrets-staging
+
+secretProviderClass:
+  enabled: true
+  awsSecretName: "a209530/github-metrics/staging"
+  secretName: "github-metrics-secrets"
+
+# Node selector to match cluster AMD64 nodes
+nodeSelector:
+  kubernetes.io/arch: amd64
+
+# Staging-specific resource limits (can be lower for testing)
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+

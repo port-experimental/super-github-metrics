@@ -19,10 +19,9 @@ export function filterDataForTimePeriod<T extends { created_at: string }>(
 /**
  * Filters commits for a specific time period based on commit.author.date
  */
-export function filterCommitsForTimePeriod<T extends { commit?: { author?: { date?: string } } }>(
-  data: T[],
-  daysBack: number
-): T[] {
+export function filterCommitsForTimePeriod<
+  T extends { commit?: { author?: { date?: string } | null } },
+>(data: T[], daysBack: number): T[] {
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
   return data.filter((item) => {
     const dateValue = item.commit?.author?.date;
@@ -66,7 +65,7 @@ export type TimePeriod = (typeof TIME_PERIODS)[keyof typeof TIME_PERIODS];
 export const CONCURRENCY_LIMITS = {
   // Repository processing limits
   REPOSITORIES: 5, // Number of repositories to process concurrently
-  TIME_SERIES_REPOSITORIES: 3, // Lower limit for time-series due to more intensive processing
+  TIME_SERIES_REPOSITORIES: 5, // Increased from 3 - now safe with review caching optimization
 
   // PR processing limits (within each time period)
   PRS_PER_TIME_PERIOD: 10, // Number of PRs to process concurrently within a time period

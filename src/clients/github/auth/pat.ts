@@ -1,7 +1,7 @@
-import { Octokit } from "@octokit/rest";
-import type { Logger } from "pino";
-import { GitHubAuth } from "./base";
-import { PATTokenManager } from "./token_manager";
+import { Octokit } from '@octokit/rest';
+import type { Logger } from 'pino';
+import { GitHubAuth } from './base';
+import { PATTokenManager } from './token_manager';
 
 export class PATAuth extends GitHubAuth {
   private tokenManager: PATTokenManager;
@@ -12,9 +12,7 @@ export class PATAuth extends GitHubAuth {
   constructor(tokens: string | string[], logger: Logger) {
     super();
     this.logger = logger;
-    const tokenArray = Array.isArray(tokens)
-      ? tokens
-      : tokens.split(",").map((t) => t.trim());
+    const tokenArray = Array.isArray(tokens) ? tokens : tokens.split(',').map((t) => t.trim());
     this.tokenManager = new PATTokenManager(tokenArray);
   }
 
@@ -36,7 +34,7 @@ export class PATAuth extends GitHubAuth {
       auth: token,
       baseUrl: process.env.X_GITHUB_ENTERPRISE
         ? `https://${process.env.X_GITHUB_ENTERPRISE}/api/v3`
-        : "https://api.github.com",
+        : 'https://api.github.com',
     });
 
     return this.currentOctokit;
@@ -86,16 +84,11 @@ export class PATAuth extends GitHubAuth {
     // Find the token with the earliest reset time
     const tokenStatus = this.getRateLimitStatus();
     const now = Date.now();
-    const earliestReset = Math.min(
-      ...tokenStatus.map((status) => status.reset.getTime()),
-    );
+    const earliestReset = Math.min(...tokenStatus.map((status) => status.reset.getTime()));
     waitTime = Math.max(0, Math.ceil((earliestReset - now) / 1000));
 
     if (waitTime > 0) {
-      this.logger.info(
-        { waitTime },
-        `Waiting ${waitTime} seconds for rate limit reset...`,
-      );
+      this.logger.info({ waitTime }, `Waiting ${waitTime} seconds for rate limit reset...`);
 
       // Wait in chunks to allow for early termination
       const chunkSize = Math.min(waitTime, 60); // Wait in 1-minute chunks
@@ -106,31 +99,26 @@ export class PATAuth extends GitHubAuth {
         const currentChunk = Math.min(chunkSize, remainingTime);
 
         if (currentChunk > 0) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, currentChunk * 1000),
-          );
+          await new Promise((resolve) => setTimeout(resolve, currentChunk * 1000));
 
           // Log progress every 5 minutes
           if (i % 5 === 0 && remainingTime > 60) {
             this.logger.info(
               { remainingMinutes: Math.ceil(remainingTime / 60) },
-              `Rate limit reset in progress: ${Math.ceil(remainingTime / 60)} minutes remaining...`,
+              `Rate limit reset in progress: ${Math.ceil(remainingTime / 60)} minutes remaining...`
             );
           }
         }
       }
 
-      this.logger.info("Rate limit reset complete. Continuing...");
+      this.logger.info('Rate limit reset complete. Continuing...');
     }
   }
 
   /**
    * Makes a request with automatic token rotation for PAT authentication
    */
-  async makeRequest<T>(
-    requestFn: (octokit: Octokit) => Promise<T>,
-    logger: Logger,
-  ): Promise<T> {
+  async makeRequest<T>(requestFn: (octokit: Octokit) => Promise<T>, logger: Logger): Promise<T> {
     let lastError: Error | null = null;
     let tokenRotationAttempts = 0;
     const maxTokenRotations = this.getTokenCount();
@@ -154,31 +142,26 @@ export class PATAuth extends GitHubAuth {
           lastError = error;
 
           // Check if it's a rate limit error using response headers
-          if (
-            error.status === 403 &&
-            error.response?.headers?.["x-ratelimit-remaining"] === "0"
-          ) {
-            const resetTime = error.response?.headers?.["x-ratelimit-reset"];
+          if (error.status === 403 && error.response?.headers?.['x-ratelimit-remaining'] === '0') {
+            const resetTime = error.response?.headers?.['x-ratelimit-reset'];
             const secondsUntilReset = resetTime
               ? parseInt(resetTime, 10) - Math.floor(Date.now() / 1000)
               : 0;
 
             logger.warn(
               { secondsUntilReset },
-              `Rate limit exceeded. Reset in ${secondsUntilReset} seconds.`,
+              `Rate limit exceeded. Reset in ${secondsUntilReset} seconds.`
             );
 
             // Try token rotation first
             if (tokenRotationAttempts < maxTokenRotations - 1) {
-              logger.info("Attempting token rotation...");
+              logger.info('Attempting token rotation...');
               this.rotateToken();
               tokenRotationAttempts++;
               break; // Break out of retry loop to try next token
             } else {
               // All tokens exhausted, wait for the token with earliest reset
-              logger.info(
-                "All tokens exhausted. Waiting for rate limit reset...",
-              );
+              logger.info('All tokens exhausted. Waiting for rate limit reset...');
               await this.waitForRateLimitReset();
               tokenRotationAttempts = 0; // Reset attempts and try again
               break; // Break out of retry loop to start fresh
@@ -187,10 +170,10 @@ export class PATAuth extends GitHubAuth {
 
           // For other errors, implement exponential backoff and retry
           if (retryAttempt < maxRetries - 1) {
-            const delay = Math.min(1000 * Math.pow(2, retryAttempt), 30000); // Max 30 seconds
+            const delay = Math.min(1000 * 2 ** retryAttempt, 30000); // Max 30 seconds
             logger.warn(
               { attempt: retryAttempt + 1, maxRetries, delay },
-              `Request failed (attempt ${retryAttempt + 1}/${maxRetries}). Retrying in ${delay}ms...`,
+              `Request failed (attempt ${retryAttempt + 1}/${maxRetries}). Retrying in ${delay}ms...`
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
             continue; // Continue retry loop
@@ -202,6 +185,6 @@ export class PATAuth extends GitHubAuth {
       }
     }
 
-    throw lastError || new Error("Request failed after all attempts");
+    throw lastError || new Error('Request failed after all attempts');
   }
 }

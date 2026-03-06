@@ -1,4 +1,4 @@
-import { jest, describe, it, expect } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 
 describe('Basic Test Setup', () => {
   it('should work with basic Jest functionality', () => {

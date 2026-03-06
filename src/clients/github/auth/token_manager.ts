@@ -1,13 +1,12 @@
 export class PATTokenManager {
   private tokens: string[];
   private currentTokenIndex: number = 0;
-  private tokenRateLimits: Map<string, { remaining: number; reset: number }> =
-    new Map();
+  private tokenRateLimits: Map<string, { remaining: number; reset: number }> = new Map();
 
   constructor(tokens: string[]) {
     this.tokens = tokens.filter((token) => token.trim().length > 0);
     if (this.tokens.length === 0) {
-      throw new Error("At least one valid PAT token is required");
+      throw new Error('At least one valid PAT token is required');
     }
 
     // Initialize rate limit tracking for all tokens

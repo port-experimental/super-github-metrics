@@ -1,27 +1,32 @@
-import { Octokit } from "@octokit/rest";
-import { createAppAuth } from "@octokit/auth-app";
-import type { Logger } from "pino";
+import type { Octokit } from '@octokit/rest';
+import type { Logger } from 'pino';
+import { createGitHubAuth, type GitHubAuth, PATAuth } from './auth';
+import {
+  fetchAllPRCommitsBatched,
+  fetchAllPRFullDataBatched,
+  fetchAllPRReviewsBatched,
+  type PRCommitsResult,
+  type PRFullDataResult,
+} from './graphql';
 import type {
   AuditLogEntry,
   Commit,
+  GitHubAuthConfig,
   PullRequest,
   PullRequestBasic,
   PullRequestReview,
   Repository,
   WorkflowRun,
-  GitHubAuthConfig,
-} from "./types";
-import { GitHubAuth, PATAuth, createGitHubAuth } from "./auth";
+} from './types';
 
 export interface AuditLogParams {
   phrase: string;
-  include?: "web" | "git" | "all";
-  order?: "asc" | "desc";
+  include?: 'web' | 'git' | 'all';
+  order?: 'asc' | 'desc';
   per_page?: number;
 }
 
 export class GitHubClient {
-  private octokit: Octokit | null = null;
   private auth: GitHubAuth;
   private logger: Logger;
   private enterpriseName?: string;
@@ -32,18 +37,10 @@ export class GitHubClient {
     this.enterpriseName = enterpriseName;
   }
 
-  private async ensureValidOctokit(): Promise<void> {
-    if (!this.octokit || !this.auth.isTokenValid()) {
-      this.octokit = await this.auth.getOctokit();
-    }
-  }
-
   /**
    * Makes a request by delegating to the auth class
    */
-  private async makeRequest<T>(
-    requestFn: (octokit: Octokit) => Promise<T>,
-  ): Promise<T> {
+  private async makeRequest<T>(requestFn: (octokit: Octokit) => Promise<T>): Promise<T> {
     return this.auth.makeRequest(requestFn, this.logger);
   }
 
@@ -62,7 +59,7 @@ export class GitHubClient {
         this.logger.info(`\n=== PAT Token Rate Limit Status ===`);
         this.logger.info(
           { tokenCount: this.auth.getTokenCount() },
-          `Total tokens available: ${this.auth.getTokenCount()}`,
+          `Total tokens available: ${this.auth.getTokenCount()}`
         );
         tokenStatus.forEach((status, index) => {
           this.logger.info(
@@ -72,16 +69,16 @@ export class GitHubClient {
               remaining: status.remaining,
               reset: status.reset.toISOString(),
             },
-            `Token ${index + 1} (${status.token}): ${status.remaining} remaining, resets at ${status.reset.toISOString()}`,
+            `Token ${index + 1} (${status.token}): ${status.remaining} remaining, resets at ${status.reset.toISOString()}`
           );
         });
-        this.logger.info("=====================================\n");
+        this.logger.info('=====================================\n');
       } else {
         // For GitHub App, use the base class method
         await this.auth.checkRateLimits(this.logger);
       }
     } catch (error) {
-      this.logger.error({ err: error }, "Failed to check rate limits");
+      this.logger.error({ err: error }, 'Failed to check rate limits');
       throw error;
     }
   }
@@ -97,7 +94,52 @@ export class GitHubClient {
   /**
    * Fetch all repositories for a given organization
    */
-  async fetchOrganizationRepositories(orgName: string): Promise<Repository[]> {
+  async fetchOrganizationRepositories(
+    orgName: string,
+    repoFilter?: string[]
+  ): Promise<Repository[]> {
+    // If specific repos are requested, fetch them directly instead of listing all
+    if (repoFilter && repoFilter.length > 0) {
+      this.logger.info(
+        { orgName, repos: repoFilter },
+        `Fetching ${repoFilter.length} specific repositories from ${orgName}`
+      );
+
+      const repos: Repository[] = [];
+      for (const repoName of repoFilter) {
+        try {
+          // Handle both "repo" and "org/repo" formats
+          // If the repoName contains a slash, extract just the repo part
+          const repoNameOnly = repoName.includes('/') ? repoName.split('/').pop()! : repoName;
+
+          this.logger.info(
+            { orgName, repoName, repoNameOnly },
+            `Fetching repo with owner="${orgName}" repo="${repoNameOnly}"`
+          );
+
+          await this.addRequestDelay();
+          const { data: repo } = await this.makeRequest(async (octokit) => {
+            return octokit.repos.get({
+              owner: orgName,
+              repo: repoNameOnly,
+            });
+          });
+          repos.push(repo as Repository);
+          this.logger.info(
+            { orgName, repoName: repoNameOnly },
+            `Fetched specific repo: ${orgName}/${repoNameOnly}`
+          );
+        } catch (error) {
+          this.logger.warn(
+            { orgName, repoName, error },
+            `Failed to fetch repo ${orgName}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+      return repos;
+    }
+
+    // Otherwise, list all repos in the organization
     const allRepos: Repository[] = [];
     let page = 1;
     let hasMore = true;
@@ -107,7 +149,7 @@ export class GitHubClient {
       const { data: orgRepos } = await this.makeRequest(async (octokit) => {
         return octokit.repos.listForOrg({
           org: orgName,
-          sort: "pushed", // default = direction: desc
+          sort: 'pushed', // default = direction: desc
           per_page: 100,
           page: page,
         });
@@ -116,7 +158,7 @@ export class GitHubClient {
       allRepos.push(...orgRepos);
       this.logger.info(
         { count: orgRepos.length, orgName, page },
-        `Fetched ${orgRepos.length} repos from ${orgName} (page ${page})`,
+        `Fetched ${orgRepos.length} repos from ${orgName} (page ${page})`
       );
 
       // If we got less than 100 repos, we've reached the end
@@ -135,7 +177,7 @@ export class GitHubClient {
     if (!this.enterpriseName) {
       this.logger.warn(
         { params },
-        `Audit log is an enterprise feature. Set X_GITHUB_ENTERPRISE to enable.`,
+        `Audit log is an enterprise feature. Set X_GITHUB_ENTERPRISE to enable.`
       );
       return [];
     }
@@ -143,19 +185,16 @@ export class GitHubClient {
     await this.addRequestDelay();
 
     const data = await this.makeRequest(async (octokit) => {
-      return (await octokit.paginate(
-        "GET /enterprises/{enterprise}/audit-log",
-        {
-          enterprise: this.enterpriseName!,
-          phrase: params.phrase,
-          include: params.include || "web",
-          per_page: params.per_page || 100,
-          order: params.order || "desc",
-          headers: {
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
+      return (await octokit.paginate('GET /enterprises/{enterprise}/audit-log', {
+        enterprise: this.enterpriseName!,
+        phrase: params.phrase,
+        include: params.include || 'web',
+        per_page: params.per_page || 100,
+        order: params.order || 'desc',
+        headers: {
+          'X-GitHub-Api-Version': '2022-11-28',
         },
-      )) as Array<any>;
+      })) as Array<any>;
     });
 
     this.logger.info(
@@ -164,7 +203,7 @@ export class GitHubClient {
         enterprise: this.enterpriseName,
         phrase: params.phrase,
       },
-      `Fetched ${data.length} audit log events (enterprise: ${this.enterpriseName})`,
+      `Fetched ${data.length} audit log events (enterprise: ${this.enterpriseName})`
     );
 
     return data;
@@ -183,14 +222,14 @@ export class GitHubClient {
       const uniqueUsers = new Set(data.map((x) => x.user));
       this.logger.info(
         { uniqueUserCount: uniqueUsers.size, orgName },
-        `Found member additions for ${uniqueUsers.size} unique users in ${orgName}`,
+        `Found member additions for ${uniqueUsers.size} unique users in ${orgName}`
       );
     }
 
     return data.map((x) => ({
       user: x.user,
       user_id: x.user_id,
-      created_at: x["@timestamp"],
+      created_at: x['@timestamp'],
       org: x.org,
     }));
   }
@@ -203,14 +242,12 @@ export class GitHubClient {
 
     // Validate input parameters
     if (!author || !author.trim()) {
-      this.logger.warn("Author parameter is empty, skipping commit search");
+      this.logger.warn('Author parameter is empty, skipping commit search');
       return [];
     }
 
     if (!orgName || !orgName.trim()) {
-      this.logger.warn(
-        "Organization parameter is empty, skipping commit search",
-      );
+      this.logger.warn('Organization parameter is empty, skipping commit search');
       return [];
     }
 
@@ -218,14 +255,14 @@ export class GitHubClient {
     const searchQuery = `${author} author:${author} org:${orgName} sort:committer-date-asc`;
 
     const { data: commits } = await this.makeRequest(async (octokit) => {
-      return octokit.request("GET /search/commits ", {
+      return octokit.request('GET /search/commits ', {
         q: searchQuery,
         advanced_search: true,
         per_page: 10,
         page: 1,
         headers: {
-          "If-None-Match": "", // Bypass cache to avoid stale results
-          Accept: "application/vnd.github.v3+json", // Specify API version
+          'If-None-Match': '', // Bypass cache to avoid stale results
+          Accept: 'application/vnd.github.v3+json', // Specify API version
         },
       });
     });
@@ -236,24 +273,17 @@ export class GitHubClient {
   /**
    * Search for pull requests by author and organization
    */
-  async searchPullRequests(
-    author: string,
-    orgName: string,
-  ): Promise<PullRequestBasic[]> {
+  async searchPullRequests(author: string, orgName: string): Promise<PullRequestBasic[]> {
     await this.addRequestDelay();
 
     // Validate input parameters
     if (!author || !author.trim()) {
-      this.logger.warn(
-        "Author parameter is empty, skipping pull request search",
-      );
+      this.logger.warn('Author parameter is empty, skipping pull request search');
       return [];
     }
 
     if (!orgName || !orgName.trim()) {
-      this.logger.warn(
-        "Organization parameter is empty, skipping pull request search",
-      );
+      this.logger.warn('Organization parameter is empty, skipping pull request search');
       return [];
     }
 
@@ -264,8 +294,8 @@ export class GitHubClient {
       return octokit.search.issuesAndPullRequests({
         q: searchQuery,
         per_page: 100,
-        sort: "created",
-        order: "desc",
+        sort: 'created',
+        order: 'desc',
       });
     });
 
@@ -282,10 +312,7 @@ export class GitHubClient {
   /**
    * Search for reviews by reviewer and organization
    */
-  async searchReviews(
-    _reviewer: string,
-    _orgName: string,
-  ): Promise<PullRequestReview[]> {
+  async searchReviews(_reviewer: string, _orgName: string): Promise<PullRequestReview[]> {
     await this.addRequestDelay();
     // Note: This search returns PRs, not individual reviews
     // We'd need to fetch reviews for each PR separately
@@ -301,7 +328,7 @@ export class GitHubClient {
     options: {
       per_page?: number;
       page?: number;
-    } = {},
+    } = {}
   ): Promise<Commit[]> {
     await this.addRequestDelay();
     const { data: commits } = await this.makeRequest(async (octokit) => {
@@ -323,12 +350,12 @@ export class GitHubClient {
     owner: string,
     repo: string,
     options: {
-      state?: "open" | "closed" | "all";
-      sort?: "created" | "updated" | "popularity" | "long-running";
-      direction?: "asc" | "desc";
+      state?: 'open' | 'closed' | 'all';
+      sort?: 'created' | 'updated' | 'popularity' | 'long-running';
+      direction?: 'asc' | 'desc';
       per_page?: number;
       page?: number;
-    } = {},
+    } = {}
   ): Promise<PullRequestBasic[]> {
     await this.addRequestDelay();
 
@@ -337,9 +364,9 @@ export class GitHubClient {
         return octokit.rest.pulls.list({
           owner,
           repo,
-          state: options.state || "closed",
-          sort: options.sort || "created",
-          direction: options.direction || "desc",
+          state: options.state || 'closed',
+          sort: options.sort || 'created',
+          direction: options.direction || 'desc',
           per_page: options.per_page || 100,
           page: options.page || 1,
         });
@@ -350,29 +377,25 @@ export class GitHubClient {
       if (error.status === 404) {
         this.logger.error(
           { owner, repo, status: error.status },
-          `Repository not found or no access: ${owner}/${repo}. Status: ${error.status}`,
+          `Repository not found or no access: ${owner}/${repo}. Status: ${error.status}`
         );
         this.logger.error(`This could be due to:`);
         this.logger.error(`1. Repository doesn't exist`);
-        this.logger.error(
-          `2. GitHub App doesn't have access to this repository`,
-        );
+        this.logger.error(`2. GitHub App doesn't have access to this repository`);
         this.logger.error(`3. Repository name or owner is incorrect`);
         this.logger.error(`4. Repository is private and app lacks permissions`);
         return [];
       } else if (error.status === 403) {
         this.logger.error(
           { owner, repo, status: error.status },
-          `Access denied to repository: ${owner}/${repo}. Status: ${error.status}`,
+          `Access denied to repository: ${owner}/${repo}. Status: ${error.status}`
         );
-        this.logger.error(
-          `This could be due to insufficient permissions or rate limiting`,
-        );
+        this.logger.error(`This could be due to insufficient permissions or rate limiting`);
         return [];
       } else {
         this.logger.error(
           { owner, repo, err: error },
-          `Error fetching pull requests for ${owner}/${repo}: ${error.message || "Unknown error"}`,
+          `Error fetching pull requests for ${owner}/${repo}: ${error.message || 'Unknown error'}`
         );
         throw error; // Re-throw other errors to be handled by the retry mechanism
       }
@@ -382,11 +405,7 @@ export class GitHubClient {
   /**
    * Get a specific pull request
    */
-  async getPullRequest(
-    owner: string,
-    repo: string,
-    pullNumber: number,
-  ): Promise<PullRequest> {
+  async getPullRequest(owner: string, repo: string, pullNumber: number): Promise<PullRequest> {
     await this.addRequestDelay();
     const { data: prData } = await this.makeRequest(async (octokit) => {
       return octokit.rest.pulls.get({
@@ -405,7 +424,7 @@ export class GitHubClient {
   async getPullRequestReviews(
     owner: string,
     repo: string,
-    pullNumber: number,
+    pullNumber: number
   ): Promise<PullRequestReview[]> {
     await this.addRequestDelay();
     const { data: reviews } = await this.makeRequest(async (octokit) => {
@@ -420,13 +439,176 @@ export class GitHubClient {
   }
 
   /**
-   * Get commits for a pull request
+   * Get reviews for multiple pull requests in batches using GraphQL.
+   * This is much more efficient than fetching reviews one PR at a time.
+   *
+   * @param owner - Repository owner
+   * @param repo - Repository name
+   * @param prNumbers - Array of PR numbers to fetch reviews for
+   * @returns Map of PR number to review data
    */
-  async getPullRequestCommits(
+  async getPullRequestReviewsBatch(
     owner: string,
     repo: string,
-    pullNumber: number,
-  ): Promise<Commit[]> {
+    prNumbers: number[]
+  ): Promise<Map<number, { hasReviews: boolean; firstReviewAt?: string }>> {
+    if (prNumbers.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const token = await this.auth.getToken();
+      return await fetchAllPRReviewsBatched(token, owner, repo, prNumbers, this.logger);
+    } catch (error) {
+      this.logger.warn(
+        { owner, repo, prCount: prNumbers.length, err: error },
+        'GraphQL batch fetch failed, falling back to REST API'
+      );
+
+      // Fallback to sequential REST API calls if GraphQL fails
+      const results = new Map<number, { hasReviews: boolean; firstReviewAt?: string }>();
+
+      for (const prNumber of prNumbers) {
+        try {
+          const reviews = await this.getPullRequestReviews(owner, repo, prNumber);
+          const hasReviews = reviews.length > 0;
+          const firstReview = reviews.find((r) => r.submitted_at);
+
+          results.set(prNumber, {
+            hasReviews,
+            firstReviewAt: firstReview?.submitted_at,
+          });
+        } catch (err) {
+          this.logger.error({ owner, repo, prNumber, err }, 'Failed to fetch reviews for PR');
+          results.set(prNumber, { hasReviews: false });
+        }
+      }
+
+      return results;
+    }
+  }
+
+  /**
+   * Get full PR data (details + reviews) for multiple pull requests in batches using GraphQL.
+   * This is much more efficient than fetching each PR individually via REST.
+   *
+   * @param owner - Repository owner
+   * @param repo - Repository name
+   * @param prNumbers - Array of PR numbers to fetch data for
+   * @returns Map of PR number to full PR data
+   */
+  async getPullRequestFullDataBatch(
+    owner: string,
+    repo: string,
+    prNumbers: number[]
+  ): Promise<Map<number, PRFullDataResult>> {
+    if (prNumbers.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const token = await this.auth.getToken();
+      return await fetchAllPRFullDataBatched(token, owner, repo, prNumbers, this.logger);
+    } catch (error) {
+      this.logger.warn(
+        { owner, repo, prCount: prNumbers.length, err: error },
+        'GraphQL batch fetch for PR full data failed, falling back to REST API'
+      );
+
+      // Fallback to sequential REST API calls if GraphQL fails
+      const results = new Map<number, PRFullDataResult>();
+
+      for (const prNumber of prNumbers) {
+        try {
+          const [prData, reviews] = await Promise.all([
+            this.getPullRequest(owner, repo, prNumber),
+            this.getPullRequestReviews(owner, repo, prNumber),
+          ]);
+
+          results.set(prNumber, {
+            number: prData.number,
+            additions: prData.additions,
+            deletions: prData.deletions,
+            changedFiles: prData.changed_files,
+            comments: prData.comments,
+            reviewThreads: prData.review_comments,
+            createdAt: prData.created_at,
+            mergedAt: prData.merged_at || null,
+            closedAt: prData.closed_at || null,
+            state: prData.merged_at ? 'MERGED' : prData.closed_at ? 'CLOSED' : 'OPEN',
+            isDraft: false, // REST API doesn't easily provide this
+            reviews: reviews.map((r) => ({
+              submittedAt: r.submitted_at || '',
+              state: r.state,
+              author: r.user ? { login: r.user.login } : null,
+            })),
+          });
+        } catch (err) {
+          this.logger.error({ owner, repo, prNumber, err }, 'Failed to fetch full data for PR');
+        }
+      }
+
+      return results;
+    }
+  }
+
+  /**
+   * Get commits for multiple pull requests in batches using GraphQL.
+   * This is much more efficient than fetching commits for each PR individually.
+   *
+   * @param owner - Repository owner
+   * @param repo - Repository name
+   * @param prNumbers - Array of PR numbers to fetch commits for
+   * @returns Map of PR number to commits data
+   */
+  async getPullRequestCommitsBatch(
+    owner: string,
+    repo: string,
+    prNumbers: number[]
+  ): Promise<Map<number, PRCommitsResult>> {
+    if (prNumbers.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const token = await this.auth.getToken();
+      return await fetchAllPRCommitsBatched(token, owner, repo, prNumbers, this.logger);
+    } catch (error) {
+      this.logger.warn(
+        { owner, repo, prCount: prNumbers.length, err: error },
+        'GraphQL batch fetch for PR commits failed, falling back to REST API'
+      );
+
+      // Fallback to sequential REST API calls if GraphQL fails
+      const results = new Map<number, PRCommitsResult>();
+
+      for (const prNumber of prNumbers) {
+        try {
+          const commits = await this.getPullRequestCommits(owner, repo, prNumber);
+
+          results.set(prNumber, {
+            number: prNumber,
+            commits: commits.map((c) => ({
+              committedDate: c.commit.author?.date || '',
+              additions: c.stats?.total || 0, // REST API gives total, not separate additions
+              deletions: 0, // REST API for commits doesn't split additions/deletions easily
+              author: c.commit.author ? { name: c.commit.author.name || null } : null,
+            })),
+          });
+        } catch (err) {
+          this.logger.error({ owner, repo, prNumber, err }, 'Failed to fetch commits for PR');
+          results.set(prNumber, { number: prNumber, commits: [] });
+        }
+      }
+
+      return results;
+    }
+  }
+
+  /**
+   * Get commits for a pull request
+   */
+  async getPullRequestCommits(owner: string, repo: string, pullNumber: number): Promise<Commit[]> {
     await this.addRequestDelay();
     const response = await this.makeRequest(async (octokit) => {
       return octokit.pulls.listCommits({
@@ -440,24 +622,64 @@ export class GitHubClient {
   }
 
   /**
-   * Get workflow runs for a repository
+   * Get workflow details by workflow ID
    */
-  async getWorkflowRuns(
+  async getWorkflow(
     owner: string,
     repo: string,
-    branch?: string,
-  ): Promise<WorkflowRun[]> {
+    workflowId: number
+  ): Promise<{
+    name: string;
+    path: string;
+    state: string;
+    url: string;
+    created_at: string;
+    updated_at: string;
+  } | null> {
+    try {
+      await this.addRequestDelay();
+      const { data } = await this.makeRequest(async (octokit) => {
+        return octokit.request('GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}', {
+          owner,
+          repo,
+          workflow_id: workflowId,
+          headers: {
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        });
+      });
+
+      return {
+        name: data.name,
+        path: data.path,
+        state: data.state,
+        url: data.html_url,
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+      };
+    } catch (error) {
+      console.error(
+        `Failed to fetch workflow ${workflowId}: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Get workflow runs for a repository
+   */
+  async getWorkflowRuns(owner: string, repo: string, branch?: string): Promise<WorkflowRun[]> {
     await this.addRequestDelay();
     const {
       data: { workflow_runs: runs },
     } = await this.makeRequest(async (octokit) => {
-      return octokit.request("GET /repos/{owner}/{repo}/actions/runs", {
+      return octokit.request('GET /repos/{owner}/{repo}/actions/runs', {
         owner,
         repo,
         branch: branch,
         exclude_pull_requests: true,
         headers: {
-          "X-GitHub-Api-Version": "2022-11-28",
+          'X-GitHub-Api-Version': '2022-11-28',
         },
       });
     });
@@ -472,12 +694,12 @@ export class GitHubClient {
     owner: string,
     repo: string,
     options: {
-      state?: "open" | "closed" | "all";
-      sort?: "created" | "updated" | "comments";
-      direction?: "asc" | "desc";
+      state?: 'open' | 'closed' | 'all';
+      sort?: 'created' | 'updated' | 'comments';
+      direction?: 'asc' | 'desc';
       per_page?: number;
       page?: number;
-    } = {},
+    } = {}
   ): Promise<
     {
       id: number;
@@ -509,10 +731,8 @@ export class GitHubClient {
   async getIssueComments(
     owner: string,
     repo: string,
-    issueNumber: number,
-  ): Promise<
-    { id: number; created_at: string; user?: { login: string } | null }[]
-  > {
+    issueNumber: number
+  ): Promise<{ id: number; created_at: string; user?: { login: string } | null }[]> {
     await this.addRequestDelay();
     const { data: comments } = await this.makeRequest(async (octokit) => {
       return octokit.issues.listComments({
@@ -533,10 +753,7 @@ export class GitHubClient {
 /**
  * Factory function to create a GitHub client instance using automatic authentication detection
  */
-export function createGitHubClient(
-  config: GitHubAuthConfig,
-  logger: Logger,
-): GitHubClient {
+export function createGitHubClient(config: GitHubAuthConfig, logger: Logger): GitHubClient {
   const auth = createGitHubAuth(config, logger);
   return new GitHubClient(auth, logger, config.enterpriseName);
 }

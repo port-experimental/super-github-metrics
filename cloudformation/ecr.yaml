@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECR Repository for GitHub Metrics
+
+Parameters:
+  RepositoryName:
+    Type: String
+    Default: github-metrics
+    Description: Name of the ECR repository
+  ApplicationId:
+    Type: String
+    Default: "209530"
+    Description: TR Application Asset Insight ID
+  ResourceOwner:
+    Type: String
+    Default: eamon.mason@thomsonreuters.com
+    Description: TR Resource Owner email
+
+Resources:
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Keep last 30 images",
+              "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 30
+              },
+              "action": {"type": "expire"}
+            }]
+          }
+      Tags:
+        - Key: tr:application-asset-insight-id
+          Value: !Ref ApplicationId
+        - Key: tr:resource-owner
+          Value: !Ref ResourceOwner
+
+Outputs:
+  RepositoryUri:
+    Description: ECR Repository URI
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-RepositoryUri'
+  RepositoryArn:
+    Description: ECR Repository ARN
+    Value: !GetAtt ECRRepository.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RepositoryArn'
+  RepositoryName:
+    Description: ECR Repository Name
+    Value: !Ref RepositoryName
+    Export:
+      Name: !Sub '${AWS::StackName}-RepositoryName'

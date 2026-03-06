@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: ^k8s/github-metrics/templates/
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Conventional commits validation with Azure DevOps work item
+  - repo: local
+    hooks:
+      - id: conventional-commit-with-workitem
+        name: Conventional Commit with Azure DevOps Work Item
+        entry: python scripts/hooks/validate-commit-msg.py
+        language: python
+        stages: [commit-msg]
+        pass_filenames: false
+        args: ['--commit-msg-file', '.git/COMMIT_EDITMSG']

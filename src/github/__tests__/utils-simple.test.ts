@@ -1,5 +1,5 @@
-import { jest, describe, it, expect } from '@jest/globals';
-import { TIME_PERIODS, type TimePeriod, createCutoffDate, getMaxTimePeriod } from '../utils';
+import { describe, expect, it, jest } from '@jest/globals';
+import { createCutoffDate, getMaxTimePeriod, TIME_PERIODS, type TimePeriod } from '../utils';
 
 describe('GitHub Utils - Simple Tests', () => {
   describe('TIME_PERIODS constants', () => {

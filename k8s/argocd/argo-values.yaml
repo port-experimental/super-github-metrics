@@ -1,0 +1,22 @@
+# Environment configurations for ArgoCD ApplicationSet
+# This file is read by the Git generator in idp_argocd-apps repository
+# ArgoCD polls this file from the release branch and generates Applications for each environment
+
+environments:
+  - name: sandbox
+    namespace: 209530-idp-sandbox
+    awsSecretName: a209530/github-metrics/sandbox
+    targetRevision: v1.0.5 # Updated by CI/CD on release (e.g., v1.0.0)
+    imageTag: sandbox-1.0.5
+
+  - name: dev
+    namespace: 209530-idp-dev
+    awsSecretName: a209530/github-metrics/dev
+    targetRevision: v1.0.5 # Updated by CI/CD on release (e.g., v1.0.0)
+    imageTag: dev-1.0.5 # Updated by CI/CD on release (e.g., dev-1.0.0)
+
+  - name: staging
+    namespace: 209530-idp-staging
+    awsSecretName: a209530/github-metrics/staging
+    targetRevision: v1.0.5 # Updated by CI/CD on release (e.g., v1.0.0)
+    imageTag: staging-1.0.5

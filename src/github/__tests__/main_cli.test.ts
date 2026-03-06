@@ -1,71 +1,97 @@
-import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { createGitHubClient } from '../../clients/github';
-import { PortClient } from '../../clients/port';
-import { calculateAndStoreServiceMetrics } from '../service_metrics';
-import { calculateAndStorePRMetrics } from '../pr_metrics';
-import { calculateWorkflowMetrics } from '../workflow_metrics';
-import { calculateAndStoreDeveloperStats } from '../onboarding_metrics';
-import { createMockGitHubClient, createMockPortClient } from '../../__tests__/utils/mocks';
+import { afterAll, afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { createMockGitHubClient } from '../../__tests__/utils/mocks';
+
+// Mock all dependencies with explicit factories to avoid ESM parsing issues
+jest.mock('../../clients/github', () => ({
+  createGitHubClient: jest.fn(),
+}));
+
+jest.mock('../../clients/port', () => ({
+  PortClient: {
+    getInstance: jest.fn(),
+  },
+  upsertEntitiesInBatches: jest.fn(),
+  getEntities: jest.fn(),
+  getUsers: jest.fn(),
+  getUser: jest.fn(),
+  deleteAllEntities: jest.fn(),
+}));
+
+jest.mock('../service_metrics', () => ({
+  calculateAndStoreServiceMetrics: jest.fn(),
+}));
+
+jest.mock('../pr_metrics', () => ({
+  calculateAndStorePRMetrics: jest.fn(),
+}));
+
+jest.mock('../workflow_metrics', () => ({
+  getWorkflowMetrics: jest.fn(),
+  calculateWorkflowMetrics: jest.fn(),
+}));
+
+jest.mock('../onboarding_metrics', () => ({
+  calculateAndStoreDeveloperStats: jest.fn(),
+  getMemberAddDates: jest.fn(),
+  hasCompleteOnboardingMetrics: jest.fn(),
+}));
 
 // Mock process.exit to prevent tests from actually exiting
 const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {
   throw new Error('process.exit called');
 });
 
-// Mock all the dependencies
-jest.mock('../../clients/github');
-jest.mock('../../clients/port');
-jest.mock('../service_metrics');
-jest.mock('../pr_metrics');
-jest.mock('../workflow_metrics');
-jest.mock('../onboarding_metrics');
-
-const mockCreateGitHubClient = createGitHubClient as jest.MockedFunction<typeof createGitHubClient>;
-const mockPortClientGetInstance = PortClient.getInstance as jest.MockedFunction<
-  typeof PortClient.getInstance
->;
-const mockCalculateServiceMetrics = calculateAndStoreServiceMetrics as jest.MockedFunction<
-  typeof calculateAndStoreServiceMetrics
->;
-const mockCalculatePRMetrics = calculateAndStorePRMetrics as jest.MockedFunction<
-  typeof calculateAndStorePRMetrics
->;
-const mockCalculateWorkflowMetrics = calculateWorkflowMetrics as jest.MockedFunction<
-  typeof calculateWorkflowMetrics
->;
-const mockCalculateOnboardingMetrics = calculateAndStoreDeveloperStats as jest.MockedFunction<
-  typeof calculateAndStoreDeveloperStats
->;
-
 describe('GitHub CLI Main', () => {
+  const originalArgv = process.argv;
+  const originalEnv = process.env;
   let mockGitHubClient: any;
-  let mockPortClient: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.resetModules();
 
-    // Setup mock clients using the helper functions
     mockGitHubClient = createMockGitHubClient();
-    mockPortClient = createMockPortClient();
 
-    mockCreateGitHubClient.mockReturnValue(mockGitHubClient);
-    mockPortClientGetInstance.mockResolvedValue(mockPortClient.getInstance());
+    process.env = {
+      ...originalEnv,
+      X_GITHUB_TOKEN: 'test-token',
+      X_GITHUB_ENTERPRISE: 'test-enterprise',
+      X_GITHUB_ORGS: 'test-org',
+      PORT_CLIENT_ID: 'test-client-id',
+      PORT_CLIENT_SECRET: 'test-client-secret',
+      PORT_BASE_URL: 'https://test.api.getport.io/v1',
+    };
 
-    // Set up environment variables
-    process.env.X_GITHUB_TOKEN = 'test-token';
-    process.env.X_GITHUB_ENTERPRISE = 'test-enterprise';
-    process.env.X_GITHUB_ORGS = 'test-org1,test-org2';
-    process.env.PORT_CLIENT_ID = 'test-client-id';
-    process.env.PORT_CLIENT_SECRET = 'test-client-secret';
+    // Configure mocks fresh after resetModules
+    const githubMock = require('../../clients/github') as any;
+    githubMock.createGitHubClient.mockReturnValue(mockGitHubClient);
+
+    const portMock = require('../../clients/port') as any;
+    portMock.PortClient.getInstance.mockResolvedValue({});
+    portMock.upsertEntitiesInBatches.mockResolvedValue([{ entities: [], errors: [] }]);
+    portMock.getEntities.mockResolvedValue({ entities: [], ok: true });
+    portMock.getUsers.mockResolvedValue({ entities: [], ok: true });
+
+    const serviceMetricsMock = require('../service_metrics') as any;
+    serviceMetricsMock.calculateAndStoreServiceMetrics.mockResolvedValue(undefined);
+
+    const prMetricsMock = require('../pr_metrics') as any;
+    prMetricsMock.calculateAndStorePRMetrics.mockResolvedValue(undefined);
+
+    const workflowMock = require('../workflow_metrics') as any;
+    workflowMock.getWorkflowMetrics.mockResolvedValue(undefined);
+    workflowMock.calculateWorkflowMetrics.mockResolvedValue(undefined);
+
+    const onboardingMock = require('../onboarding_metrics') as any;
+    onboardingMock.calculateAndStoreDeveloperStats.mockResolvedValue(null);
+    onboardingMock.getMemberAddDates.mockResolvedValue([]);
+    onboardingMock.hasCompleteOnboardingMetrics.mockReturnValue(false);
   });
 
   afterEach(() => {
+    process.argv = originalArgv;
+    process.env = originalEnv;
     jest.restoreAllMocks();
-    delete process.env.X_GITHUB_TOKEN;
-    delete process.env.X_GITHUB_ENTERPRISE;
-    delete process.env.X_GITHUB_ORGS;
-    delete process.env.PORT_CLIENT_ID;
-    delete process.env.PORT_CLIENT_SECRET;
   });
 
   afterAll(() => {
@@ -74,71 +100,92 @@ describe('GitHub CLI Main', () => {
 
   describe('service-metrics command', () => {
     it('should call service metrics calculation with correct parameters', async () => {
-      // Import the main function dynamically to avoid module loading issues
-      const { main } = await import('../main');
+      // Mock process.exit BEFORE requiring main (since main self-executes)
+      jest.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit called');
+      });
 
-      // Mock process.argv
-      const originalArgv = process.argv;
+      // Set argv BEFORE requiring main so Commander parses the right command
       process.argv = ['node', 'main.ts', 'service-metrics'];
 
-      // The main function is already called when the module is imported
-      // We just need to verify that our mocks were called
-      expect(mockCreateGitHubClient).toHaveBeenCalled();
-      expect(mockPortClientGetInstance).toHaveBeenCalled();
-      expect(mockCalculateServiceMetrics).toHaveBeenCalled();
+      // Require main fresh (resetModules was called in beforeEach)
+      require('../main');
+      // Wait for the async main() to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      process.argv = originalArgv;
+      const mockCreateGitHubClient = require('../../clients/github').createGitHubClient;
+      const mockCalculateServiceMetrics =
+        require('../service_metrics').calculateAndStoreServiceMetrics;
+
+      expect(mockCreateGitHubClient).toHaveBeenCalled();
+      expect(mockCalculateServiceMetrics).toHaveBeenCalled();
     });
   });
 
   describe('pr-metrics command', () => {
     it('should call PR metrics calculation with correct parameters', async () => {
-      const { main } = await import('../main');
+      jest.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit called');
+      });
 
-      const originalArgv = process.argv;
+      // Set argv BEFORE requiring main so Commander parses the right command
       process.argv = ['node', 'main.ts', 'pr-metrics'];
 
-      // The main function is already called when the module is imported
-      // We just need to verify that our mocks were called
-      expect(mockCreateGitHubClient).toHaveBeenCalled();
-      expect(mockPortClientGetInstance).toHaveBeenCalled();
-      expect(mockCalculatePRMetrics).toHaveBeenCalled();
+      require('../main');
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      process.argv = originalArgv;
+      const mockCreateGitHubClient = require('../../clients/github').createGitHubClient;
+      const mockCalculatePRMetrics = require('../pr_metrics').calculateAndStorePRMetrics;
+
+      expect(mockCreateGitHubClient).toHaveBeenCalled();
+      expect(mockCalculatePRMetrics).toHaveBeenCalled();
     });
   });
 
   describe('workflow-metrics command', () => {
     it('should call workflow metrics calculation with correct parameters', async () => {
-      const { main } = await import('../main');
+      jest.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit called');
+      });
 
-      const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'workflow-metrics'];
 
-      // The main function is already called when the module is imported
-      // We just need to verify that our mocks were called
-      expect(mockCreateGitHubClient).toHaveBeenCalled();
-      expect(mockPortClientGetInstance).toHaveBeenCalled();
-      expect(mockCalculateWorkflowMetrics).toHaveBeenCalled();
+      require('../main');
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      process.argv = originalArgv;
+      const mockCreateGitHubClient = require('../../clients/github').createGitHubClient;
+      const mockCalculateWorkflowMetrics = require('../workflow_metrics').calculateWorkflowMetrics;
+
+      expect(mockCreateGitHubClient).toHaveBeenCalled();
+      expect(mockCalculateWorkflowMetrics).toHaveBeenCalled();
     });
   });
 
   describe('onboarding-metrics command', () => {
     it('should call onboarding metrics calculation with correct parameters', async () => {
-      const { main } = await import('../main');
+      jest.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit called');
+      });
 
-      const originalArgv = process.argv;
+      // Provide a user with incomplete metrics and a matching audit log entry so
+      // calculateAndStoreDeveloperStats gets invoked
+      const portMock = require('../../clients/port') as any;
+      portMock.getEntities.mockResolvedValue({
+        entities: [{ identifier: 'test-user', title: 'Test User', properties: {} }],
+        ok: true,
+      });
+
       process.argv = ['node', 'main.ts', 'onboarding-metrics'];
 
-      // The main function is already called when the module is imported
-      // We just need to verify that our mocks were called
-      expect(mockCreateGitHubClient).toHaveBeenCalled();
-      expect(mockPortClientGetInstance).toHaveBeenCalled();
-      expect(mockCalculateOnboardingMetrics).toHaveBeenCalled();
+      require('../main');
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      process.argv = originalArgv;
+      const mockCreateGitHubClient = require('../../clients/github').createGitHubClient;
+      const mockCalculateOnboardingMetrics =
+        require('../onboarding_metrics').calculateAndStoreDeveloperStats;
+
+      expect(mockCreateGitHubClient).toHaveBeenCalled();
+      expect(mockCalculateOnboardingMetrics).toHaveBeenCalled();
     });
   });
 
@@ -146,31 +193,30 @@ describe('GitHub CLI Main', () => {
     it('should handle missing environment variables', async () => {
       delete process.env.X_GITHUB_TOKEN;
 
-      const { main } = await import('../main');
+      jest.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit called');
+      });
 
-      const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'service-metrics'];
 
-      // The main function is already called when the module is imported
-      // We expect it to fail due to missing environment variables
-      expect(mockCreateGitHubClient).toHaveBeenCalled();
-      expect(mockPortClientGetInstance).toHaveBeenCalled();
-
-      process.argv = originalArgv;
+      // main() should catch the error from missing env and call process.exit
+      expect(() => require('../main')).not.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
     it('should handle unknown commands', async () => {
-      const { main } = await import('../main');
+      // Use a no-op mock so process.exit doesn't throw and cause unhandled rejections
+      const exitMock = jest
+        .spyOn(process, 'exit')
+        .mockImplementation((): never => undefined as never);
 
-      const originalArgv = process.argv;
       process.argv = ['node', 'main.ts', 'unknown-command'];
 
-      // The main function is already called when the module is imported
-      // We expect it to fail due to unknown command
-      expect(mockCreateGitHubClient).toHaveBeenCalled();
-      expect(mockPortClientGetInstance).toHaveBeenCalled();
+      // Commander will error on unknown command and call process.exit
+      require('../main');
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      process.argv = originalArgv;
+      expect(exitMock).toHaveBeenCalled();
     });
   });
 });

@@ -1,45 +1,50 @@
-import type { Config } from "@jest/types";
+import type { Config } from '@jest/types';
 
 const config: Config.InitialOptions = {
-  preset: "ts-jest",
-  testEnvironment: "node",
-  roots: ["<rootDir>/src"],
-  testMatch: ["**/__tests__/**/*.test.ts", "**/?(*.)+(spec|test).ts"],
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  roots: ['<rootDir>/src'],
+  testMatch: ['**/__tests__/**/*.test.ts', '**/?(*.)+(spec|test).ts'],
   transform: {
-    "^.+\\.(t|j)s$": [
-      "ts-jest",
+    '^.+\\.ts$': [
+      'ts-jest',
       {
         tsconfig: {
           strict: false,
           noImplicitAny: false,
           esModuleInterop: true,
           allowSyntheticDefaultImports: true,
-          allowJs: true,
         },
         useESM: false,
       },
     ],
   },
   collectCoverageFrom: [
-    "src/**/*.ts",
-    "!src/**/*.d.ts",
-    "!src/**/__tests__/**",
-    "!src/**/*.test.ts",
-    "!src/**/*.spec.ts",
+    'src/**/*.ts',
+    '!src/**/*.d.ts',
+    '!src/**/__tests__/**',
+    '!src/**/*.test.ts',
+    '!src/**/*.spec.ts',
   ],
-  coverageDirectory: "coverage",
-  coverageReporters: ["text", "lcov", "html"],
-  setupFilesAfterEnv: ["<rootDir>/src/__tests__/setup.ts"],
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
+  setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
   moduleNameMapper: {
-    "^@/(.*)$": "<rootDir>/src/$1",
+    '^@/(.*)$': '<rootDir>/src/$1',
   },
   testTimeout: 30000,
   verbose: true,
   transformIgnorePatterns: [
-    "node_modules/(?!(@octokit/rest|@octokit/core|@octokit/types|@octokit/request|@octokit/auth-token|@octokit/auth-app|@octokit/auth-oauth-app|@octokit/auth-oauth-user|@octokit/auth-oauth-device|@octokit/oauth-methods|@octokit/endpoint|@octokit/request-error|universal-user-agent)/)",
+    'node_modules/(?!(@octokit/rest|@octokit/core|@octokit/types|@octokit/request|@octokit/auth-token|@octokit/auth-app|@octokit/auth-oauth-app|universal-user-agent)/)',
   ],
   extensionsToTreatAsEsm: [],
-  moduleFileExtensions: ["ts", "js", "json"],
+  globals: {
+    'ts-jest': {
+      useESM: false,
+    },
+  },
+  moduleFileExtensions: ['ts', 'js', 'json'],
+  testPathIgnorePatterns: ['/node_modules/'],
 };
 
 export default config;

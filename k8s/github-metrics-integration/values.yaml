@@ -1,0 +1,121 @@
+# Default values for github-metrics Helm chart
+# This is a YAML-formatted file.
+#
+# IMPORTANT: Use environment-specific values files for deployment:
+#   - values-sandbox.yaml  (sandbox account)
+#   - values-dev.yaml      (dev account)
+#   - values-staging.yaml  (staging account)
+
+# Override the chart name
+nameOverride: ""
+fullnameOverride: ""
+
+# CronJob configuration
+cronjob:
+  schedule: "0 0 * * *"  # Daily at midnight UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  suspend: false
+
+# Job configuration
+job:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400  # 24 hours
+  restartPolicy: Never
+
+# Image configuration
+image:
+  repository: ""  # Set per environment
+  tag: "latest"
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ecr-registry-secret
+
+# Port configuration (secrets - override in environment values)
+port:
+  clientId: ""
+  clientSecret: ""
+  baseUrl: "https://api.getport.io/v1"
+
+# GitHub configuration
+github:
+  orgs: ""  # Comma-separated list
+  repos: ""  # Optional filter
+  enterprise: ""  # Optional
+
+  # App authentication (preferred)
+  app:
+    id: ""
+    installationId: ""
+    privateKey: ""  # Managed via Secrets Manager
+
+  # Token authentication (alternative)
+  token: ""  # Managed via Secrets Manager
+
+# Port blueprint configuration (optional overrides)
+blueprints:
+  service: "service"
+  serviceMetrics: "serviceMetrics"
+  repositoryRelationKey: "service"
+  repositoryRelationTarget: "service"
+
+# Logging
+logging:
+  level: "info"
+  format: "json"
+
+# Pod configuration
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+
+# Resources
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2000m"
+    memory: "4Gi"
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Thomson Reuters required labels
+trLabels:
+  applicationAssetInsightId: "209530"
+  resourceOwner: "eamon.mason@thomsonreuters.com"
+
+# AWS Secrets Manager CSI Driver
+secretProviderClass:
+  # Enable SecretProviderClass for AWS Secrets Manager integration
+  enabled: false
+  # AWS Secrets Manager secret name (e.g., "a209530/github-metrics/sandbox")
+  awsSecretName: ""
+  # Provider (always "aws" for AWS Secrets Manager)
+  provider: "aws"
+  # Kubernetes SecretProviderClass and Secret name
+  secretName: ""
+
+# Node selection
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

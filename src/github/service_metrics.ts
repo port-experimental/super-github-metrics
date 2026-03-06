@@ -1,28 +1,24 @@
-import _ from "lodash";
-import { createGitHubClient, type GitHubClient } from "../clients/github";
-import { upsertEntitiesInBatches } from "../clients/port";
-import type {
-  PullRequestBasic,
-  Repository,
-  GitHubAppConfig,
-  Commit,
-} from "../clients/github/types";
+import _ from 'lodash';
+import type { GitHubClient } from '../clients/github';
+import type { Commit, PullRequestBasic, Repository } from '../clients/github/types';
+import { upsertEntitiesInBatches } from '../clients/port';
+import type { PortEntity } from '../clients/port/types';
+import { getPortBlueprintEnv } from '../env';
 import {
-  filterDataForTimePeriod,
+  CONCURRENCY_LIMITS,
   filterCommitsForTimePeriod,
+  filterDataForTimePeriod,
+  getMaxTimePeriod,
   TIME_PERIODS,
   type TimePeriod,
-  getMaxTimePeriod,
-  CONCURRENCY_LIMITS,
-} from "./utils";
-import type { PortEntity } from "../clients/port/types";
-import { getPortBlueprintEnv } from "../env";
+} from './utils';
 
-export const BLUEPRINT_NAME = "service";
+export const BLUEPRINT_NAME = 'service';
 
 export function getServiceBlueprintName(): string {
   return getPortBlueprintEnv().serviceBlueprint;
 }
+
 export interface ServiceMetrics {
   repoId: string;
   repoName: string;
@@ -92,21 +88,15 @@ export interface PRReviewData {
 /**
  * Calculates the standard deviation of contribution counts
  */
-export function calculateContributionStandardDeviation(
-  contributionCounts: number[],
-): number {
+export function calculateContributionStandardDeviation(contributionCounts: number[]): number {
   if (contributionCounts.length === 0) return 0;
   if (contributionCounts.length === 1) return 0;
 
   const mean =
-    contributionCounts.reduce((sum, count) => sum + count, 0) /
-    contributionCounts.length;
-  const squaredDifferences = contributionCounts.map(
-    (count) => (count - mean) ** 2,
-  );
+    contributionCounts.reduce((sum, count) => sum + count, 0) / contributionCounts.length;
+  const squaredDifferences = contributionCounts.map((count) => (count - mean) ** 2);
   const variance =
-    squaredDifferences.reduce((sum, diff) => sum + diff, 0) /
-    contributionCounts.length;
+    squaredDifferences.reduce((sum, diff) => sum + diff, 0) / contributionCounts.length;
 
   return Math.sqrt(variance);
 }
@@ -118,7 +108,7 @@ export async function fetchRepositoryContributions(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
-  daysBack: number,
+  daysBack: number
 ): Promise<Map<string, number>> {
   const contributions = new Map<string, number>();
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
@@ -142,8 +132,7 @@ export async function fetchRepositoryContributions(
         if (commit.commit.author?.date) {
           const commitDate = new Date(commit.commit.author.date);
           if (commitDate >= cutoffDate) {
-            const author =
-              commit.author?.login || commit.commit.author?.name || "Unknown";
+            const author = commit.author?.login || commit.commit.author?.name || 'Unknown';
             contributions.set(author, (contributions.get(author) || 0) + 1);
           } else {
             // If we've reached commits older than our cutoff, we can stop
@@ -157,7 +146,7 @@ export async function fetchRepositoryContributions(
     }
   } catch (error) {
     console.error(
-      `Error fetching contributions for ${owner}/${repoName}: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Error fetching contributions for ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 
@@ -172,7 +161,7 @@ export async function fetchRepositoryCommitsForPeriod(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
-  daysBack: number,
+  daysBack: number
 ): Promise<Commit[]> {
   const allCommits: Commit[] = [];
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
@@ -208,7 +197,7 @@ export async function fetchRepositoryCommitsForPeriod(
     }
   } catch (error) {
     console.error(
-      `Error fetching commits for ${owner}/${repoName}: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Error fetching commits for ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 
@@ -219,13 +208,10 @@ export async function fetchRepositoryCommitsForPeriod(
  * Aggregates commits into a map of author -> contribution count.
  * Same aggregation logic as fetchRepositoryContributions, for use on filtered commit lists.
  */
-export function contributionMapFromCommits(
-  commits: Commit[],
-): Map<string, number> {
+export function contributionMapFromCommits(commits: Commit[]): Map<string, number> {
   const contributions = new Map<string, number>();
   for (const commit of commits) {
-    const author =
-      commit.author?.login || commit.commit.author?.name || "Unknown";
+    const author = commit.author?.login || commit.commit.author?.name || 'Unknown';
     contributions.set(author, (contributions.get(author) || 0) + 1);
   }
   return contributions;
@@ -238,23 +224,21 @@ export async function fetchRepositoryPRs(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
-  daysBack: number,
+  daysBack: number
 ): Promise<PullRequestBasic[]> {
   const prs: PullRequestBasic[] = [];
   const cutoffDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
 
   try {
-    console.log(
-      `Fetching PRs for ${owner}/${repoName} (last ${daysBack} days)`,
-    );
+    console.log(`Fetching PRs for ${owner}/${repoName} (last ${daysBack} days)`);
     let page = 1;
     let hasMore = true;
 
     while (hasMore) {
       const response = await githubClient.getPullRequests(owner, repoName, {
-        state: "closed",
-        sort: "created",
-        direction: "desc",
+        state: 'closed',
+        sort: 'created',
+        direction: 'desc',
         per_page: 100,
         page,
       });
@@ -287,19 +271,15 @@ export async function fetchRepositoryPRs(
       page++;
     }
 
-    console.log(
-      `Successfully fetched ${prs.length} PRs from ${owner}/${repoName}`,
-    );
+    console.log(`Successfully fetched ${prs.length} PRs from ${owner}/${repoName}`);
   } catch (error: any) {
     console.error(
-      `Error fetching PRs for ${owner}/${repoName}: ${error.message || "Unknown error"}`,
+      `Error fetching PRs for ${owner}/${repoName}: ${error.message || 'Unknown error'}`
     );
 
     // If it's a 404 or 403, the repository might not exist or be accessible
     if (error.status === 404 || error.status === 403) {
-      console.error(
-        `Repository ${owner}/${repoName} is not accessible. Skipping...`,
-      );
+      console.error(`Repository ${owner}/${repoName} is not accessible. Skipping...`);
       return [];
     }
 
@@ -311,26 +291,28 @@ export async function fetchRepositoryPRs(
 }
 
 /**
- * Analyzes a single PR to determine review status and timing
+ * PR analysis result
  */
-export async function analyzePR(
-  githubClient: GitHubClient,
-  owner: string,
-  repoName: string,
-  pr: PullRequestBasic,
-): Promise<{
+export interface PRAnalysisResult {
   isReviewed: boolean;
   isMerged: boolean;
   isMergedWithoutReview: boolean;
   isSuccessful: boolean;
   timeToFirstReview?: number;
-}> {
+}
+
+/**
+ * Analyzes a single PR to determine review status and timing (legacy - uses individual API calls)
+ * @deprecated Use analyzePRFromBatchData for better performance
+ */
+export async function analyzePR(
+  githubClient: GitHubClient,
+  owner: string,
+  repoName: string,
+  pr: PullRequestBasic
+): Promise<PRAnalysisResult> {
   try {
-    const reviews = await githubClient.getPullRequestReviews(
-      owner,
-      repoName,
-      pr.number,
-    );
+    const reviews = await githubClient.getPullRequestReviews(owner, repoName, pr.number);
 
     const isReviewed = reviews.length > 0;
     const isMerged = !!pr.merged_at;
@@ -341,8 +323,7 @@ export async function analyzePR(
       const firstReview = reviews.find((review) => review.submitted_at);
       if (firstReview?.submitted_at) {
         timeToFirstReview =
-          (new Date(firstReview.submitted_at).getTime() -
-            new Date(pr.created_at).getTime()) /
+          (new Date(firstReview.submitted_at).getTime() - new Date(pr.created_at).getTime()) /
           (1000 * 60 * 60 * 24); // Convert to days
       }
     }
@@ -358,7 +339,7 @@ export async function analyzePR(
     };
   } catch (error) {
     console.error(
-      `Error analyzing PR ${pr.number} in ${owner}/${repoName}: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Error analyzing PR ${pr.number} in ${owner}/${repoName}: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
     return {
       isReviewed: false,
@@ -370,13 +351,44 @@ export async function analyzePR(
 }
 
 /**
- * Calculates review metrics for a set of PRs
+ * Analyzes a single PR using pre-fetched batch review data.
+ * This is much more efficient as it doesn't make any API calls.
+ */
+export function analyzePRFromBatchData(
+  pr: PullRequestBasic,
+  reviewData: { hasReviews: boolean; firstReviewAt?: string } | undefined
+): PRAnalysisResult {
+  const isReviewed = reviewData?.hasReviews ?? false;
+  const isMerged = !!pr.merged_at;
+  const isSuccessful = !!pr.merged_at;
+
+  let timeToFirstReview: number | undefined;
+  if (isReviewed && pr.created_at && reviewData?.firstReviewAt) {
+    timeToFirstReview =
+      (new Date(reviewData.firstReviewAt).getTime() - new Date(pr.created_at).getTime()) /
+      (1000 * 60 * 60 * 24); // Convert to days
+  }
+
+  const isMergedWithoutReview = isMerged && !isReviewed;
+
+  return {
+    isReviewed,
+    isMerged,
+    isMergedWithoutReview,
+    isSuccessful,
+    timeToFirstReview,
+  };
+}
+
+/**
+ * Calculates review metrics for a set of PRs using batched GraphQL queries.
+ * This is much more efficient than fetching reviews one PR at a time.
  */
 export async function calculateRepositoryReviewMetrics(
   githubClient: GitHubClient,
   owner: string,
   repoName: string,
-  prs: PullRequestBasic[],
+  prs: PullRequestBasic[]
 ): Promise<PRReviewData> {
   const reviewData: PRReviewData = {
     totalPRs: prs.length,
@@ -388,8 +400,100 @@ export async function calculateRepositoryReviewMetrics(
     totalSuccessfulPRs: 0,
   };
 
+  if (prs.length === 0) {
+    return reviewData;
+  }
+
+  // Fetch all PR reviews in batches using GraphQL (much faster than sequential REST calls)
+  const prNumbers = prs.map((pr) => pr.number);
+  console.log(`  Fetching reviews for ${prNumbers.length} PRs using batched GraphQL...`);
+
+  const batchedReviews = await githubClient.getPullRequestReviewsBatch(owner, repoName, prNumbers);
+
+  console.log(`  Successfully fetched review data for ${batchedReviews.size} PRs`);
+
+  // Process all PRs using the pre-fetched batch data (no more API calls)
   for (const pr of prs) {
-    const analysis = await analyzePR(githubClient, owner, repoName, pr);
+    const prReviewData = batchedReviews.get(pr.number);
+    const analysis = analyzePRFromBatchData(pr, prReviewData);
+
+    if (analysis.isMerged) {
+      reviewData.totalMergedPRs++;
+    }
+
+    if (analysis.isReviewed) {
+      reviewData.numberOfPRsReviewed++;
+    }
+
+    if (analysis.isMergedWithoutReview) {
+      reviewData.numberOfPRsMergedWithoutReview++;
+    }
+
+    if (analysis.isSuccessful) {
+      reviewData.totalSuccessfulPRs++;
+    }
+
+    if (analysis.timeToFirstReview !== undefined) {
+      reviewData.totalTimeToFirstReview += analysis.timeToFirstReview;
+      reviewData.prsWithReviewTime++;
+    }
+  }
+
+  return reviewData;
+}
+
+/**
+ * Filters review data to only include PRs within a specific time period.
+ * This allows reusing fetched review data for multiple time periods.
+ */
+export function filterReviewDataForPeriod(
+  allPRs: PullRequestBasic[],
+  allReviews: Map<number, { hasReviews: boolean; firstReviewAt?: string }>,
+  period: TimePeriod
+): Map<number, { hasReviews: boolean; firstReviewAt?: string }> {
+  const cutoffDate = new Date(Date.now() - period * 24 * 60 * 60 * 1000);
+  const filteredPRs = allPRs.filter((pr) => {
+    if (!pr.created_at) return false;
+    return new Date(pr.created_at) >= cutoffDate;
+  });
+
+  const filteredReviews = new Map();
+  filteredPRs.forEach((pr) => {
+    const reviewData = allReviews.get(pr.number);
+    if (reviewData) {
+      filteredReviews.set(pr.number, reviewData);
+    }
+  });
+
+  return filteredReviews;
+}
+
+/**
+ * Calculates review metrics using pre-fetched review data.
+ * No API calls made - works entirely with cached data.
+ */
+export function calculateReviewMetricsFromCache(
+  prs: PullRequestBasic[],
+  reviewsCache: Map<number, { hasReviews: boolean; firstReviewAt?: string }>
+): PRReviewData {
+  const reviewData: PRReviewData = {
+    totalPRs: prs.length,
+    totalMergedPRs: 0,
+    numberOfPRsReviewed: 0,
+    numberOfPRsMergedWithoutReview: 0,
+    totalTimeToFirstReview: 0,
+    prsWithReviewTime: 0,
+    totalSuccessfulPRs: 0,
+  };
+
+  if (prs.length === 0) {
+    return reviewData;
+  }
+
+  // Process all PRs using the cached review data (no API calls)
+  for (const pr of prs) {
+    const prReviewData = reviewsCache.get(pr.number);
+    const analysis = analyzePRFromBatchData(pr, prReviewData);
 
     if (analysis.isMerged) {
       reviewData.totalMergedPRs++;
@@ -427,22 +531,17 @@ export function calculateFinalMetrics(reviewData: PRReviewData): {
 } {
   return {
     percentageOfPRsReviewed:
-      reviewData.totalPRs > 0
-        ? (reviewData.numberOfPRsReviewed / reviewData.totalPRs) * 100
-        : 0,
+      reviewData.totalPRs > 0 ? (reviewData.numberOfPRsReviewed / reviewData.totalPRs) * 100 : 0,
     percentageOfPRsMergedWithoutReview:
       reviewData.totalPRs > 0
-        ? (reviewData.numberOfPRsMergedWithoutReview / reviewData.totalPRs) *
-          100
+        ? (reviewData.numberOfPRsMergedWithoutReview / reviewData.totalPRs) * 100
         : 0,
     averageTimeToFirstReview:
       reviewData.prsWithReviewTime > 0
         ? reviewData.totalTimeToFirstReview / reviewData.prsWithReviewTime
         : 0,
     prSuccessRate:
-      reviewData.totalPRs > 0
-        ? (reviewData.totalSuccessfulPRs / reviewData.totalPRs) * 100
-        : 0,
+      reviewData.totalPRs > 0 ? (reviewData.totalSuccessfulPRs / reviewData.totalPRs) * 100 : 0,
   };
 }
 
@@ -452,18 +551,15 @@ export function calculateFinalMetrics(reviewData: PRReviewData): {
 export function createTimePeriodMetrics(
   reviewData: PRReviewData,
   finalMetrics: ReturnType<typeof calculateFinalMetrics>,
-  period: TimePeriod,
+  period: TimePeriod
 ): Record<string, number> {
   return {
     [`numberOfPRsReviewed_${period}d`]: reviewData.numberOfPRsReviewed,
-    [`numberOfPRsMergedWithoutReview_${period}d`]:
-      reviewData.numberOfPRsMergedWithoutReview,
-    [`percentageOfPRsReviewed_${period}d`]:
-      finalMetrics.percentageOfPRsReviewed,
+    [`numberOfPRsMergedWithoutReview_${period}d`]: reviewData.numberOfPRsMergedWithoutReview,
+    [`percentageOfPRsReviewed_${period}d`]: finalMetrics.percentageOfPRsReviewed,
     [`percentageOfPRsMergedWithoutReview_${period}d`]:
       finalMetrics.percentageOfPRsMergedWithoutReview,
-    [`averageTimeToFirstReview_${period}d`]:
-      finalMetrics.averageTimeToFirstReview,
+    [`averageTimeToFirstReview_${period}d`]: finalMetrics.averageTimeToFirstReview,
     [`prSuccessRate_${period}d`]: finalMetrics.prSuccessRate,
     [`totalPRs_${period}d`]: reviewData.totalPRs,
     [`totalMergedPRs_${period}d`]: reviewData.totalMergedPRs,
@@ -475,7 +571,7 @@ export function createTimePeriodMetrics(
  */
 export function createServiceMetricsRecord(
   repo: Repository,
-  timePeriodMetrics: Record<string, number>,
+  timePeriodMetrics: Record<string, number>
 ): ServiceMetrics {
   return {
     repoId: repo.id.toString(),
@@ -488,13 +584,20 @@ export function createServiceMetricsRecord(
 /**
  * Stores service metrics in Port
  */
-export async function storeServiceMetrics(
-  record: ServiceMetrics,
-): Promise<PortEntity> {
-  const props: Record<string, unknown> = _.chain(record)
-    .omit(["repoId", "repoName"])
-    .mapKeys((_value, key) => _.snakeCase(key))
-    .value();
+export async function storeServiceMetrics(record: ServiceMetrics): Promise<PortEntity> {
+  // Convert camelCase keys to snake_case, preserving "PRs" and period suffixes correctly
+  const omitted = _.omit(record, ['repoId', 'repoName']);
+  const props: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(omitted)) {
+    // Convert to snake_case but fix common issues:
+    // - "PRs" should become "prs" not "p_rs"
+    // - "_1d", "_7d", etc. should stay as "_1d", "_7d" not "_1_d"
+    let snakeKey = _.snakeCase(key);
+    snakeKey = snakeKey.replace(/_p_rs/g, '_prs'); // Fix "numberOfPRs" -> "number_of_prs"
+    snakeKey = snakeKey.replace(/_(\d+)_d/g, '_$1d'); // Fix "_1_d" -> "_1d"
+    props[snakeKey] = value;
+  }
 
   const entity: PortEntity = {
     identifier: record.repoName,
@@ -508,47 +611,38 @@ export async function storeServiceMetrics(
 /**
  * Stores multiple service metrics entities in Port using bulk ingestion
  */
-export async function storeServiceMetricsEntities(
-  entities: PortEntity[],
-): Promise<void> {
+export async function storeServiceMetricsEntities(entities: PortEntity[]): Promise<void> {
   if (entities.length === 0) {
-    console.log("No service metrics entities to store");
+    console.log('No service metrics entities to store');
     return;
   }
 
   try {
-    console.log(
-      `Storing ${entities.length} service metrics entities using bulk ingestion...`,
-    );
-    const results = await upsertEntitiesInBatches(
-      getServiceBlueprintName(),
-      entities,
-    );
+    console.log(`Storing ${entities.length} service metrics entities using bulk ingestion...`);
+    const results = await upsertEntitiesInBatches(getServiceBlueprintName(), entities);
 
-    // Aggregate results
-    const totalSuccessful = results.reduce(
-      (sum, result) => sum + result.entities.filter((r) => r.created).length,
-      0,
-    );
-    const totalFailed = results.reduce(
-      (sum, result) => sum + result.entities.filter((r) => !r.created).length,
-      0,
-    );
+    // Aggregate results - only errors array contains actual failures
+    // With upsert=true&merge=true, created:false means successfully updated
+    const totalProcessed = results.reduce((sum, result) => sum + result.entities.length, 0);
+    const totalFailed = results.reduce((sum, result) => sum + (result.errors?.length || 0), 0);
+    const totalSuccessful = totalProcessed - totalFailed;
 
-    console.log(
-      `Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`,
-    );
+    console.log(`Bulk ingestion completed: ${totalSuccessful} successful, ${totalFailed} failed`);
 
     if (totalFailed > 0) {
-      const allFailed = results.flatMap((result) =>
-        result.entities.filter((r) => !r.created),
-      );
-      const failedIdentifiers = allFailed.map((r) => r.identifier);
-      console.warn(`Failed entities: ${failedIdentifiers.join(", ")}`);
+      const errors = results.flatMap((result) => result.errors || []);
+      const failedIdentifiers = errors.map((e) => e.identifier);
+      console.warn(`Failed entities: ${failedIdentifiers.join(', ')}`);
+
+      // Log error details
+      console.warn('Error details:');
+      errors.forEach((error) => {
+        console.warn(`  - ${error.identifier}: ${error.message} (${error.statusCode})`);
+      });
     }
   } catch (error) {
     console.error(
-      `Failed to store service metrics entities: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Failed to store service metrics entities: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
     throw error;
   }
@@ -565,29 +659,25 @@ export function logServiceMetricsSummary(record: ServiceMetrics): void {
   const timePeriods: TimePeriod[] = [1, 7, 30, 60, 90];
   for (const period of timePeriods) {
     console.log(`\n--- ${period} Day Period ---`);
+    console.log(`Total PRs: ${record[`totalPRs_${period}d` as keyof ServiceMetrics]}`);
+    console.log(`Merged PRs: ${record[`totalMergedPRs_${period}d` as keyof ServiceMetrics]}`);
     console.log(
-      `Total PRs: ${record[`totalPRs_${period}d` as keyof ServiceMetrics]}`,
+      `Reviewed PRs: ${record[`numberOfPRsReviewed_${period}d` as keyof ServiceMetrics]}`
     );
     console.log(
-      `Merged PRs: ${record[`totalMergedPRs_${period}d` as keyof ServiceMetrics]}`,
+      `Merged without review: ${record[`numberOfPRsMergedWithoutReview_${period}d` as keyof ServiceMetrics]}`
     );
     console.log(
-      `Reviewed PRs: ${record[`numberOfPRsReviewed_${period}d` as keyof ServiceMetrics]}`,
+      `Review percentage: ${(record[`percentageOfPRsReviewed_${period}d` as keyof ServiceMetrics] as number).toFixed(2)}%`
     );
     console.log(
-      `Merged without review: ${record[`numberOfPRsMergedWithoutReview_${period}d` as keyof ServiceMetrics]}`,
+      `Success rate: ${(record[`prSuccessRate_${period}d` as keyof ServiceMetrics] as number).toFixed(2)}%`
     );
     console.log(
-      `Review percentage: ${(record[`percentageOfPRsReviewed_${period}d` as keyof ServiceMetrics] as number).toFixed(2)}%`,
+      `Avg time to first review: ${(record[`averageTimeToFirstReview_${period}d` as keyof ServiceMetrics] as number).toFixed(2)} days`
     );
     console.log(
-      `Success rate: ${(record[`prSuccessRate_${period}d` as keyof ServiceMetrics] as number).toFixed(2)}%`,
-    );
-    console.log(
-      `Avg time to first review: ${(record[`averageTimeToFirstReview_${period}d` as keyof ServiceMetrics] as number).toFixed(2)} days`,
-    );
-    console.log(
-      `Contribution std dev: ${(record[`contributionStandardDeviation_${period}d` as keyof ServiceMetrics] as number).toFixed(2)}`,
+      `Contribution std dev: ${(record[`contributionStandardDeviation_${period}d` as keyof ServiceMetrics] as number).toFixed(2)}`
     );
   }
 }
@@ -599,11 +689,9 @@ export async function processRepositoryServiceMetrics(
   githubClient: GitHubClient,
   repo: Repository,
   repoIndex: number,
-  totalRepos: number,
+  totalRepos: number
 ): Promise<PortEntity> {
-  console.log(
-    `Processing service metrics for repo ${repo.name} (${repoIndex + 1}/${totalRepos})`,
-  );
+  console.log(`Processing service metrics for repo ${repo.name} (${repoIndex + 1}/${totalRepos})`);
 
   try {
     const timePeriods: TimePeriod[] = [
@@ -616,65 +704,55 @@ export async function processRepositoryServiceMetrics(
     const maxPeriod = getMaxTimePeriod(timePeriods); // 90 days
     const allTimePeriodMetrics: Record<string, number> = {};
 
-    // Fetch all PRs once for the maximum time period (90 days), then filter per period
-    console.log(
-      `  Fetching PRs for ${maxPeriod} day period (will filter for shorter periods)...`,
-    );
-    const allPRs = await fetchRepositoryPRs(
-      githubClient,
-      repo.owner.login,
-      repo.name,
-      maxPeriod,
-    );
-    console.log(
-      `  Found ${allPRs.length} PRs in the last ${maxPeriod} days for ${repo.name}`,
-    );
+    // Fetch all data once for the maximum time period (90 days)
+    console.log(`  Fetching PRs for ${maxPeriod} day period (will filter for shorter periods)...`);
+    const allPRs = await fetchRepositoryPRs(githubClient, repo.owner.login, repo.name, maxPeriod);
+    console.log(`  Found ${allPRs.length} PRs in the last ${maxPeriod} days for ${repo.name}`);
 
     // Fetch all commits once for the max period, then filter per period in memory
     console.log(
-      `  Fetching commits for ${maxPeriod} day period (will filter for shorter periods)...`,
+      `  Fetching commits for ${maxPeriod} day period (will filter for shorter periods)...`
     );
     const allCommits = await fetchRepositoryCommitsForPeriod(
       githubClient,
       repo.owner.login,
       repo.name,
-      maxPeriod,
+      maxPeriod
     );
     console.log(
-      `  Found ${allCommits.length} commits in the last ${maxPeriod} days for ${repo.name}`,
+      `  Found ${allCommits.length} commits in the last ${maxPeriod} days for ${repo.name}`
     );
 
-    // Process each time period
+    // Fetch ALL review data once for all PRs (optimization to avoid redundant API calls)
+    console.log(`  Fetching reviews for all ${allPRs.length} PRs using batched GraphQL...`);
+    const reviewFetchStart = Date.now();
+    const allReviews = await githubClient.getPullRequestReviewsBatch(
+      repo.owner.login,
+      repo.name,
+      allPRs.map((pr) => pr.number)
+    );
+    const reviewFetchDuration = Date.now() - reviewFetchStart;
+    console.log(`  Review fetch completed in ${reviewFetchDuration}ms for ${allReviews.size} PRs`);
+
+    // Process each time period by filtering the already-fetched data
     for (const period of timePeriods) {
       console.log(`  Processing ${period} day period...`);
 
       // Filter PRs for this time period
       const periodPRs = filterDataForTimePeriod(allPRs, period);
-      console.log(
-        `  Filtered to ${periodPRs.length} PRs for ${period} day period`,
-      );
+      console.log(`  Filtered to ${periodPRs.length} PRs for ${period} day period`);
 
-      const reviewData = await calculateRepositoryReviewMetrics(
-        githubClient,
-        repo.owner.login,
-        repo.name,
-        periodPRs,
-      );
+      // Use cached review data - NO API CALLS
+      const reviewData = calculateReviewMetricsFromCache(periodPRs, allReviews);
       const finalMetrics = calculateFinalMetrics(reviewData);
-      const periodMetrics = createTimePeriodMetrics(
-        reviewData,
-        finalMetrics,
-        period,
-      );
+      const periodMetrics = createTimePeriodMetrics(reviewData, finalMetrics, period);
 
       // Filter commits for this period and aggregate to contribution counts (no extra API calls)
       const periodCommits = filterCommitsForTimePeriod(allCommits, period);
       const periodContributions = contributionMapFromCommits(periodCommits);
       const contributionCounts = Array.from(periodContributions.values());
-      const contributionStdDev =
-        calculateContributionStandardDeviation(contributionCounts);
-      periodMetrics[`contributionStandardDeviation_${period}d`] =
-        contributionStdDev;
+      const contributionStdDev = calculateContributionStandardDeviation(contributionCounts);
+      periodMetrics[`contributionStandardDeviation_${period}d`] = contributionStdDev;
 
       Object.assign(allTimePeriodMetrics, periodMetrics);
     }
@@ -685,7 +763,7 @@ export async function processRepositoryServiceMetrics(
     return entity;
   } catch (error) {
     console.error(
-      `Failed to process service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Failed to process service metrics for repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
     throw error;
   }
@@ -696,7 +774,7 @@ export async function processRepositoryServiceMetrics(
  */
 export async function calculateAndStoreServiceMetrics(
   repos: Repository[],
-  githubClient: GitHubClient,
+  githubClient: GitHubClient
 ): Promise<void> {
   let hasFatalError = false;
   const failedRepos: string[] = [];
@@ -714,7 +792,7 @@ export async function calculateAndStoreServiceMetrics(
   for (let i = 0; i < repos.length; i += concurrencyLimit) {
     const batch = repos.slice(i, i + concurrencyLimit);
     console.log(
-      `Processing batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`,
+      `Processing batch ${Math.floor(i / concurrencyLimit) + 1}/${Math.ceil(repos.length / concurrencyLimit)} (${batch.length} repos)`
     );
 
     const batchPromises = batch.map(async (repo, batchIndex) => {
@@ -724,12 +802,12 @@ export async function calculateAndStoreServiceMetrics(
           githubClient,
           repo,
           repoIndex,
-          repos.length,
+          repos.length
         );
         return { success: true, repoName: repo.name, entity };
       } catch (error) {
         console.error(
-          `Error processing repo ${repo.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
+          `Error processing repo ${repo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
         return { success: false, repoName: repo.name, error };
       }
@@ -737,6 +815,16 @@ export async function calculateAndStoreServiceMetrics(
 
     const batchResults = await Promise.all(batchPromises);
     results.push(...batchResults);
+
+    // Log progress after each batch
+    const processedCount = results.length;
+    const totalCount = repos.length;
+    const percentage = ((processedCount / totalCount) * 100).toFixed(1);
+    const successCount = results.filter((r) => r.success).length;
+    const failCount = results.filter((r) => !r.success).length;
+    console.log(
+      `Progress: ${processedCount}/${totalCount} repositories processed (${percentage}%) - ${successCount} successful, ${failCount} failed`
+    );
   }
 
   // Process results and collect all entities
@@ -754,35 +842,31 @@ export async function calculateAndStoreServiceMetrics(
   });
 
   console.log(
-    `Service metrics processing complete: ${successful.length} successful, ${failed.length} failed`,
+    `Service metrics processing complete: ${successful.length} successful, ${failed.length} failed`
   );
   console.log(`Total entities to ingest: ${allEntities.length}`);
 
   // If all repositories failed, that's a fatal error
   if (failedRepos.length === repos.length && repos.length > 0) {
-    throw new Error(
-      `Failed to process any repositories. Failed repos: ${failedRepos.join(", ")}`,
-    );
+    throw new Error(`Failed to process any repositories. Failed repos: ${failedRepos.join(', ')}`);
   }
 
   // If some repositories failed, log a warning but don't fail the entire process
   if (failedRepos.length > 0) {
     console.warn(
-      `Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(", ")}`,
+      `Warning: Failed to process ${failedRepos.length} repositories: ${failedRepos.join(', ')}`
     );
   }
 
   // If there were any fatal errors and no successful processing, throw an error
   if (hasFatalError && failedRepos.length === repos.length) {
-    throw new Error("All repositories failed to process");
+    throw new Error('All repositories failed to process');
   }
 
   // Store all entities in bulk if we have any
   if (allEntities.length > 0) {
-    console.log(
-      `Starting bulk ingestion of ${allEntities.length} service entities...`,
-    );
+    console.log(`Starting bulk ingestion of ${allEntities.length} service entities...`);
     await storeServiceMetricsEntities(allEntities);
-    console.log("Bulk ingestion completed successfully");
+    console.log('Bulk ingestion completed successfully');
   }
 }

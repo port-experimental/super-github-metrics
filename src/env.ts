@@ -153,6 +153,8 @@ export function getCoderEnv(): CoderEnv {
 export type PortBlueprintEnv = {
   serviceBlueprint: string;
   serviceMetricsBlueprint: string;
+  prBlueprint: string;
+  prIdentifierFormat: string;
   repositoryRelationKey: string;
   repositoryRelationTarget: string;
 };
@@ -163,6 +165,8 @@ export function getPortBlueprintEnv(): PortBlueprintEnv {
     {
       PORT_SERVICE_BLUEPRINT: str({ default: 'service' }),
       PORT_SERVICE_METRICS_BLUEPRINT: str({ default: 'serviceMetrics' }),
+      PORT_PR_BLUEPRINT: str({ default: 'githubPullRequest' }),
+      PORT_PR_IDENTIFIER_FORMAT: str({ default: '{repoName}{prNumber}' }),
       // Configurable relation key and target for repository-related metrics
       // This allows using a different blueprint (e.g., 'githubRepository') instead of 'service'
       PORT_REPOSITORY_RELATION_KEY: str({ default: 'service' }),
@@ -174,6 +178,8 @@ export function getPortBlueprintEnv(): PortBlueprintEnv {
   return {
     serviceBlueprint: env.PORT_SERVICE_BLUEPRINT,
     serviceMetricsBlueprint: env.PORT_SERVICE_METRICS_BLUEPRINT,
+    prBlueprint: env.PORT_PR_BLUEPRINT,
+    prIdentifierFormat: env.PORT_PR_IDENTIFIER_FORMAT,
     repositoryRelationKey: env.PORT_REPOSITORY_RELATION_KEY,
     repositoryRelationTarget: env.PORT_REPOSITORY_RELATION_TARGET,
   };
@@ -194,4 +200,23 @@ export function getRepositoryRelationKey(): string {
  */
 export function getRepositoryRelationTarget(): string {
   return getPortBlueprintEnv().repositoryRelationTarget;
+}
+
+/**
+ * Get the blueprint name for PR entities.
+ * Defaults to 'githubPullRequest' but can be configured via PORT_PR_BLUEPRINT.
+ */
+export function getPrBlueprint(): string {
+  return getPortBlueprintEnv().prBlueprint;
+}
+
+/**
+ * Build the identifier for a PR entity using the configured format.
+ * Configured via PORT_PR_IDENTIFIER_FORMAT (default: '{repoName}{prNumber}').
+ * Supported placeholders: {repoName}, {prNumber}
+ */
+export function buildPrIdentifier(repoName: string, prNumber: number): string {
+  return getPortBlueprintEnv()
+    .prIdentifierFormat.replace('{repoName}', repoName)
+    .replace('{prNumber}', String(prNumber));
 }

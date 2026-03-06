@@ -3,7 +3,7 @@ import type { PRCommitsResult, PRFullDataResult } from '../clients/github/graphq
 import type { PullRequestBasic, Repository } from '../clients/github/types';
 import { upsertEntitiesInBatches } from '../clients/port';
 import type { PortEntity } from '../clients/port/types';
-import { getRepositoryRelationKey } from '../env';
+import { buildPrIdentifier, getPrBlueprint, getRepositoryRelationKey } from '../env';
 import { CONCURRENCY_LIMITS, TIME_PERIODS } from './utils';
 
 export interface PRMetrics {
@@ -301,7 +301,7 @@ export async function calculateAndStorePRMetrics(
 
           if (!metrics) continue;
 
-          const identifier = `${repo.name}${metrics.prNumber}`;
+          const identifier = buildPrIdentifier(repo.name, metrics.prNumber);
           if (seenEntityIdentifiers.has(identifier)) continue;
           seenEntityIdentifiers.add(identifier);
 
@@ -389,7 +389,7 @@ export async function storePRMetricsEntities(entities: PortEntity[]): Promise<vo
 
   try {
     console.log(`Storing ${entities.length} PR metrics entities using bulk ingestion...`);
-    const results = await upsertEntitiesInBatches('githubPullRequest', entities);
+    const results = await upsertEntitiesInBatches(getPrBlueprint(), entities);
 
     // Aggregate results - check both entities array and errors array
     const totalSuccessful = results.reduce(
